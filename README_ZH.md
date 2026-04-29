@@ -12,7 +12,10 @@
 - **后台守护**：支持开机自启，在后台静默守护您的屏幕常亮需求。
 
 ### 📸 界面预览
-*(您可以在此处添加插件的截图)*
+<img width="1080" height="1440" alt="d3e9c577940f25d1224b22c892608de3" src="https://github.com/user-attachments/assets/1817419f-787a-427d-80c7-829b9ced0e50" />
+<img width="1080" height="1440" alt="7c443969fa712c3c4887efb099a8a6af" src="https://github.com/user-attachments/assets/822b6403-aabd-4b36-8a62-45b43aba3691" />
+
+
 
 ### 🚀 如何安装
 1. 确保已安装 [Decky Loader](https://decky.xyz)。
