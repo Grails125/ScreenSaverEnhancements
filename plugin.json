@@ -1,0 +1,13 @@
+{
+  "name": "屏幕保护增强",
+  "author": "grails",
+  "flags": [],
+  "publish": {
+    "tags": [
+      "dbus",
+      "screensaver"
+    ],
+    "description": "Inhibit screensaver during video playback.",
+    "image": "https://opengraph.githubassets.com/1/xfangfang/DeckyInhibitScreenSaver"
+  }
+}

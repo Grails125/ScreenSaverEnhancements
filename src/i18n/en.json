@@ -1,0 +1,19 @@
+{
+    "Settings": "Settings",
+    "Background Monitor": "Background Monitor",
+    "Show Notify": "Show Notify",
+    "ScreenSaver": "ScreenSaver",
+    "Inhibit": "Inhibit",
+    "UnInhibit": "UnInhibit",
+    "suspend_tip_title": "The device will automatically suspend in 5 seconds",
+    "suspend_tip_body": "Press any gamepad key to cancel",
+    "bg_tip": "Register for D-Bus service and listen for inhibit screensaver requests from applications.",
+    "notify_tip": "Send notifications when certain applications request to modify the status of the screensaver",
+    "Manual Software": "Manual Software",
+    "Software Name": "Software Name",
+    "Add": "Add",
+    "manual_tip": "If some software doesn't send D-Bus requests, you can click on a process name in the list below to add it to the inhibit list.",
+    "Inhibit List": "Current Inhibit List",
+    "Running Processes": "Running Processes",
+    "Click to add": "Click to add"
+}
