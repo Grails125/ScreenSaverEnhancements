@@ -149,12 +149,15 @@ class Plugin:
 
     def _is_process_running(self, name):
         try:
-            # Use pgrep to find process by name
-            res = subprocess.run(['pgrep', '-x', name], capture_output=True)
-            return res.returncode == 0
-        except:
+            # 使用与获取列表相同的 ps 命令确保匹配一致性
+            res = subprocess.run(['ps', '-eo', 'comm', '--no-headers'], capture_output=True, text=True)
+            if res.returncode == 0:
+                running_names = [line.strip() for line in res.stdout.splitlines()]
+                return name in running_names
             return False
-
+        except Exception as e:
+            decky_plugin.logger.error(f"Error checking process {name}: {e}")
+            return False
 
     async def start_backend(self):
         decky_plugin.logger.info("Start backend server")
@@ -227,14 +230,18 @@ class Plugin:
         # manual apps check
         manual_apps = await self.get_settings("manual_apps", [])
         manual_active = False
+        running_app = None
         for app in manual_apps:
             if self._is_process_running(app):
                 manual_active = True
+                running_app = app
                 break
         
         if manual_active and not self.manual_active:
+            decky_plugin.logger.info(f"Manual Inhibit triggered by process: {running_app}")
             res.append({"type": "Inhibit"})
         elif not manual_active and self.manual_active:
+            decky_plugin.logger.info("Manual UnInhibit: no monitored processes running")
             if not dbus_active:
                 res.append({"type": "UnInhibit"})
         
