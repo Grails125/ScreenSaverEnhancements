@@ -1,31 +1,34 @@
-# Decky Screen Saver
+# ScreenSaver Enhancements (屏幕保护增强)
 
 [English](./README.md)
 
-这是一个适用于 Decky Loader (SteamDeck插件加载器) 的插件，在使用 SteamDeck 游戏模式播放视频时，这个插件会自动禁用系统锁屏，让用户有一个舒适的观影体验。
+这是一个适用于 **Decky Loader** (Steam Deck 插件加载器) 的高级插件，旨在通过监控系统请求或手动指定进程，防止 Steam Deck 在播放视频、网页浏览或运行特定应用时自动熄屏/休眠。
 
-### 如何安装
+### 🌟 核心功能
+- **全自动识别**：支持标准的 D-Bus 接口请求（如 VLC、Chrome、mpv、wiliwili 等）。
+- **手动增强模式**：实时扫描当前运行中的进程，支持一键将任何应用添加到“禁止锁屏列表”。
+- **高级 UI 界面**：深度集成 Steam Deck 原生设计风格，提供清晰的状态卡片和操作面板。
+- **智能映射**：自动为运行中的进程匹配中文名称，并区分系统与应用进程。
+- **后台守护**：支持开机自启，在后台静默守护您的屏幕常亮需求。
 
-1. 安装 Decky Loader: https://decky.xyz
-2. 下载 `ScreenSaver.zip`: https://github.com/xfangfang/DeckyInhibitScreenSaver/releases
-2. 解压 `ScreenSaver.zip` 到 `/home/deck/homebrew/plugins` 目录下，重启 Steam
+### 📸 界面预览
+*(您可以在此处添加插件的截图)*
 
-<p>
-感谢大家的赞助，这将大大支持我制作更多更好的开源应用
-<details >
-<summary id="sponsorships"><b>捐助二维码:（点击展开）</b></summary>
-<img  width="400" src="https://xfangfang.github.io/Macast/sponsorships.png" />
-</details>
-</p>
+### 🚀 如何安装
+1. 确保已安装 [Decky Loader](https://decky.xyz)。
+2. 从 [Releases](https://github.com/Grails125/ScreenSaverEnhancements/releases) 下载最新的 `ScreenSaverEnhancements.zip`。
+3. 将压缩包解压后的 `ScreenSaverEnhancements` 文件夹放入 Steam Deck 的 `/home/deck/homebrew/plugins` 目录。
+4. 重启 Steam 或在 Decky 菜单中重新加载插件。
 
-### 这个插件是如何工作的
+### 🛠️ 工作原理
+在 Steam Deck 游戏模式下，系统通常在几分钟无操作后自动进入休眠或调暗屏幕。
+- **自动模式**：插件会监控系统 D-Bus 服务，当收到应用的 Inhibit 请求时，自动修改系统设置。
+- **手动模式**：插件会周期性检查您手动添加的进程是否正在运行。只要该进程存在，插件就会保持系统常亮，并在进程结束后恢复默认设置（调暗：5分钟，休眠：10分钟）。
 
-在SteamDeck游戏模式下，当使用浏览器或视频播放器时，SteamDeck将在几分钟后自动暂停。您需要手动修改相关的系统设置以防止这种行为。
+### 📝 兼容性
+- **浏览器**：Chrome, Firefox, Edge 等。
+- **视频播放器**：VLC, mpv, Kodi, Wiliwili 等。
+- **其他应用**：只要是能出现在进程列表中的应用，均可通过手动模式支持。
 
-本插件在游戏模式下注册并监控缺失的 D-Bus 服务，在收到应用程序的请求时自动防止系统挂起。并在应用程序关闭或取消请求时恢复默认设置（调暗：5分钟，休眠：10分钟）
-
-### 兼容的软件
-- [x] VLC
-- [x] Chrome
-- [x] mpv (支持 Flathub 商店版，其余需要安装 [mpv_inhibit_gnome](https://github.com/Guldoman/mpv_inhibit_gnome))
-- [x] wiliwili
+---
+*本项目基于 [xfangfang/DeckyInhibitScreenSaver](https://github.com/xfangfang/DeckyInhibitScreenSaver) 进行重构与功能增强。*
