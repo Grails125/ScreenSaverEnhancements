@@ -32,6 +32,7 @@ const STYLES = {
     gap: '12px',
     flex: 1,
     boxSizing: 'border-box' as const,
+    margin: '0 12px', // 手动补偿边距，移除 Row 的横线
   },
   dashboardCardInactive: {
     background: 'linear-gradient(135deg, #37474f 0%, #263238 100%)',
@@ -43,6 +44,7 @@ const STYLES = {
     gap: '12px',
     flex: 1,
     boxSizing: 'border-box' as const,
+    margin: '0 12px', // 手动补偿边距
   },
   statusIcon: {
     fontSize: '2.4em',
@@ -176,9 +178,8 @@ const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
 
   return (
     <React.Fragment>
-      {/* 1. Status Dashboard - Now inside a Section for alignment */}
+      {/* 1. Status Dashboard - Outside Row to remove separator */}
       <PanelSection>
-        <PanelSectionRow>
           <div style={running ? STYLES.dashboardCard : STYLES.dashboardCardInactive}>
             <div style={STYLES.statusIcon}>
               <GiNightSleep />
@@ -191,18 +192,26 @@ const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
                 {running ? t('Inhibit') : t('UnInhibit')}
               </div>
             </div>
-            <ToggleField
-              label=""
-              onChange={async (checked) => {
-                setRunning(checked)
-                backendRunning = checked
-                await setSettings(RUN_ON_LOGIN, checked)
-                checked ? await startBackend() : await stopBackend() 
-              }}
-              checked={running}
-            />
+            {/* Custom styled Toggle to remove focus artifacts */}
+            <div style={{ 
+                background: 'transparent', 
+                border: 'none', 
+                boxShadow: 'none',
+                display: 'flex',
+                alignItems: 'center'
+            }}>
+              <ToggleField
+                label=""
+                onChange={async (checked) => {
+                  setRunning(checked)
+                  backendRunning = checked
+                  await setSettings(RUN_ON_LOGIN, checked)
+                  checked ? await startBackend() : await stopBackend() 
+                }}
+                checked={running}
+              />
+            </div>
           </div>
-        </PanelSectionRow>
       </PanelSection>
 
       <PanelSection>
