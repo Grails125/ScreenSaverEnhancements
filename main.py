@@ -25,6 +25,7 @@ settings = SettingsManager(name="settings", settings_directory=settings_dir)
 event_queue = queue.Queue()
 decky_plugin.logger.info(f"Settings directory: {settings_dir}")
 
+import asyncio
 from dbus_next.aio import MessageBus
 from dbus_next import Message, MessageType
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
@@ -139,32 +140,178 @@ async def start_dbus():
     except Exception as e:
         decky_plugin.logger.info(f"error: {e}")
 
+import os
+import shlex
 import subprocess
 
+
+def normalize_process_name(value):
+    value = (value or "").strip()
+    if not value:
+        return ""
+    value = value.strip("\"'")
+    return os.path.basename(value).lower()
+
+
+def split_process_args(args):
+    if not args:
+        return []
+    try:
+        return shlex.split(args)
+    except ValueError:
+        return args.split()
+
+
+def process_candidates(comm, args):
+    candidates = []
+
+    def add(value):
+        normalized = normalize_process_name(value)
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+
+    add(comm)
+    for token in split_process_args(args):
+        add(token)
+
+    return candidates
+
+
+def display_process_name(comm, args):
+    comm_name = normalize_process_name(comm)
+    tokens = split_process_args(args)
+
+    if comm_name == "flatpak":
+        for index, token in enumerate(tokens):
+            if token == "run":
+                for app_id in tokens[index + 1:]:
+                    if not app_id.startswith("-"):
+                        return app_id
+
+    if tokens:
+        executable = normalize_process_name(tokens[0])
+        if executable and comm_name and len(comm_name) >= 15 and executable.startswith(comm_name):
+            return executable
+
+    return comm.strip()
+
+
+def is_decky_music_name(name):
+    return normalize_process_name(name) == "deckymusic"
+
 class Plugin:
-    async def _main(self):
-        decky_plugin.logger.info("Plugin _main called")
+    def _init_runtime_state(self):
         if not hasattr(self, 'manual_active'):
             self.manual_active = False
+        if not hasattr(self, 'manual_running_app'):
+            self.manual_running_app = None
+        if not hasattr(self, 'manual_watch_task'):
+            self.manual_watch_task = None
+        if not hasattr(self, 'manual_inhibit_process'):
+            self.manual_inhibit_process = None
 
     def _is_process_running(self, name):
         try:
             # 使用与获取列表相同的 ps 命令确保匹配一致性
-            res = subprocess.run(['ps', '-eo', 'comm', '--no-headers'], capture_output=True, text=True)
+            res = subprocess.run(['ps', '-eo', 'comm=,args='], capture_output=True, text=True)
             if res.returncode == 0:
-                running_names = [line.strip() for line in res.stdout.splitlines()]
-                return name in running_names
+                target = normalize_process_name(name)
+                for line in res.stdout.splitlines():
+                    parts = line.split(None, 1)
+                    if not parts:
+                        continue
+                    comm = parts[0]
+                    args = parts[1] if len(parts) > 1 else ""
+                    if target in process_candidates(comm, args):
+                        return True
             return False
         except Exception as e:
             decky_plugin.logger.error(f"Error checking process {name}: {e}")
             return False
 
+    def _find_running_manual_app(self, manual_apps):
+        for app in manual_apps:
+            if is_decky_music_name(app):
+                continue
+            if Plugin._is_process_running(self, app):
+                return app
+        return None
+
+    def _start_manual_inhibitor(self, app):
+        return
+
+    def _stop_manual_inhibitor(self):
+        self.manual_inhibit_process = None
+
+    def _set_manual_active(self, running_app, emit_events=True):
+        manual_active = running_app is not None
+        changed = manual_active != self.manual_active or running_app != self.manual_running_app
+
+        if manual_active:
+            Plugin._start_manual_inhibitor(self, running_app)
+        else:
+            Plugin._stop_manual_inhibitor(self)
+
+        if changed:
+            if manual_active:
+                decky_plugin.logger.info(f"Manual Inhibit triggered by process: {running_app}")
+                if emit_events:
+                    event_queue.put({"type": "Inhibit"})
+            else:
+                decky_plugin.logger.info("Manual UnInhibit: no monitored processes running")
+                if emit_events and len(BaseInterface.request_map) == 0:
+                    event_queue.put({"type": "UnInhibit"})
+
+        self.manual_active = manual_active
+        self.manual_running_app = running_app
+
+    async def _manual_watch_loop(self):
+        decky_plugin.logger.info("Manual process watcher started")
+        while True:
+            try:
+                manual_apps = settings.getSetting("manual_apps", [])
+                running_app = Plugin._find_running_manual_app(self, manual_apps)
+                Plugin._set_manual_active(self, running_app)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                decky_plugin.logger.error(f"Error in manual process watcher: {e}")
+            await asyncio.sleep(5)
+
+    def _start_manual_watch(self):
+        Plugin._init_runtime_state(self)
+        if self.manual_watch_task and not self.manual_watch_task.done():
+            return
+        try:
+            self.manual_watch_task = asyncio.create_task(Plugin._manual_watch_loop(self))
+        except Exception as e:
+            decky_plugin.logger.error(f"Error starting manual process watcher: {e}")
+
+    async def _stop_manual_watch(self):
+        Plugin._init_runtime_state(self)
+        task = self.manual_watch_task
+        self.manual_watch_task = None
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                decky_plugin.logger.error(f"Error stopping manual process watcher: {e}")
+        Plugin._stop_manual_inhibitor(self)
+        self.manual_active = False
+        self.manual_running_app = None
+
     async def start_backend(self):
         decky_plugin.logger.info("Start backend server")
+        Plugin._init_runtime_state(self)
         await start_dbus()
+        Plugin._start_manual_watch(self)
 
     async def stop_backend(self):
         decky_plugin.logger.info("Stop backend server")
+        await Plugin._stop_manual_watch(self)
         await stop_dbus()
         event_queue.queue.clear()
 
@@ -175,18 +322,18 @@ class Plugin:
     async def get_running_processes(self):
         try:
             # 获取进程名和所属用户
-            res = subprocess.run(['ps', '-eo', 'comm,user', '--no-headers'], capture_output=True, text=True)
+            res = subprocess.run(['ps', '-eo', 'comm=,user=,args='], capture_output=True, text=True)
             if res.returncode == 0:
                 lines = res.stdout.splitlines()
                 proc_map = {}
                 for line in lines:
-                    parts = line.split()
+                    parts = line.split(None, 2)
                     if len(parts) >= 2:
-                        name, user = parts[0], parts[1]
+                        comm, user = parts[0], parts[1]
+                        args = parts[2] if len(parts) > 2 else ""
+                        name = display_process_name(comm, args)
                         if name and not name.startswith('['):
-                            # deck 用户启动的通常是应用，root 是系统进程
                             proc_type = "app" if user == "deck" else "system"
-                            # 如果同一个进程名既有 app 又有 system，优先标记为 app
                             if name not in proc_map or proc_type == "app":
                                 proc_map[name] = proc_type
                 
@@ -203,8 +350,7 @@ class Plugin:
             return []
 
     async def get_event(self):
-        if not hasattr(self, 'manual_active'):
-            self.manual_active = False
+        Plugin._init_runtime_state(self)
         global bus
         if bus is None:
             return []
@@ -228,35 +374,29 @@ class Plugin:
             res.append({"type": "UnInhibit"})
 
         # manual apps check
-        manual_apps = await self.get_settings("manual_apps", [])
-        manual_active = False
-        running_app = None
-        for app in manual_apps:
-            if self._is_process_running(app):
-                manual_active = True
-                running_app = app
+        manual_apps = await Plugin.get_settings(self, "manual_apps", [])
+        running_app = Plugin._find_running_manual_app(self, manual_apps)
+        previous_queue_size = event_queue.qsize()
+        Plugin._set_manual_active(self, running_app)
+        while event_queue.qsize() > previous_queue_size:
+            try:
+                res.append(event_queue.get_nowait())
+            except queue.Empty:
                 break
-        
-        if manual_active and not self.manual_active:
-            decky_plugin.logger.info(f"Manual Inhibit triggered by process: {running_app}")
-            res.append({"type": "Inhibit"})
-        elif not manual_active and self.manual_active:
-            decky_plugin.logger.info("Manual UnInhibit: no monitored processes running")
-            if not dbus_active:
-                res.append({"type": "UnInhibit"})
-        
-        self.manual_active = manual_active
+        manual_active = self.manual_active
         
         if len(res) > 0:
             # filter UnInhibit if anything is still active
             if manual_active or dbus_active:
                 res = [e for e in res if e['type'] != 'UnInhibit']
+            decky_plugin.logger.info(f"get_event returning events: {res}")
             return res
         
         return []
 
     async def get_settings(self, key: str, defaults):
-        decky_plugin.logger.info('[settings] get {}'.format(key))
+        if key != "manual_apps":
+            decky_plugin.logger.info('[settings] get {}'.format(key))
         return settings.getSetting(key, defaults)
 
     async def set_settings(self, key: str, value):
@@ -265,9 +405,13 @@ class Plugin:
 
     async def _main(self):
         decky_plugin.logger.info("Hello World!")
+        Plugin._init_runtime_state(self)
+        if settings.getSetting("run_on_login", True):
+            await Plugin.start_backend(self)
 
     async def _unload(self):
         decky_plugin.logger.info("Goodnight World!")
+        await Plugin._stop_manual_watch(self)
         await stop_dbus()
 
     async def _uninstall(self):

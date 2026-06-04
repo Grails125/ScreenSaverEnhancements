@@ -7,7 +7,6 @@ import {
   findModuleChild,
   Module,
   staticClasses,
-  ButtonItem,
   Focusable,
 } from "decky-frontend-lib";
 import React, { VFC } from "react";
@@ -112,6 +111,7 @@ const SystemSleep = findModule("InitiateSleep")
 
 const RUN_ON_LOGIN = "run_on_login"
 const SHOW_NOTIFY  = "show_notify"
+const DECKY_MUSIC_APP = "DeckyMusic"
 
 const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
   const [running, setRunning] = useState<boolean>(backendRunning);
@@ -473,6 +473,65 @@ export default definePlugin((serverApi: ServerAPI) => {
     return await serverApi.callPluginMethod<any, any>("start_backend", {});
   }
 
+  const isDeckyMusicEnabled = (apps: string[]) => {
+    return apps.some(app => app.toLowerCase() === DECKY_MUSIC_APP.toLowerCase());
+  }
+
+  const activeAudioElements = new Set<HTMLMediaElement>();
+
+  const installAudioTracker = () => {
+    const trackerKey = "__screensaverEnhancementsAudioTracker";
+    const existingTracker = (window as any)[trackerKey];
+    if (existingTracker) {
+      return existingTracker as Set<HTMLMediaElement>;
+    }
+
+    const tracked = activeAudioElements;
+    const originalPlay = HTMLMediaElement.prototype.play;
+    const originalPause = HTMLMediaElement.prototype.pause;
+
+    const markInactive = (audio: HTMLMediaElement) => {
+      tracked.delete(audio);
+    };
+
+    const markActive = (audio: HTMLMediaElement) => {
+      tracked.add(audio);
+      audio.addEventListener("pause", () => markInactive(audio), { once: true });
+      audio.addEventListener("ended", () => markInactive(audio), { once: true });
+    };
+
+    HTMLMediaElement.prototype.play = function() {
+      const result = originalPlay.apply(this);
+      if (result && typeof result.then === "function") {
+        result.then(() => markActive(this)).catch(() => markInactive(this));
+      } else {
+        markActive(this);
+      }
+      return result;
+    };
+
+    HTMLMediaElement.prototype.pause = function() {
+      markInactive(this);
+      return originalPause.apply(this);
+    };
+
+    (window as any)[trackerKey] = tracked;
+    return tracked;
+  }
+
+  const trackedAudioElements = installAudioTracker();
+
+  const isAnyAudioPlaying = () => {
+    const trackedAudioPlaying = Array.from(trackedAudioElements).some((audio) => {
+      return audio.src && !audio.paused && !audio.ended && audio.readyState > HTMLMediaElement.HAVE_NOTHING;
+    });
+    if (trackedAudioPlaying) return true;
+
+    return Array.from(document.querySelectorAll("audio")).some((audio) => {
+      return audio.src && !audio.paused && !audio.ended && audio.readyState > HTMLMediaElement.HAVE_NOTHING;
+    });
+  }
+
   let timeout:NodeJS.Timeout;
   const notify = (title: string, body: string) => {
     if (!showNotify) return
@@ -488,38 +547,70 @@ export default definePlugin((serverApi: ServerAPI) => {
     }, 2000)
   }
 
-  let interval = setInterval(async () => {
+  const startInhibit = async () => {
+    notify(t("ScreenSaver"), t("Inhibit"))
+    clearSuspendTimeout()
+    await updateSetting(0, 0, 0, 0);
+  }
+
+  const stopInhibit = async () => {
+    notify(t("ScreenSaver"), t("UnInhibit"))
+    await updateSetting(300, 300, 600, 600);
+    clearSuspendTimeout()
+    input_changed = false
+    forced_suspend = setTimeout(() => {
+      forced_suspend_tip = setTimeout(()=>{
+        SystemSleep.InitiateSleep()
+      }, 5_000)
+      serverApi.toaster.toast({
+        title: t("suspend_tip_title"),
+        body: t("suspend_tip_body"),
+        critical: true,
+        duration: 5_000,
+        playSound: false,
+        icon: <GiNightSleep />,
+      });
+    }, 450_000)
+  }
+
+  let backendInhibiting = false;
+  let deckyMusicInhibiting = false;
+  let deckyMusicEnabled = false;
+  let deckyMusicSettingsLastChecked = 0;
+
+  setInterval(async () => {
+    const now = Date.now();
+    if (now - deckyMusicSettingsLastChecked > 5000) {
+      deckyMusicSettingsLastChecked = now;
+      const manualApps = await getSettings("manual_apps", []);
+      if (manualApps.success && Array.isArray(manualApps.result)) {
+        deckyMusicEnabled = isDeckyMusicEnabled(manualApps.result);
+      }
+    }
+
+    const deckyMusicPlaying = deckyMusicEnabled && isAnyAudioPlaying();
+    if (deckyMusicPlaying && !deckyMusicInhibiting) {
+      deckyMusicInhibiting = true;
+      await startInhibit();
+    } else if (!deckyMusicPlaying && deckyMusicInhibiting) {
+      deckyMusicInhibiting = false;
+      if (!backendInhibiting) {
+        await stopInhibit();
+      }
+    }
+
     let data = await getEvent();
     if(!data.success) return;
     let event = data.result;
     for (let e of event) {
       if (e.type == 'Inhibit') {
-        notify(t("ScreenSaver"), t("Inhibit"))
-        clearSuspendTimeout()
-        await updateSetting(0, 0, 0, 0);
+        backendInhibiting = true;
+        await startInhibit();
       } else if (e.type == 'UnInhibit') {
-        notify(t("ScreenSaver"), t("UnInhibit"))
-        await updateSetting(300, 300, 600, 600);
-        // 1. there is no operation for a long period of time (like 15 minutes)
-        // 2. the application automatically uninhibit screensaver
-        // 3. there is no operation after uninhibit screensaver
-        // When these three things happen in sequence, the system will continue to not suspend, even if the time we set has already been reached.
-        // In this case, we use a custom timer to suspend system as the workaround.
-        clearSuspendTimeout()
-        input_changed = false
-        forced_suspend = setTimeout(() => {
-          forced_suspend_tip = setTimeout(()=>{
-            SystemSleep.InitiateSleep()
-          }, 5_000)
-          serverApi.toaster.toast({
-            title: t("suspend_tip_title"),
-            body: t("suspend_tip_body"),
-            critical: true,
-            duration: 5_000,
-            playSound: false,
-            icon: <GiNightSleep />,
-          });
-        }, 450_000)
+        backendInhibiting = false;
+        if (!deckyMusicInhibiting) {
+          await stopInhibit();
+        }
       }
     }
   }, 1000)
@@ -542,12 +633,7 @@ export default definePlugin((serverApi: ServerAPI) => {
     content: <Content serverApi={serverApi} />,
     icon: <GiNightSleep />,
     onDismount() {
-      if (interval) clearInterval(interval);
-      if (controllerHandle) controllerHandle.unregister()
-      if (suspendHandle) suspendHandle.unregister()
-      setTimeout(async () => {
-        await updateSetting(300, 300, 600, 600);
-      }, 0);
+      clearSuspendTimeout()
     },
   };
 });

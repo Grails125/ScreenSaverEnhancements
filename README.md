@@ -2,30 +2,50 @@
 
 [中文说明](./README_ZH.md)
 
-An advanced plugin for **Decky Loader** (Steam Deck's plugin loader) designed to prevent the Steam Deck from automatically dimming or suspending the screen during video playback, web browsing, or while running specific applications.
+ScreenSaver Enhancements is a Decky Loader plugin for Steam Deck. It keeps the screen awake while supported media apps request inhibition through D-Bus, or while user-selected processes are running.
 
-### 🌟 Key Features
-- **Automatic Inhibition**: Fully supports standard D-Bus inhibit requests (used by VLC, Chrome, mpv, wiliwili, etc.).
-- **Manual Enhancement Mode**: Real-time scanning of running processes, allowing you to add any application to the "Inhibit List" with one click.
-- **Premium UI**: Deeply integrated with the Steam Deck native design language, featuring clear status cards and intuitive panels.
-- **Process Intelligence**: Automatically maps process names to readable titles and distinguishes between system and user applications.
-- **Background Service**: Supports running on login to silently manage your screen-on requirements.
+This project is based on [xfangfang/DeckyInhibitScreenSaver](https://github.com/xfangfang/DeckyInhibitScreenSaver) and adds manual process monitoring plus a richer management panel.
 
-### 🚀 How to Install
-1. Ensure [Decky Loader](https://decky.xyz) is installed.
-2. Download the latest `ScreenSaverEnhancements.zip` from [Releases](https://github.com/Grails125/ScreenSaverEnhancements/releases).
-3. Extract and place the `ScreenSaverEnhancements` folder into `/home/deck/homebrew/plugins/`.
-4. Restart Steam or reload the plugin via the Decky menu.
+## Features
 
-### 🛠️ How it Works
-In SteamOS Game Mode, the system defaults to dimming or suspending after a few minutes of inactivity.
-- **Auto Mode**: The plugin monitors D-Bus services and automatically adjusts system settings upon receiving an "Inhibit" request from an app.
-- **Manual Mode**: The plugin periodically checks if your manually added processes are running. As long as a matched process is active, the screen remains on. Default settings (Dim: 5m, Suspend: 10m) are restored once the process exits.
+- **D-Bus inhibit support**: Compatible with apps that use standard inhibit APIs, such as VLC, Chrome, mpv, and wiliwili.
+- **Manual process monitoring**: Add running processes to an inhibit list and keep the screen awake while they exist.
+- **Robust process matching**: Matches short command names, full command arguments, long executable names, and Flatpak app IDs.
+- **Backend watcher**: Manual process checks run in the plugin backend, so they do not depend on the Decky panel staying open.
+- **DeckyMusic special handling**: DeckyMusic is not inhibited merely because its plugin process is running. If enabled in the inhibit list, it is handled by frontend audio playback detection.
+- **Run on login**: Automatically starts the background monitor when Decky Loader starts.
 
-### 📝 Compatibility
-- **Browsers**: Chrome, Firefox, Edge, etc.
-- **Media Players**: VLC, mpv, Kodi, Wiliwili, etc.
-- **Any Process**: Any running software visible in the process list can be supported via manual mode.
+## Install
 
----
-*This project is a refactored and enhanced version of [xfangfang/DeckyInhibitScreenSaver](https://github.com/xfangfang/DeckyInhibitScreenSaver).*
+1. Install [Decky Loader](https://decky.xyz).
+2. Build or download `ScreenSaverEnhancements.zip`.
+3. Extract the `ScreenSaverEnhancements` folder into:
+   `/home/deck/homebrew/plugins/`
+4. Restart Steam or reload Decky Loader.
+
+## How It Works
+
+The plugin uses two paths:
+
+- **Automatic mode** registers the same D-Bus services as the original project. Apps that call `Inhibit` produce events, and the frontend applies SteamOS idle/suspend settings to keep the screen awake.
+- **Manual mode** periodically scans running processes from the backend. When a configured process is found, the backend emits an `Inhibit` event through the same event path used by automatic mode.
+
+When no automatic or manual inhibitor is active, the plugin restores the default settings:
+
+- dim: 5 minutes
+- suspend: 10 minutes
+
+## DeckyMusic
+
+DeckyMusic is a long-running plugin process, so process-based monitoring would keep the screen awake even while music is paused. This plugin skips DeckyMusic in backend process matching.
+
+If `DeckyMusic` is in the inhibit list, the frontend watches real HTML media playback state instead. It only inhibits while audio is actually playing.
+
+## Development
+
+```powershell
+npm.cmd install
+python build.py
+```
+
+Build output is written to `build/ScreenSaverEnhancements` and `build/ScreenSaverEnhancements.zip`.

@@ -42,6 +42,8 @@ __pycache__/
 yalc.lock
 
 .vscode/settings.json
+.codegraph/
+.codex_tmp/
 
 # Ignore output folder
 
