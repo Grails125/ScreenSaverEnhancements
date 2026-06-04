@@ -3,6 +3,13 @@ import shutil
 import json
 import subprocess
 
+def ignore_build_artifacts(_dir, names):
+    ignored = []
+    for name in names:
+        if name == "__pycache__" or name.endswith((".pyc", ".pyo")):
+            ignored.append(name)
+    return ignored
+
 def build():
     plugin_name = "ScreenSaverEnhancements"
     build_dir = "build"
@@ -27,6 +34,7 @@ def build():
     files_to_copy = [
         "main.py",
         "plugin.json",
+        "package.json",
         "decky_plugin.pyi",
         "README_ZH.md",
         "README.md",
@@ -47,7 +55,7 @@ def build():
             d = os.path.join(out_dir, item)
             if os.path.isdir(s):
                 if os.path.exists(d): shutil.rmtree(d)
-                shutil.copytree(s, d)
+                shutil.copytree(s, d, ignore=ignore_build_artifacts)
             else:
                 shutil.copy2(s, d)
 
@@ -66,7 +74,7 @@ def build():
                 shutil.copy(os.path.join(d, "index.js"), dest)
             else:
                 if os.path.exists(dest): shutil.rmtree(dest)
-                shutil.copytree(d, dest)
+                shutil.copytree(d, dest, ignore=ignore_build_artifacts)
 
     # 7. Zip the result
     print(f"Creating zip...")
