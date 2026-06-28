@@ -276,7 +276,8 @@ class Plugin:
                 raise
             except Exception as e:
                 decky_plugin.logger.error(f"Error in manual process watcher: {e}")
-            await asyncio.sleep(5)
+            sleep_interval = 10 if not self.manual_active else 5
+            await asyncio.sleep(sleep_interval)
 
     def _start_manual_watch(self):
         Plugin._init_runtime_state(self)
@@ -360,38 +361,30 @@ class Plugin:
                 res.append(event_queue.get_nowait())
             except queue.Empty:
                 continue
-        # check closed dbus connection
+        # check closed dbus connection (only when there are active cookies)
         cookies = list(BaseInterface.request_map.keys())
         clear = False
-        for c in cookies:
-            connected = await BaseInterface.request_map[c].is_connected()
-            if not connected:
-                BaseInterface.request_map.pop(c)
-                clear = True
-        
+        if cookies:
+            for c in cookies:
+                connected = await BaseInterface.request_map[c].is_connected()
+                if not connected:
+                    BaseInterface.request_map.pop(c)
+                    clear = True
+
         dbus_active = len(BaseInterface.request_map) > 0
         if clear and not dbus_active:
             res.append({"type": "UnInhibit"})
 
-        # manual apps check
-        manual_apps = await Plugin.get_settings(self, "manual_apps", [])
-        running_app = Plugin._find_running_manual_app(self, manual_apps)
-        previous_queue_size = event_queue.qsize()
-        Plugin._set_manual_active(self, running_app)
-        while event_queue.qsize() > previous_queue_size:
-            try:
-                res.append(event_queue.get_nowait())
-            except queue.Empty:
-                break
+        # manual apps state is managed by _manual_watch_loop, just read current state
         manual_active = self.manual_active
-        
+
         if len(res) > 0:
             # filter UnInhibit if anything is still active
             if manual_active or dbus_active:
                 res = [e for e in res if e['type'] != 'UnInhibit']
             decky_plugin.logger.info(f"get_event returning events: {res}")
             return res
-        
+
         return []
 
     async def get_settings(self, key: str, defaults):

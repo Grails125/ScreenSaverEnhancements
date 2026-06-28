@@ -155,7 +155,7 @@ const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
     };
     fetchManualApps();
     fetchRunningProcesses();
-    const interval = setInterval(fetchRunningProcesses, 10000); // 10秒刷新一次
+    const interval = setInterval(fetchRunningProcesses, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -490,28 +490,23 @@ export default definePlugin((serverApi: ServerAPI) => {
     const originalPlay = HTMLMediaElement.prototype.play;
     const originalPause = HTMLMediaElement.prototype.pause;
 
-    const markInactive = (audio: HTMLMediaElement) => {
-      tracked.delete(audio);
+    const handlePause = function(this: HTMLMediaElement) {
+      tracked.delete(this);
     };
 
-    const markActive = (audio: HTMLMediaElement) => {
-      tracked.add(audio);
-      audio.addEventListener("pause", () => markInactive(audio), { once: true });
-      audio.addEventListener("ended", () => markInactive(audio), { once: true });
+    const handleEnded = function(this: HTMLMediaElement) {
+      tracked.delete(this);
     };
 
     HTMLMediaElement.prototype.play = function() {
-      const result = originalPlay.apply(this);
-      if (result && typeof result.then === "function") {
-        result.then(() => markActive(this)).catch(() => markInactive(this));
-      } else {
-        markActive(this);
-      }
-      return result;
+      tracked.add(this);
+      this.addEventListener("pause", handlePause, { once: true });
+      this.addEventListener("ended", handleEnded, { once: true });
+      return originalPlay.apply(this);
     };
 
     HTMLMediaElement.prototype.pause = function() {
-      markInactive(this);
+      tracked.delete(this);
       return originalPause.apply(this);
     };
 
@@ -522,14 +517,15 @@ export default definePlugin((serverApi: ServerAPI) => {
   const trackedAudioElements = installAudioTracker();
 
   const isAnyAudioPlaying = () => {
-    const trackedAudioPlaying = Array.from(trackedAudioElements).some((audio) => {
-      return audio.src && !audio.paused && !audio.ended && audio.readyState > HTMLMediaElement.HAVE_NOTHING;
-    });
-    if (trackedAudioPlaying) return true;
+    if (trackedAudioElements.size === 0) return false;
 
-    return Array.from(document.querySelectorAll("audio")).some((audio) => {
-      return audio.src && !audio.paused && !audio.ended && audio.readyState > HTMLMediaElement.HAVE_NOTHING;
-    });
+    for (const audio of trackedAudioElements) {
+      if (audio.src && !audio.paused && !audio.ended && audio.readyState > HTMLMediaElement.HAVE_NOTHING) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   let timeout:NodeJS.Timeout;
@@ -580,7 +576,7 @@ export default definePlugin((serverApi: ServerAPI) => {
 
   setInterval(async () => {
     const now = Date.now();
-    if (now - deckyMusicSettingsLastChecked > 5000) {
+    if (now - deckyMusicSettingsLastChecked > 30000) {
       deckyMusicSettingsLastChecked = now;
       const manualApps = await getSettings("manual_apps", []);
       if (manualApps.success && Array.isArray(manualApps.result)) {
@@ -613,7 +609,7 @@ export default definePlugin((serverApi: ServerAPI) => {
         }
       }
     }
-  }, 1000)
+  }, 3000)
 
   setTimeout(async () => {
     let notify = await getSettings(SHOW_NOTIFY, false)
