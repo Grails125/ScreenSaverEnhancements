@@ -220,7 +220,7 @@ class Plugin:
         return []
 
     def _is_process_running(self, name):
-        lines = self._get_all_process_lines()
+        lines = Plugin._get_all_process_lines(self)
         target = normalize_process_name(name)
         for line in lines:
             parts = line.split(None, 1)
@@ -236,7 +236,7 @@ class Plugin:
         apps_to_check = [app for app in manual_apps if not is_decky_music_name(app)]
         if not apps_to_check:
             return None
-        lines = self._get_all_process_lines()
+        lines = Plugin._get_all_process_lines(self)
         # Build candidate sets once for all running processes
         proc_candidates_list = []
         for line in lines:
