@@ -10,7 +10,7 @@ import {
   Focusable,
 } from "decky-frontend-lib";
 import React, { VFC } from "react";
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { GiNightSleep } from "react-icons/gi";
 import i18n from './i18n'
 
@@ -131,8 +131,10 @@ const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
   const [manualApps, setManualApps] = useState<string[]>([]);
   const [runningProcesses, setRunningProcesses] = useState<{name: string, type: string}[]>([]);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const panelVisible = useRef(true);
 
   const fetchRunningProcesses = async () => {
+    if (!panelVisible.current) return;
     setRefreshing(true);
     const res = await serverApi.callPluginMethod<any, any>("get_running_processes", {});
     if (res.success) {
@@ -142,6 +144,7 @@ const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
   }
 
   useEffect(() => {
+    panelVisible.current = true;
     const fetchManualApps = async () => {
       const res = await getSettings("manual_apps", []);
       if (res.success && res.result && res.result.length > 0) {
@@ -156,7 +159,10 @@ const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
     fetchManualApps();
     fetchRunningProcesses();
     const interval = setInterval(fetchRunningProcesses, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      panelVisible.current = false;
+      clearInterval(interval);
+    };
   }, []);
 
   const getSettings = async (key: string, defaults: any) => {

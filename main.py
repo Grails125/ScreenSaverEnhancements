@@ -210,31 +210,47 @@ class Plugin:
         if not hasattr(self, 'manual_inhibit_process'):
             self.manual_inhibit_process = None
 
-    def _is_process_running(self, name):
+    def _get_all_process_lines(self):
         try:
-            # 使用与获取列表相同的 ps 命令确保匹配一致性
             res = subprocess.run(['ps', '-eo', 'comm=,args='], capture_output=True, text=True)
             if res.returncode == 0:
-                target = normalize_process_name(name)
-                for line in res.stdout.splitlines():
-                    parts = line.split(None, 1)
-                    if not parts:
-                        continue
-                    comm = parts[0]
-                    args = parts[1] if len(parts) > 1 else ""
-                    if target in process_candidates(comm, args):
-                        return True
-            return False
+                return res.stdout.splitlines()
         except Exception as e:
-            decky_plugin.logger.error(f"Error checking process {name}: {e}")
-            return False
+            decky_plugin.logger.error(f"Error getting process list: {e}")
+        return []
+
+    def _is_process_running(self, name):
+        lines = self._get_all_process_lines()
+        target = normalize_process_name(name)
+        for line in lines:
+            parts = line.split(None, 1)
+            if not parts:
+                continue
+            comm = parts[0]
+            args = parts[1] if len(parts) > 1 else ""
+            if target in process_candidates(comm, args):
+                return True
+        return False
 
     def _find_running_manual_app(self, manual_apps):
-        for app in manual_apps:
-            if is_decky_music_name(app):
+        apps_to_check = [app for app in manual_apps if not is_decky_music_name(app)]
+        if not apps_to_check:
+            return None
+        lines = self._get_all_process_lines()
+        # Build candidate sets once for all running processes
+        proc_candidates_list = []
+        for line in lines:
+            parts = line.split(None, 1)
+            if not parts:
                 continue
-            if Plugin._is_process_running(self, app):
-                return app
+            comm = parts[0]
+            args = parts[1] if len(parts) > 1 else ""
+            proc_candidates_list.append(set(process_candidates(comm, args)))
+        for app in apps_to_check:
+            target = normalize_process_name(app)
+            for proc_set in proc_candidates_list:
+                if target in proc_set:
+                    return app
         return None
 
     def _start_manual_inhibitor(self, app):
@@ -276,7 +292,7 @@ class Plugin:
                 raise
             except Exception as e:
                 decky_plugin.logger.error(f"Error in manual process watcher: {e}")
-            sleep_interval = 10 if not self.manual_active else 5
+            sleep_interval = 30 if not self.manual_active else 5
             await asyncio.sleep(sleep_interval)
 
     def _start_manual_watch(self):
