@@ -336,6 +336,42 @@ class Plugin:
         global bus
         return bus is not None
 
+    async def read_system_timeouts(self):
+        """Read current system idle/suspend timeout values"""
+        result = {"dim": 300, "suspend": 600}
+        try:
+            # Try to read from GNOME settings (used by Gamescope on Steam Deck)
+            res = subprocess.run(
+                ['gsettings', 'get', 'org.gnome.desktop.session', 'idle-delay'],
+                capture_output=True, text=True, timeout=5
+            )
+            if res.returncode == 0:
+                # Output is like "uint32 300"
+                val = res.stdout.strip().replace('uint32 ', '')
+                if val.isdigit():
+                    result["dim"] = int(val)
+        except Exception as e:
+            decky_plugin.logger.info(f"Could not read dim timeout: {e}")
+
+        try:
+            # Try to read suspend timeout from systemd
+            res = subprocess.run(
+                ['grep', '-r', 'IdleDelaySec', '/etc/systemd/'],
+                capture_output=True, text=True, timeout=5
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                # Parse the value
+                for line in res.stdout.splitlines():
+                    if 'IdleDelaySec=' in line:
+                        val = line.split('IdleDelaySec=')[1].strip()
+                        if val.isdigit():
+                            result["suspend"] = int(val)
+                            break
+        except Exception as e:
+            decky_plugin.logger.info(f"Could not read suspend timeout: {e}")
+
+        return result
+
     async def get_running_processes(self):
         try:
             # 获取进程名和所属用户

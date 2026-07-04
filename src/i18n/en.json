@@ -15,5 +15,10 @@
     "manual_tip": "If some software doesn't send D-Bus requests, you can click on a process name in the list below to add it to the inhibit list.",
     "Inhibit List": "Current Inhibit List",
     "Running Processes": "Running Processes",
-    "Click to add": "Click to add"
+    "Click to add": "Click to add",
+    "Timeout Settings": "Timeout Settings",
+    "Dim Timeout": "Dim Timeout",
+    "Suspend Timeout": "Suspend Timeout",
+    "sec": "sec",
+    "timeout_tip": "Timeout values are read from system. Changes will be saved and applied when uninhibit."
 }
