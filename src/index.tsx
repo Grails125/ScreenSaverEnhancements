@@ -872,8 +872,6 @@ export default definePlugin((serverApi: ServerAPI) => {
     return apps.some(app => app.toLowerCase() === DECKY_MUSIC_APP.toLowerCase());
   }
 
-  const activeAudioElements = new Set<HTMLMediaElement>();
-
   const installAudioTracker = () => {
     const trackerKey = "__screensaverEnhancementsAudioTracker";
     const existingTracker = (window as any)[trackerKey];
@@ -881,7 +879,7 @@ export default definePlugin((serverApi: ServerAPI) => {
       return existingTracker as Set<HTMLMediaElement>;
     }
 
-    const tracked = activeAudioElements;
+    const tracked = new Set<HTMLMediaElement>();
     const originalPlay = HTMLMediaElement.prototype.play;
     const originalPause = HTMLMediaElement.prototype.pause;
 
@@ -905,13 +903,30 @@ export default definePlugin((serverApi: ServerAPI) => {
       return originalPause.apply(this);
     };
 
+    document.querySelectorAll("audio,video").forEach((element) => {
+      const mediaElement = element as HTMLMediaElement;
+      if (!mediaElement.paused && !mediaElement.ended) {
+        tracked.add(mediaElement);
+        mediaElement.addEventListener("pause", handlePause, { once: true });
+        mediaElement.addEventListener("ended", handleEnded, { once: true });
+      }
+    });
+
     (window as any)[trackerKey] = tracked;
     return tracked;
   }
 
-  const trackedAudioElements = installAudioTracker();
+  let trackedAudioElements: Set<HTMLMediaElement> | null = null;
+
+  const ensureAudioTracker = () => {
+    if (!trackedAudioElements) {
+      trackedAudioElements = installAudioTracker();
+    }
+    return trackedAudioElements;
+  }
 
   const isAnyAudioPlaying = () => {
+    if (!trackedAudioElements) return false;
     if (trackedAudioElements.size === 0) return false;
 
     for (const audio of trackedAudioElements) {
@@ -980,6 +995,9 @@ export default definePlugin((serverApi: ServerAPI) => {
         deckyMusicSettingsLastChecked = now;
         const manualApps = await getPluginSetting(serverApi, "manual_apps", []);
         deckyMusicEnabled = isDeckyMusicEnabled(normalizeManualApps(manualApps));
+        if (deckyMusicEnabled) {
+          ensureAudioTracker();
+        }
       }
 
       const deckyMusicPlaying = deckyMusicEnabled && isAnyAudioPlaying();

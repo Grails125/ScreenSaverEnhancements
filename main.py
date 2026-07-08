@@ -291,15 +291,23 @@ class Plugin:
     async def _manual_watch_loop(self):
         decky_plugin.logger.info("Manual process watcher started")
         while True:
+            has_manual_process_rules = False
             try:
                 manual_apps = settings.getSetting("manual_apps", [])
+                has_manual_process_rules = any(
+                    not is_decky_music_name(app)
+                    for app in manual_apps
+                )
                 running_app = Plugin._find_running_manual_app(self, manual_apps)
                 Plugin._set_manual_active(self, running_app)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 decky_plugin.logger.error(f"Error in manual process watcher: {e}")
-            sleep_interval = 30 if not self.manual_active else 5
+            if not has_manual_process_rules:
+                sleep_interval = 60
+            else:
+                sleep_interval = 15 if self.manual_active else 30
             await asyncio.sleep(sleep_interval)
 
     def _start_manual_watch(self):
