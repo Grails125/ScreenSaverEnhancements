@@ -25,7 +25,8 @@ def build():
         
     # 2. Build frontend
     print("Building frontend...")
-    subprocess.run(["npm", "run", "build"], shell=True, check=True)
+    npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
+    subprocess.run([npm_cmd, "run", "build"], check=True)
     
     # 3. Create output directory
     os.makedirs(os.path.join(out_dir, "dist"), exist_ok=True)

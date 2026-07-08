@@ -1,8 +1,10 @@
 import {
   definePlugin,
   ToggleField,
+  SliderField,
   PanelSection,
   PanelSectionRow,
+  Navigation,
   ServerAPI,
   findModuleChild,
   Module,
@@ -13,50 +15,69 @@ import React, { VFC } from "react";
 import { useState, useEffect, useRef } from 'react'
 import { GiNightSleep } from "react-icons/gi";
 import i18n from './i18n'
+import { BlackOverlay, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, BLACK_BACKGROUND_ENABLED, BLACK_BACKGROUND_OPACITY } from './blackOverlay'
+import { QUICK_ACCESS_MENU } from './ButtonIcons'
+import { StateNumber } from './state'
 
 let backendRunning = false;
 let showNotify     = false;
 let language = i18n.getCurrentLanguage()
 const t = i18n.useTranslations(language)
 
-// Premium UI Styles
-const STYLES = {
-  dashboardCard: {
-    background: 'linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%)',
-    borderRadius: '8px',
-    padding: '12px 16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+const renderBlackBackgroundTip = () => (
+  <span>
+    {t('black_bg_tip_prefix')}{' '}
+    <QUICK_ACCESS_MENU style={{ height: "18px", width: "auto", marginBottom: "-5px" }} />
+    {' '}{t('black_bg_tip_suffix')}
+  </span>
+)
+
+const toScopedSelector = (className: string) => className
+  .split(' ')
+  .filter(Boolean)
+  .map(name => `.${name}`)
+  .join('')
+
+const PANEL_LAYOUT_CSS = `
+  .sse-panel-root ${toScopedSelector(staticClasses.PanelSection)} {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .sse-panel-root ${toScopedSelector(staticClasses.PanelSectionRow)} {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+`
+
+const PanelLayout: VFC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="sse-panel-root">
+    <style>{PANEL_LAYOUT_CSS}</style>
+    {children}
+  </div>
+)
+
+const PANEL_STYLES = {
+  panelAction: {
+    width: '30px',
+    height: '30px',
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    flex: 1,
-    boxSizing: 'border-box' as const,
-    margin: '0 12px', // 手动补偿边距，移除 Row 的横线
-  },
-  dashboardCardInactive: {
-    background: 'linear-gradient(135deg, #37474f 0%, #263238 100%)',
-    borderRadius: '8px',
-    padding: '12px 16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    flex: 1,
-    boxSizing: 'border-box' as const,
-    margin: '0 12px', // 手动补偿边距
-  },
-  statusIcon: {
-    fontSize: '2.4em',
-    color: 'rgba(255,255,255,0.9)',
-    filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+    justifyContent: 'center',
+    background: 'rgba(255,255,255,0.08)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: '4px',
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: '0.85em',
+    flexShrink: 0,
   },
   badge: (type: string) => ({
     fontSize: '0.65em',
-    padding: '2px 6px',
-    borderRadius: '10px',
-    background: type === 'app' ? 'rgba(93, 185, 255, 0.2)' : 'rgba(158, 158, 158, 0.2)',
-    color: type === 'app' ? '#5db9ff' : '#bbb',
-    border: `1px solid ${type === 'app' ? 'rgba(93, 185, 255, 0.3)' : 'rgba(158, 158, 158, 0.3)'}`,
+    padding: '3px 6px',
+    borderRadius: '999px',
+    background: type === 'app' ? 'rgba(125, 214, 160, 0.12)' : 'rgba(255,255,255,0.07)',
+    color: type === 'app' ? '#8ee0aa' : '#b8b8b8',
+    border: `1px solid ${type === 'app' ? 'rgba(125, 214, 160, 0.28)' : 'rgba(255,255,255,0.1)'}`,
     fontWeight: 'bold' as const,
     textTransform: 'uppercase' as const,
   }),
@@ -64,12 +85,77 @@ const STYLES = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: '10px',
     flex: 1,
-    padding: '8px 12px',
-    background: 'rgba(255,255,255,0.04)',
+    padding: '9px 10px',
+    background: 'rgba(255,255,255,0.035)',
+    border: '1px solid rgba(255,255,255,0.08)',
     borderRadius: '6px',
     boxSizing: 'border-box' as const,
     overflow: 'hidden' as const
+  },
+  emptyState: {
+    textAlign: 'center' as const,
+    color: '#8d8d8d',
+    padding: '12px',
+    fontSize: '0.82em',
+    lineHeight: 1.45,
+  },
+  sectionHint: {
+    fontSize: '0.78em',
+    color: '#8d8d8d',
+  },
+  menuItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '10px',
+    width: '100%',
+    padding: '4px 2px',
+    boxSizing: 'border-box' as const,
+  },
+  menuText: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '3px',
+    minWidth: 0,
+  },
+  menuTitle: {
+    color: '#f1f1f1',
+    fontSize: '0.94em',
+    fontWeight: 600,
+  },
+  menuDescription: {
+    color: '#8d8d8d',
+    fontSize: '0.75em',
+    lineHeight: 1.35,
+  },
+  backIcon: {
+    width: '30px',
+    height: '30px',
+    borderRadius: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(255,255,255,0.1)',
+    border: '1px solid rgba(255,255,255,0.18)',
+    color: '#fff',
+    fontSize: '1.35em',
+    fontWeight: 700,
+    lineHeight: 1,
+    flexShrink: 0,
+  },
+  chevron: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: '1.1em',
+    flexShrink: 0,
+  },
+  processName: {
+    color: '#f1f1f1',
+    fontSize: '0.9em',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
   }
 }
 
@@ -113,9 +199,16 @@ const RUN_ON_LOGIN = "run_on_login"
 const SHOW_NOTIFY  = "show_notify"
 const DECKY_MUSIC_APP = "DeckyMusic"
 
-const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
+const Content: VFC<{
+  serverApi: ServerAPI;
+  overlayState: StateNumber;
+  opacityState: StateNumber;
+}> = ({serverApi, overlayState, opacityState}) => {
   const [running, setRunning] = useState<boolean>(backendRunning);
   const [notify, setNotify] = useState<boolean>(showNotify);
+  const [blackBackground, setBlackBackground] = useState<boolean>(overlayState.GetState() === 1);
+  const [blackBackgroundOpacity, setBlackBackgroundOpacity] = useState<number>(opacityState.GetState());
+  const [closeOnAnyKey, setCloseOnAnyKey] = useState<boolean>(false);
 
   const startBackend = async () => {
     return await serverApi.callPluginMethod<any, any>("start_backend", {});
@@ -131,6 +224,7 @@ const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
   const [manualApps, setManualApps] = useState<string[]>([]);
   const [runningProcesses, setRunningProcesses] = useState<{name: string, type: string}[]>([]);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [showAppMenu, setShowAppMenu] = useState<boolean>(false);
   const panelVisible = useRef(true);
 
   const fetchRunningProcesses = async () => {
@@ -159,11 +253,45 @@ const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
     fetchManualApps();
     fetchRunningProcesses();
     const interval = setInterval(fetchRunningProcesses, 30000);
+
+    const loadBlackBackgroundSettings = async () => {
+      const [enabledRes, opacityRes, closeOnAnyKeyRes] = await Promise.all([
+        getSettings(BLACK_BACKGROUND_ENABLED, false),
+        getSettings(BLACK_BACKGROUND_OPACITY, 1),
+        getSettings(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false),
+      ]);
+      if (enabledRes.success) {
+        const enabled = enabledRes.result === true || enabledRes.result === "true";
+        setBlackBackground(enabled);
+        overlayState.SetState(enabled ? 1 : 0);
+      }
+      if (opacityRes.success) {
+        const opacity = Math.min(1, Math.max(0, Number(opacityRes.result)));
+        setBlackBackgroundOpacity(Number.isNaN(opacity) ? 1 : opacity);
+        opacityState.SetState(Number.isNaN(opacity) ? 1 : opacity);
+      }
+      if (closeOnAnyKeyRes.success) {
+        setCloseOnAnyKey(closeOnAnyKeyRes.result === true || closeOnAnyKeyRes.result === "true");
+      }
+    };
+    loadBlackBackgroundSettings();
+
+    const onOverlayChanged = (mode: number) => {
+      setBlackBackground(mode === 1);
+    };
+    const onOpacityChanged = (value: number) => {
+      setBlackBackgroundOpacity(Math.min(1, Math.max(0, value)));
+    };
+    overlayState.onStateChanged(onOverlayChanged);
+    opacityState.onStateChanged(onOpacityChanged);
+
     return () => {
       panelVisible.current = false;
       clearInterval(interval);
+      overlayState.offStateChanged(onOverlayChanged);
+      opacityState.offStateChanged(onOpacityChanged);
     };
-  }, []);
+  }, [overlayState, opacityState]);
 
   const getSettings = async (key: string, defaults: any) => {
     return await serverApi.callPluginMethod<any, any>("get_settings", {key: key, defaults: defaults});
@@ -182,45 +310,114 @@ const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
     await setSettings("manual_apps", newList);
   }
 
-  return (
-    <React.Fragment>
-      {/* 1. Status Dashboard - Outside Row to remove separator */}
-      <PanelSection>
-          <div style={running ? STYLES.dashboardCard : STYLES.dashboardCardInactive}>
-            <div style={STYLES.statusIcon}>
-              <GiNightSleep />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '1.05em', fontWeight: 'bold', color: 'white' }}>
-                {running ? t('ScreenSaver') : t('Background Monitor')}
-              </div>
-              <div style={{ fontSize: '0.75em', color: 'rgba(255,255,255,0.7)', marginTop: '2px' }}>
-                {running ? t('Inhibit') : t('UnInhibit')}
-              </div>
-            </div>
-            {/* Custom styled Toggle to remove focus artifacts */}
-            <div style={{ 
-                background: 'transparent', 
-                border: 'none', 
-                boxShadow: 'none',
-                display: 'flex',
-                alignItems: 'center'
-            }}>
-              <ToggleField
-                label=""
-                onChange={async (checked) => {
-                  setRunning(checked)
-                  backendRunning = checked
-                  await setSettings(RUN_ON_LOGIN, checked)
-                  checked ? await startBackend() : await stopBackend() 
-                }}
-                checked={running}
-              />
-            </div>
-          </div>
-      </PanelSection>
+  const openAppMenu = () => {
+    setShowAppMenu(true);
+    fetchRunningProcesses();
+  }
 
-      <PanelSection>
+  if (showAppMenu) {
+    return (
+      <PanelLayout>
+        <PanelSection>
+          <PanelSectionRow>
+            <Focusable
+              style={PANEL_STYLES.menuItem}
+              onClick={() => setShowAppMenu(false)}
+            >
+              <span style={PANEL_STYLES.backIcon}>‹</span>
+              <div style={PANEL_STYLES.menuText}>
+                <span style={PANEL_STYLES.menuTitle}>{t('Back')}</span>
+                <span style={PANEL_STYLES.menuDescription}>{t('Inhibit Apps')}</span>
+              </div>
+            </Focusable>
+          </PanelSectionRow>
+        </PanelSection>
+
+        <PanelSection title={t('Inhibit List')}>
+          {manualApps.length === 0 && (
+            <PanelSectionRow>
+              <div style={PANEL_STYLES.emptyState}>
+                {t('manual_tip')}
+              </div>
+            </PanelSectionRow>
+          )}
+          {manualApps.map((app) => (
+            <PanelSectionRow key={app}>
+              <div style={PANEL_STYLES.processItem}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                  <span style={{color: '#5db9ff', fontWeight: 'bold'}}>●</span>
+                  <span style={PANEL_STYLES.processName}>{APP_NAMES[app] || app}</span>
+                </div>
+                <Focusable
+                  style={PANEL_STYLES.panelAction}
+                  onClick={() => removeApp(app)}
+                >
+                  ✕
+                </Focusable>
+              </div>
+            </PanelSectionRow>
+          ))}
+        </PanelSection>
+
+        <PanelSection title={t('Running Processes')}>
+          <PanelSectionRow>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '0 2px', boxSizing: 'border-box' }}>
+              <span style={PANEL_STYLES.sectionHint}>{t('Click to add')}</span>
+              <Focusable
+                style={PANEL_STYLES.panelAction}
+                onClick={fetchRunningProcesses}
+              >
+                {refreshing ? "..." : "↻"}
+              </Focusable>
+            </div>
+          </PanelSectionRow>
+          <Focusable style={{maxHeight: '400px', overflowY: 'scroll', padding: '2px'}}>
+            {runningProcesses
+              .filter(p => !manualApps.includes(p.name))
+              .map(proc => (
+                <PanelSectionRow key={proc.name}>
+                  <div style={PANEL_STYLES.processItem}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={PANEL_STYLES.processName}>{APP_NAMES[proc.name] || proc.name}</span>
+                        <span style={PANEL_STYLES.badge(proc.type)}>
+                          {proc.type === 'app' ? "应用" : "系统"}
+                        </span>
+                      </div>
+                      {APP_NAMES[proc.name] && (
+                        <span style={{fontSize: '0.7em', color: '#777'}}>{proc.name}</span>
+                      )}
+                    </div>
+                    <Focusable
+                      style={PANEL_STYLES.panelAction}
+                      onClick={() => addApp(proc.name)}
+                    >
+                      ＋
+                    </Focusable>
+                  </div>
+                </PanelSectionRow>
+              ))
+            }
+          </Focusable>
+        </PanelSection>
+      </PanelLayout>
+    );
+  }
+
+  return (
+    <PanelLayout>
+      <PanelSection title={t('Plugin Controls')}>
+        <ToggleField
+          label={t('Background Monitor')}
+          description={t('plugin_switch_tip')}
+          onChange={async (checked) => {
+            setRunning(checked)
+            backendRunning = checked
+            await setSettings(RUN_ON_LOGIN, checked)
+            checked ? await startBackend() : await stopBackend() 
+          }}
+          checked={running}
+        />
         <ToggleField
             label={t('Show Notify')}
             description={t('notify_tip')}
@@ -233,111 +430,73 @@ const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
         />
       </PanelSection>
 
-      {/* 2. Inhibit List */}
-      <PanelSection title={t('Inhibit List')}>
-        {manualApps.length === 0 && (
-          <PanelSectionRow>
-            <div style={{textAlign: 'center', color: '#666', padding: '10px', fontSize: '0.85em'}}>
-              {t('manual_tip')}
-            </div>
-          </PanelSectionRow>
-        )}
-        {manualApps.map((app) => (
-          <PanelSectionRow key={app}>
-            <div style={STYLES.processItem}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{color: '#5db9ff', fontWeight: 'bold'}}>●</span>
-                <span>{APP_NAMES[app] || app}</span>
-              </div>
-              <Focusable 
-                style={{
-                    width: '28px', 
-                    height: '28px', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    background: 'rgba(255,255,255,0.1)',
-                    borderRadius: '4px',
-                    fontSize: '0.8em',
-                    flexShrink: 0
-                }} 
-                onClick={() => removeApp(app)}
-              >
-                ✕
-              </Focusable>
-            </div>
-          </PanelSectionRow>
-        ))}
+      <PanelSection title={t('Black Background Section')}>
+        <ToggleField
+          label={t('Black Background')}
+          description={renderBlackBackgroundTip()}
+          onChange={async (checked) => {
+            setBlackBackground(checked)
+            overlayState.SetState(checked ? 1 : 0)
+            await setSettings(BLACK_BACKGROUND_ENABLED, checked)
+            if (checked) {
+              Navigation.CloseSideMenus()
+            }
+          }}
+          checked={blackBackground}
+        />
+        <SliderField
+          value={Math.round(blackBackgroundOpacity * 100)}
+          min={0}
+          max={100}
+          step={5}
+          showValue={true}
+          valueSuffix="%"
+          label={t('Black Opacity')}
+          description={t('black_opacity_tip')}
+          onChange={(value) => {
+            const normalizedOpacity = Math.min(1, Math.max(0, value / 100));
+            setBlackBackgroundOpacity(normalizedOpacity);
+            opacityState.SetState(normalizedOpacity);
+            void setSettings(BLACK_BACKGROUND_OPACITY, normalizedOpacity);
+          }}
+        />
+        <ToggleField
+          label={t('Close On Any Key')}
+          description={t('close_anykey_tip')}
+          onChange={async (checked) => {
+            setCloseOnAnyKey(checked)
+            await setSettings(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, checked)
+          }}
+          checked={closeOnAnyKey}
+        />
       </PanelSection>
 
-      {/* 3. Process Scanner */}
-      <PanelSection title={t('Running Processes')}>
+      <PanelSection title={t('App Rules Section')}>
         <PanelSectionRow>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '0 12px', boxSizing: 'border-box' }}>
-            <span style={{fontSize: '0.8em', color: '#888'}}>{t('Click to add')}</span>
-            <Focusable 
-              style={{
-                  width: '28px', 
-                  height: '28px', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  background: 'rgba(255,255,255,0.1)',
-                  borderRadius: '4px',
-                  fontSize: '0.9em',
-                  flexShrink: 0
-              }} 
-              onClick={fetchRunningProcesses}
-            >
-              {refreshing ? "..." : "↻"}
-            </Focusable>
-          </div>
+          <Focusable
+            style={PANEL_STYLES.menuItem}
+            onClick={openAppMenu}
+          >
+            <div style={PANEL_STYLES.menuText}>
+              <span style={PANEL_STYLES.menuTitle}>{t('Inhibit Apps')}</span>
+              <span style={PANEL_STYLES.menuDescription}>
+                {manualApps.length > 0
+                  ? `${manualApps.length} ${t('Apps Enabled')}`
+                  : t('app_rules_tip')}
+              </span>
+            </div>
+            <span style={PANEL_STYLES.chevron}>›</span>
+          </Focusable>
         </PanelSectionRow>
-        <Focusable style={{maxHeight: '400px', overflowY: 'scroll', padding: '2px'}}>
-          {runningProcesses
-            .filter(p => !manualApps.includes(p.name))
-            .map(proc => (
-              <PanelSectionRow key={proc.name}>
-                <div style={STYLES.processItem}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{fontSize: '0.9em', color: '#eee'}}>{APP_NAMES[proc.name] || proc.name}</span>
-                      <span style={STYLES.badge(proc.type)}>
-                        {proc.type === 'app' ? "应用" : "系统"}
-                      </span>
-                    </div>
-                    {APP_NAMES[proc.name] && (
-                      <span style={{fontSize: '0.7em', color: '#777'}}>{proc.name}</span>
-                    )}
-                  </div>
-                  <Focusable 
-                    style={{
-                        width: '28px', 
-                        height: '28px', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        background: 'rgba(255,255,255,0.1)',
-                        borderRadius: '4px',
-                        fontSize: '1em',
-                        flexShrink: 0
-                    }} 
-                    onClick={() => addApp(proc.name)}
-                  >
-                    ＋
-                  </Focusable>
-                </div>
-              </PanelSectionRow>
-            ))
-          }
-        </Focusable>
       </PanelSection>
-    </React.Fragment>
+    </PanelLayout>
   );
 };
 
 
 export default definePlugin((serverApi: ServerAPI) => {
+  const overlayState = new StateNumber(0);
+  const opacityState = new StateNumber(1);
   let forced_suspend:NodeJS.Timeout;
   let forced_suspend_tip:NodeJS.Timeout;
   let input_changed:boolean = true;
@@ -618,6 +777,17 @@ export default definePlugin((serverApi: ServerAPI) => {
   }, 3000)
 
   setTimeout(async () => {
+    let blackBackground = await getSettings(BLACK_BACKGROUND_ENABLED, false)
+    if (blackBackground.success && (blackBackground.result === true || blackBackground.result === "true")) {
+      overlayState.SetState(1)
+    }
+
+    let blackOpacity = await getSettings(BLACK_BACKGROUND_OPACITY, 1)
+    if (blackOpacity.success) {
+      const opacity = Math.min(1, Math.max(0, Number(blackOpacity.result)));
+      opacityState.SetState(Number.isNaN(opacity) ? 1 : opacity)
+    }
+
     let notify = await getSettings(SHOW_NOTIFY, false)
     if (notify.success) {
       showNotify = notify.result
@@ -630,12 +800,18 @@ export default definePlugin((serverApi: ServerAPI) => {
     }
   }, 0);
 
+  serverApi.routerHook.addGlobalComponent(
+    "ScreenSaverEnhancementsBlackOverlay",
+    () => <BlackOverlay serverApi={serverApi} overlayState={overlayState} opacityState={opacityState} />
+  );
+
   return {
     title: <div className={staticClasses.Title}>Suspend Manager</div>,
-    content: <Content serverApi={serverApi} />,
+    content: <Content serverApi={serverApi} overlayState={overlayState} opacityState={opacityState} />,
     icon: <GiNightSleep />,
     onDismount() {
       clearSuspendTimeout()
+      serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")
     },
   };
 });

@@ -11,9 +11,11 @@ import { name } from "./plugin.json";
 export default defineConfig({
   input: './src/index.tsx',
   plugins: [
+    typescript({
+      include: ["src/**/*.ts", "src/**/*.tsx"],
+    }),
     commonjs(),
     nodeResolve(),
-    typescript(),
     json(),
     replace({
       preventAssignment: false,
