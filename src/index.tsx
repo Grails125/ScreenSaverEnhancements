@@ -514,6 +514,10 @@ const Content: VFC<{
     }
   }
 
+  const refreshInhibitStatus = async () => {
+    await fetchInhibitStatus();
+  }
+
   const refreshAppMenuData = async () => {
     await Promise.all([
       fetchRunningProcesses(),
@@ -542,8 +546,8 @@ const Content: VFC<{
       }
     };
     fetchManualApps();
-    refreshAppMenuData();
-    const interval = setInterval(refreshAppMenuData, 30000);
+    refreshInhibitStatus();
+    const interval = setInterval(refreshInhibitStatus, 30000);
 
     const loadBlackBackgroundSettings = async () => {
       const [enabled, opacityValue, closeOnAnyKey] = await Promise.all([
@@ -964,41 +968,56 @@ export default definePlugin((serverApi: ServerAPI) => {
   let deckyMusicInhibiting = false;
   let deckyMusicEnabled = false;
   let deckyMusicSettingsLastChecked = 0;
+  let eventPollTimeout: NodeJS.Timeout;
+  let eventPollingActive = true;
+  const ACTIVE_EVENT_POLL_MS = 3000;
+  const IDLE_EVENT_POLL_MS = 12000;
 
-  setInterval(async () => {
-    const now = Date.now();
-    if (now - deckyMusicSettingsLastChecked > 30000) {
-      deckyMusicSettingsLastChecked = now;
-      const manualApps = await getPluginSetting(serverApi, "manual_apps", []);
-      deckyMusicEnabled = isDeckyMusicEnabled(normalizeManualApps(manualApps));
-    }
-
-    const deckyMusicPlaying = deckyMusicEnabled && isAnyAudioPlaying();
-    if (deckyMusicPlaying && !deckyMusicInhibiting) {
-      deckyMusicInhibiting = true;
-      await startInhibit();
-    } else if (!deckyMusicPlaying && deckyMusicInhibiting) {
-      deckyMusicInhibiting = false;
-      if (!backendInhibiting) {
-        await stopInhibit();
+  const pollPowerState = async () => {
+    try {
+      const now = Date.now();
+      if (now - deckyMusicSettingsLastChecked > 30000) {
+        deckyMusicSettingsLastChecked = now;
+        const manualApps = await getPluginSetting(serverApi, "manual_apps", []);
+        deckyMusicEnabled = isDeckyMusicEnabled(normalizeManualApps(manualApps));
       }
-    }
 
-    let data = await getEvent();
-    if(!data.success) return;
-    let event = data.result;
-    for (let e of event) {
-      if (e.type == 'Inhibit') {
-        backendInhibiting = true;
+      const deckyMusicPlaying = deckyMusicEnabled && isAnyAudioPlaying();
+      if (deckyMusicPlaying && !deckyMusicInhibiting) {
+        deckyMusicInhibiting = true;
         await startInhibit();
-      } else if (e.type == 'UnInhibit') {
-        backendInhibiting = false;
-        if (!deckyMusicInhibiting) {
+      } else if (!deckyMusicPlaying && deckyMusicInhibiting) {
+        deckyMusicInhibiting = false;
+        if (!backendInhibiting) {
           await stopInhibit();
         }
       }
+
+      let data = await getEvent();
+      if (data.success) {
+        let event = data.result;
+        for (let e of event) {
+          if (e.type == 'Inhibit') {
+            backendInhibiting = true;
+            await startInhibit();
+          } else if (e.type == 'UnInhibit') {
+            backendInhibiting = false;
+            if (!deckyMusicInhibiting) {
+              await stopInhibit();
+            }
+          }
+        }
+      }
+    } finally {
+      if (!eventPollingActive) return;
+      const nextDelay = backendInhibiting || deckyMusicInhibiting
+        ? ACTIVE_EVENT_POLL_MS
+        : IDLE_EVENT_POLL_MS;
+      eventPollTimeout = setTimeout(pollPowerState, nextDelay);
     }
-  }, 3000)
+  }
+
+  eventPollTimeout = setTimeout(pollPowerState, ACTIVE_EVENT_POLL_MS);
 
   setTimeout(async () => {
     const blackBackground = await getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_ENABLED, false)
@@ -1029,6 +1048,8 @@ export default definePlugin((serverApi: ServerAPI) => {
     icon: <GiNightSleep />,
     onDismount() {
       clearSuspendTimeout()
+      eventPollingActive = false
+      clearTimeout(eventPollTimeout)
       serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")
     },
   };
