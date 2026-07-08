@@ -3,30 +3,11 @@ import { ServerAPI } from "decky-frontend-lib";
 import { StateNumber } from "./state";
 import { useCatchAllGamepad } from "./useCatchAllGamepad";
 import { UIComposition, useUIComposition } from "./uiComposition";
+import { clampOpacity, getPluginSetting, parseBooleanSetting, setPluginSetting } from "./settingsClient";
 
 export const BLACK_BACKGROUND_ENABLED = "black_background_enabled";
 export const BLACK_BACKGROUND_OPACITY = "black_background_opacity";
 export const BLACK_BACKGROUND_CLOSE_ON_ANY_KEY = "black_background_close_on_any_key";
-
-const clampOpacity = (value: number): number => {
-  if (Number.isNaN(value)) return 1;
-  return Math.min(1, Math.max(0, value));
-};
-
-const parseBoolean = (value: unknown, fallback = false): boolean => {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") return value.toLowerCase() === "true";
-  return fallback;
-};
-
-const loadSetting = async <T,>(serverApi: ServerAPI, key: string, defaults: T): Promise<T> => {
-  const response = await serverApi.callPluginMethod<any, any>("get_settings", { key, defaults });
-  return response.success ? response.result : defaults;
-};
-
-const saveSetting = async (serverApi: ServerAPI, key: string, value: any) => {
-  await serverApi.callPluginMethod<any, any>("set_settings", { key, value });
-};
 
 const BlackBackground: VFC<{ opacity: number }> = ({ opacity }) => {
   useUIComposition(UIComposition.Overlay);
@@ -56,6 +37,7 @@ export const BlackOverlay: VFC<{
   const [visible, setVisible] = useState<boolean>(overlayState.GetState() === 1);
   const [opacity, setOpacity] = useState<number>(opacityState.GetState());
   const delayedSubscriptionRef = useRef<number | null>(null);
+  const stateChangeTokenRef = useRef(0);
   const { subscribe, release } = useCatchAllGamepad();
 
   const clearDelayedSubscription = useCallback(() => {
@@ -73,7 +55,7 @@ export const BlackOverlay: VFC<{
   const closeOverlay = useCallback(() => {
     stopCapture();
     overlayState.SetState(0);
-    void saveSetting(serverApi, BLACK_BACKGROUND_ENABLED, false);
+    void setPluginSetting(serverApi, BLACK_BACKGROUND_ENABLED, false);
   }, [overlayState, serverApi, stopCapture]);
 
   const scheduleAnyKeyClose = useCallback(() => {
@@ -86,6 +68,9 @@ export const BlackOverlay: VFC<{
 
   useEffect(() => {
     const onOverlayChanged = async (mode: number) => {
+      const token = stateChangeTokenRef.current + 1;
+      stateChangeTokenRef.current = token;
+
       if (mode !== 1) {
         setVisible(false);
         stopCapture();
@@ -93,15 +78,17 @@ export const BlackOverlay: VFC<{
       }
 
       const [opacityValue, closeOnAnyKeyValue] = await Promise.all([
-        loadSetting(serverApi, BLACK_BACKGROUND_OPACITY, opacityState.GetState()),
-        loadSetting(serverApi, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false),
+        getPluginSetting(serverApi, BLACK_BACKGROUND_OPACITY, opacityState.GetState()),
+        getPluginSetting(serverApi, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false),
       ]);
+      if (token !== stateChangeTokenRef.current) return;
+
       const nextOpacity = clampOpacity(Number(opacityValue));
       setOpacity(nextOpacity);
       opacityState.SetState(nextOpacity);
       setVisible(true);
 
-      if (parseBoolean(closeOnAnyKeyValue, false)) {
+      if (parseBooleanSetting(closeOnAnyKeyValue, false)) {
         scheduleAnyKeyClose();
       } else {
         stopCapture();
@@ -113,6 +100,7 @@ export const BlackOverlay: VFC<{
 
     return () => {
       overlayState.offStateChanged(onOverlayChanged);
+      stateChangeTokenRef.current += 1;
       stopCapture();
     };
   }, [overlayState, opacityState, scheduleAnyKeyClose, serverApi, stopCapture]);

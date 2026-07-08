@@ -18,6 +18,7 @@ import i18n from './i18n'
 import { BlackOverlay, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, BLACK_BACKGROUND_ENABLED, BLACK_BACKGROUND_OPACITY } from './blackOverlay'
 import { QUICK_ACCESS_MENU } from './ButtonIcons'
 import { StateNumber } from './state'
+import { clampOpacity, parseBooleanSetting, setPluginSetting } from './settingsClient'
 
 let backendRunning = false;
 let showNotify     = false;
@@ -272,6 +273,120 @@ const RUN_ON_LOGIN = "run_on_login"
 const SHOW_NOTIFY  = "show_notify"
 const DECKY_MUSIC_APP = "DeckyMusic"
 
+type RunningProcess = { name: string, type: string };
+
+type InhibitAppsPageProps = {
+  manualApps: string[];
+  runningProcesses: RunningProcess[];
+  refreshing: boolean;
+  onBack: () => void;
+  onRefresh: () => void;
+  onAddApp: (appName: string) => void;
+  onRemoveApp: (appName: string) => void;
+};
+
+const InhibitAppsPage: VFC<InhibitAppsPageProps> = ({
+  manualApps,
+  runningProcesses,
+  refreshing,
+  onBack,
+  onRefresh,
+  onAddApp,
+  onRemoveApp,
+}) => (
+  <PanelLayout>
+    <PanelSection>
+      <PanelSectionRow>
+        <div style={PANEL_STYLES.pageHeader}>
+          <div style={PANEL_STYLES.pageHeaderMain}>
+            <Focusable
+              style={PANEL_STYLES.backButton}
+              onClick={onBack}
+            >
+              ‹
+            </Focusable>
+            <div style={PANEL_STYLES.menuText}>
+              <span style={PANEL_STYLES.menuTitle}>{t('Inhibit Apps')}</span>
+              <span style={PANEL_STYLES.menuDescription}>{t('app_rules_tip')}</span>
+            </div>
+          </div>
+          {manualApps.length > 0 && (
+            <span style={PANEL_STYLES.countBadge}>{manualApps.length}</span>
+          )}
+        </div>
+      </PanelSectionRow>
+    </PanelSection>
+
+    <PanelSection title={t('Inhibit List')}>
+      {manualApps.length === 0 && (
+        <PanelSectionRow>
+          <div style={PANEL_STYLES.emptyState}>
+            {t('manual_tip')}
+          </div>
+        </PanelSectionRow>
+      )}
+      {manualApps.map((app) => (
+        <PanelSectionRow key={app}>
+          <div style={PANEL_STYLES.processItem}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <span style={{color: '#5db9ff', fontWeight: 'bold'}}>●</span>
+              <span style={PANEL_STYLES.processName}>{APP_NAMES[app] || app}</span>
+            </div>
+            <Focusable
+              style={PANEL_STYLES.panelAction}
+              onClick={() => onRemoveApp(app)}
+            >
+              ✕
+            </Focusable>
+          </div>
+        </PanelSectionRow>
+      ))}
+    </PanelSection>
+
+    <PanelSection title={t('Running Processes')}>
+      <PanelSectionRow>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '0 2px', boxSizing: 'border-box' }}>
+          <span style={PANEL_STYLES.sectionHint}>{t('Click to add')}</span>
+          <Focusable
+            style={PANEL_STYLES.panelAction}
+            onClick={onRefresh}
+          >
+            {refreshing ? "..." : "↻"}
+          </Focusable>
+        </div>
+      </PanelSectionRow>
+      <Focusable style={{maxHeight: '400px', overflowY: 'scroll', padding: '2px'}}>
+        {runningProcesses
+          .filter(p => !manualApps.includes(p.name))
+          .map(proc => (
+            <PanelSectionRow key={proc.name}>
+              <div style={PANEL_STYLES.processItem}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={PANEL_STYLES.processName}>{APP_NAMES[proc.name] || proc.name}</span>
+                    <span style={PANEL_STYLES.badge(proc.type)}>
+                      {proc.type === 'app' ? "应用" : "系统"}
+                    </span>
+                  </div>
+                  {APP_NAMES[proc.name] && (
+                    <span style={{fontSize: '0.7em', color: '#777'}}>{proc.name}</span>
+                  )}
+                </div>
+                <Focusable
+                  style={PANEL_STYLES.panelAction}
+                  onClick={() => onAddApp(proc.name)}
+                >
+                  ＋
+                </Focusable>
+              </div>
+            </PanelSectionRow>
+          ))
+        }
+      </Focusable>
+    </PanelSection>
+  </PanelLayout>
+);
+
 const Content: VFC<{
   serverApi: ServerAPI;
   overlayState: StateNumber;
@@ -292,10 +407,10 @@ const Content: VFC<{
   }
 
   const setSettings = async (key: string, value: any) => {
-    return await serverApi.callPluginMethod<any, any>("set_settings", {key: key, value: value});
+    return await setPluginSetting(serverApi, key, value);
   }
   const [manualApps, setManualApps] = useState<string[]>([]);
-  const [runningProcesses, setRunningProcesses] = useState<{name: string, type: string}[]>([]);
+  const [runningProcesses, setRunningProcesses] = useState<RunningProcess[]>([]);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [showAppMenu, setShowAppMenu] = useState<boolean>(false);
   const panelVisible = useRef(true);
@@ -303,11 +418,14 @@ const Content: VFC<{
   const fetchRunningProcesses = async () => {
     if (!panelVisible.current) return;
     setRefreshing(true);
-    const res = await serverApi.callPluginMethod<any, any>("get_running_processes", {});
-    if (res.success) {
-      setRunningProcesses(res.result);
+    try {
+      const res = await serverApi.callPluginMethod<any, any>("get_running_processes", {});
+      if (res.success) {
+        setRunningProcesses(res.result);
+      }
+    } finally {
+      setRefreshing(false);
     }
-    setRefreshing(false);
   }
 
   useEffect(() => {
@@ -334,17 +452,17 @@ const Content: VFC<{
         getSettings(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false),
       ]);
       if (enabledRes.success) {
-        const enabled = enabledRes.result === true || enabledRes.result === "true";
+        const enabled = parseBooleanSetting(enabledRes.result, false);
         setBlackBackground(enabled);
         overlayState.SetState(enabled ? 1 : 0);
       }
       if (opacityRes.success) {
-        const opacity = Math.min(1, Math.max(0, Number(opacityRes.result)));
-        setBlackBackgroundOpacity(Number.isNaN(opacity) ? 1 : opacity);
-        opacityState.SetState(Number.isNaN(opacity) ? 1 : opacity);
+        const opacity = clampOpacity(Number(opacityRes.result));
+        setBlackBackgroundOpacity(opacity);
+        opacityState.SetState(opacity);
       }
       if (closeOnAnyKeyRes.success) {
-        setCloseOnAnyKey(closeOnAnyKeyRes.result === true || closeOnAnyKeyRes.result === "true");
+        setCloseOnAnyKey(parseBooleanSetting(closeOnAnyKeyRes.result, false));
       }
     };
     loadBlackBackgroundSettings();
@@ -390,97 +508,15 @@ const Content: VFC<{
 
   if (showAppMenu) {
     return (
-      <PanelLayout>
-        <PanelSection>
-          <PanelSectionRow>
-            <div style={PANEL_STYLES.pageHeader}>
-              <div style={PANEL_STYLES.pageHeaderMain}>
-                <Focusable
-                  style={PANEL_STYLES.backButton}
-                  onClick={() => setShowAppMenu(false)}
-                >
-                  ‹
-                </Focusable>
-                <div style={PANEL_STYLES.menuText}>
-                  <span style={PANEL_STYLES.menuTitle}>{t('Inhibit Apps')}</span>
-                  <span style={PANEL_STYLES.menuDescription}>{t('app_rules_tip')}</span>
-                </div>
-              </div>
-              {manualApps.length > 0 && (
-                <span style={PANEL_STYLES.countBadge}>{manualApps.length}</span>
-              )}
-            </div>
-          </PanelSectionRow>
-        </PanelSection>
-
-        <PanelSection title={t('Inhibit List')}>
-          {manualApps.length === 0 && (
-            <PanelSectionRow>
-              <div style={PANEL_STYLES.emptyState}>
-                {t('manual_tip')}
-              </div>
-            </PanelSectionRow>
-          )}
-          {manualApps.map((app) => (
-            <PanelSectionRow key={app}>
-              <div style={PANEL_STYLES.processItem}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                  <span style={{color: '#5db9ff', fontWeight: 'bold'}}>●</span>
-                  <span style={PANEL_STYLES.processName}>{APP_NAMES[app] || app}</span>
-                </div>
-                <Focusable
-                  style={PANEL_STYLES.panelAction}
-                  onClick={() => removeApp(app)}
-                >
-                  ✕
-                </Focusable>
-              </div>
-            </PanelSectionRow>
-          ))}
-        </PanelSection>
-
-        <PanelSection title={t('Running Processes')}>
-          <PanelSectionRow>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '0 2px', boxSizing: 'border-box' }}>
-              <span style={PANEL_STYLES.sectionHint}>{t('Click to add')}</span>
-              <Focusable
-                style={PANEL_STYLES.panelAction}
-                onClick={fetchRunningProcesses}
-              >
-                {refreshing ? "..." : "↻"}
-              </Focusable>
-            </div>
-          </PanelSectionRow>
-          <Focusable style={{maxHeight: '400px', overflowY: 'scroll', padding: '2px'}}>
-            {runningProcesses
-              .filter(p => !manualApps.includes(p.name))
-              .map(proc => (
-                <PanelSectionRow key={proc.name}>
-                  <div style={PANEL_STYLES.processItem}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={PANEL_STYLES.processName}>{APP_NAMES[proc.name] || proc.name}</span>
-                        <span style={PANEL_STYLES.badge(proc.type)}>
-                          {proc.type === 'app' ? "应用" : "系统"}
-                        </span>
-                      </div>
-                      {APP_NAMES[proc.name] && (
-                        <span style={{fontSize: '0.7em', color: '#777'}}>{proc.name}</span>
-                      )}
-                    </div>
-                    <Focusable
-                      style={PANEL_STYLES.panelAction}
-                      onClick={() => addApp(proc.name)}
-                    >
-                      ＋
-                    </Focusable>
-                  </div>
-                </PanelSectionRow>
-              ))
-            }
-          </Focusable>
-        </PanelSection>
-      </PanelLayout>
+      <InhibitAppsPage
+        manualApps={manualApps}
+        runningProcesses={runningProcesses}
+        refreshing={refreshing}
+        onBack={() => setShowAppMenu(false)}
+        onRefresh={fetchRunningProcesses}
+        onAddApp={addApp}
+        onRemoveApp={removeApp}
+      />
     );
   }
 
