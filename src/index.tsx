@@ -15,7 +15,12 @@ import React, { VFC } from "react";
 import { useState, useEffect, useRef } from 'react'
 import { GiNightSleep } from "react-icons/gi";
 import i18n from './i18n'
-import { BlackOverlay, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, BLACK_BACKGROUND_ENABLED, BLACK_BACKGROUND_OPACITY } from './blackOverlay'
+import {
+  BlackOverlay,
+  BLACK_BACKGROUND_CLOSE_ON_ANY_KEY,
+  BLACK_BACKGROUND_ENABLED,
+  BLACK_BACKGROUND_OPACITY,
+} from './blackOverlay'
 import { QUICK_ACCESS_MENU } from './ButtonIcons'
 import { StateNumber } from './state'
 import { clampOpacity, parseBooleanSetting, setPluginSetting } from './settingsClient'
@@ -397,6 +402,7 @@ const Content: VFC<{
   const [blackBackground, setBlackBackground] = useState<boolean>(overlayState.GetState() === 1);
   const [blackBackgroundOpacity, setBlackBackgroundOpacity] = useState<number>(opacityState.GetState());
   const [closeOnAnyKey, setCloseOnAnyKey] = useState<boolean>(false);
+  const [closeOnAnyKeyLoaded, setCloseOnAnyKeyLoaded] = useState<boolean>(false);
 
   const startBackend = async () => {
     return await serverApi.callPluginMethod<any, any>("start_backend", {});
@@ -464,6 +470,7 @@ const Content: VFC<{
       if (closeOnAnyKeyRes.success) {
         setCloseOnAnyKey(parseBooleanSetting(closeOnAnyKeyRes.result, false));
       }
+      setCloseOnAnyKeyLoaded(true);
     };
     loadBlackBackgroundSettings();
 
@@ -584,17 +591,19 @@ const Content: VFC<{
             }}
           />
         </PanelSectionRow>
-        <PanelSectionRow>
-          <ToggleField
-            label={t('Close On Any Key')}
-            description={t('close_anykey_tip')}
-            onChange={async (checked) => {
-              setCloseOnAnyKey(checked)
-              await setSettings(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, checked)
-            }}
-            checked={closeOnAnyKey}
-          />
-        </PanelSectionRow>
+        {closeOnAnyKeyLoaded && (
+          <PanelSectionRow>
+            <ToggleField
+              label={t('Close On Any Key')}
+              description={t('close_anykey_tip')}
+              onChange={async (checked) => {
+                setCloseOnAnyKey(checked)
+                await setSettings(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, checked)
+              }}
+              checked={closeOnAnyKey}
+            />
+          </PanelSectionRow>
+        )}
       </PanelSection>
 
       <PanelSection title={t('App Rules Section')}>

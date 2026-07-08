@@ -2,6 +2,7 @@ import { VFC, useCallback, useEffect, useRef, useState } from "react";
 import { ServerAPI } from "decky-frontend-lib";
 import { StateNumber } from "./state";
 import { useCatchAllGamepad } from "./useCatchAllGamepad";
+import { useResumeFromSuspendNotification } from "./useResumeFromSuspendNotification";
 import { UIComposition, useUIComposition } from "./uiComposition";
 import { clampOpacity, getPluginSetting, parseBooleanSetting, setPluginSetting } from "./settingsClient";
 
@@ -39,6 +40,10 @@ export const BlackOverlay: VFC<{
   const delayedSubscriptionRef = useRef<number | null>(null);
   const stateChangeTokenRef = useRef(0);
   const { subscribe, release } = useCatchAllGamepad();
+  const {
+    subscribe: subscribeResumeFromSuspend,
+    release: releaseResumeFromSuspend,
+  } = useResumeFromSuspendNotification();
 
   const clearDelayedSubscription = useCallback(() => {
     if (delayedSubscriptionRef.current !== null) {
@@ -52,11 +57,16 @@ export const BlackOverlay: VFC<{
     release();
   }, [clearDelayedSubscription, release]);
 
+  const stopResumeCapture = useCallback(() => {
+    releaseResumeFromSuspend();
+  }, [releaseResumeFromSuspend]);
+
   const closeOverlay = useCallback(() => {
     stopCapture();
+    stopResumeCapture();
     overlayState.SetState(0);
     void setPluginSetting(serverApi, BLACK_BACKGROUND_ENABLED, false);
-  }, [overlayState, serverApi, stopCapture]);
+  }, [overlayState, serverApi, stopCapture, stopResumeCapture]);
 
   const scheduleAnyKeyClose = useCallback(() => {
     clearDelayedSubscription();
@@ -74,6 +84,7 @@ export const BlackOverlay: VFC<{
       if (mode !== 1) {
         setVisible(false);
         stopCapture();
+        stopResumeCapture();
         return;
       }
 
@@ -93,6 +104,8 @@ export const BlackOverlay: VFC<{
       } else {
         stopCapture();
       }
+
+      subscribeResumeFromSuspend(closeOverlay);
     };
 
     overlayState.onStateChanged(onOverlayChanged);
@@ -102,8 +115,18 @@ export const BlackOverlay: VFC<{
       overlayState.offStateChanged(onOverlayChanged);
       stateChangeTokenRef.current += 1;
       stopCapture();
+      stopResumeCapture();
     };
-  }, [overlayState, opacityState, scheduleAnyKeyClose, serverApi, stopCapture]);
+  }, [
+    overlayState,
+    opacityState,
+    scheduleAnyKeyClose,
+    serverApi,
+    stopCapture,
+    stopResumeCapture,
+    subscribeResumeFromSuspend,
+    closeOverlay,
+  ]);
 
   useEffect(() => {
     const onOpacityChanged = (value: number) => {
