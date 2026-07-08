@@ -23,7 +23,15 @@ import {
 } from './blackOverlay'
 import { QUICK_ACCESS_MENU } from './ButtonIcons'
 import { StateNumber } from './state'
-import { clampOpacity, parseBooleanSetting, setPluginSetting } from './settingsClient'
+import {
+  areStringArraysEqual,
+  clampOpacity,
+  getPluginBooleanSetting,
+  getPluginNumberSetting,
+  getPluginSetting,
+  normalizeManualApps,
+  setPluginSetting,
+} from './settingsClient'
 
 let backendRunning = false;
 let showNotify     = false;
@@ -464,37 +472,43 @@ const Content: VFC<{
     return await serverApi.callPluginMethod<any, any>("stop_backend", {});
   }
 
-  const setSettings = async (key: string, value: any) => {
-    return await setPluginSetting(serverApi, key, value);
-  }
   const [manualApps, setManualApps] = useState<string[]>([]);
   const [inhibitStatus, setInhibitStatus] = useState<InhibitStatus>(EMPTY_INHIBIT_STATUS);
   const [runningProcesses, setRunningProcesses] = useState<RunningProcess[]>([]);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [showAppMenu, setShowAppMenu] = useState<boolean>(false);
   const panelVisible = useRef(true);
+  const requestTokenRef = useRef(0);
+
+  const isCurrentRequest = (token: number) => {
+    return panelVisible.current && requestTokenRef.current === token;
+  }
 
   const fetchRunningProcesses = async () => {
     if (!panelVisible.current) return;
+    const token = requestTokenRef.current;
     setRefreshing(true);
     try {
       const res = await serverApi.callPluginMethod<any, any>("get_running_processes", {});
-      if (res.success) {
+      if (isCurrentRequest(token) && res.success) {
         setRunningProcesses(res.result);
       }
     } finally {
-      setRefreshing(false);
+      if (isCurrentRequest(token)) {
+        setRefreshing(false);
+      }
     }
   }
 
   const fetchInhibitStatus = async () => {
     if (!panelVisible.current) return;
+    const token = requestTokenRef.current;
     const res = await serverApi.callPluginMethod<any, InhibitStatus>("get_inhibit_status", {});
-    if (res.success && res.result) {
+    if (isCurrentRequest(token) && res.success && res.result) {
       setInhibitStatus({
         ...EMPTY_INHIBIT_STATUS,
         ...res.result,
-        manual_apps: Array.isArray(res.result.manual_apps) ? res.result.manual_apps : [],
+        manual_apps: normalizeManualApps(res.result.manual_apps),
         dbus_requests: Array.isArray(res.result.dbus_requests) ? res.result.dbus_requests : [],
       });
     }
@@ -509,15 +523,22 @@ const Content: VFC<{
 
   useEffect(() => {
     panelVisible.current = true;
+    const token = requestTokenRef.current + 1;
+    requestTokenRef.current = token;
     const fetchManualApps = async () => {
-      const res = await getSettings("manual_apps", []);
-      if (res.success && res.result && res.result.length > 0) {
-        setManualApps(res.result);
-      } else if (res.success && (res.result === null || res.result.length === 0)) {
-        // Pre-populate defaults if empty
-        const defaults = ["chrome", "mpv", "wiliwili"];
+      const storedApps = await getPluginSetting(serverApi, "manual_apps", []);
+      if (!isCurrentRequest(token)) return;
+
+      const normalizedApps = normalizeManualApps(storedApps);
+      if (normalizedApps.length > 0) {
+        setManualApps(normalizedApps);
+        if (Array.isArray(storedApps) && !areStringArraysEqual(normalizedApps, storedApps)) {
+          await setPluginSetting(serverApi, "manual_apps", normalizedApps);
+        }
+      } else {
+        const defaults = normalizeManualApps(["chrome", "mpv", "wiliwili"]);
         setManualApps(defaults);
-        await setSettings("manual_apps", defaults);
+        await setPluginSetting(serverApi, "manual_apps", defaults);
       }
     };
     fetchManualApps();
@@ -525,24 +546,19 @@ const Content: VFC<{
     const interval = setInterval(refreshAppMenuData, 30000);
 
     const loadBlackBackgroundSettings = async () => {
-      const [enabledRes, opacityRes, closeOnAnyKeyRes] = await Promise.all([
-        getSettings(BLACK_BACKGROUND_ENABLED, false),
-        getSettings(BLACK_BACKGROUND_OPACITY, 1),
-        getSettings(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false),
+      const [enabled, opacityValue, closeOnAnyKey] = await Promise.all([
+        getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_ENABLED, false),
+        getPluginNumberSetting(serverApi, BLACK_BACKGROUND_OPACITY, 1),
+        getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false),
       ]);
-      if (enabledRes.success) {
-        const enabled = parseBooleanSetting(enabledRes.result, false);
-        setBlackBackground(enabled);
-        overlayState.SetState(enabled ? 1 : 0);
-      }
-      if (opacityRes.success) {
-        const opacity = clampOpacity(Number(opacityRes.result));
-        setBlackBackgroundOpacity(opacity);
-        opacityState.SetState(opacity);
-      }
-      if (closeOnAnyKeyRes.success) {
-        setCloseOnAnyKey(parseBooleanSetting(closeOnAnyKeyRes.result, false));
-      }
+      if (!isCurrentRequest(token)) return;
+
+      const opacity = clampOpacity(opacityValue);
+      setBlackBackground(enabled);
+      overlayState.SetState(enabled ? 1 : 0);
+      setBlackBackgroundOpacity(opacity);
+      opacityState.SetState(opacity);
+      setCloseOnAnyKey(closeOnAnyKey);
       setCloseOnAnyKeyLoaded(true);
     };
     loadBlackBackgroundSettings();
@@ -558,27 +574,25 @@ const Content: VFC<{
 
     return () => {
       panelVisible.current = false;
+      requestTokenRef.current += 1;
       clearInterval(interval);
       overlayState.offStateChanged(onOverlayChanged);
       opacityState.offStateChanged(onOpacityChanged);
     };
   }, [overlayState, opacityState]);
 
-  const getSettings = async (key: string, defaults: any) => {
-    return await serverApi.callPluginMethod<any, any>("get_settings", {key: key, defaults: defaults});
-  }
-
   const addApp = async (appName: string) => {
-    if (!appName || manualApps.includes(appName)) return;
-    const newList = [...manualApps, appName];
+    const newList = normalizeManualApps([...manualApps, appName]);
+    if (areStringArraysEqual(newList, manualApps)) return;
     setManualApps(newList);
-    await setSettings("manual_apps", newList);
+    await setPluginSetting(serverApi, "manual_apps", newList);
   }
 
   const removeApp = async (app: string) => {
-    const newList = manualApps.filter(a => a !== app);
+    const normalizedApp = String(app).trim();
+    const newList = normalizeManualApps(manualApps.filter(a => a !== normalizedApp));
     setManualApps(newList);
-    await setSettings("manual_apps", newList);
+    await setPluginSetting(serverApi, "manual_apps", newList);
   }
 
   const openAppMenu = () => {
@@ -614,7 +628,7 @@ const Content: VFC<{
             onChange={async (checked) => {
               setRunning(checked)
               backendRunning = checked
-              await setSettings(RUN_ON_LOGIN, checked)
+              await setPluginSetting(serverApi, RUN_ON_LOGIN, checked)
               checked ? await startBackend() : await stopBackend() 
             }}
             checked={running}
@@ -627,7 +641,7 @@ const Content: VFC<{
             onChange={async (checked) => {
               setNotify(checked)
               showNotify = checked
-              await setSettings(SHOW_NOTIFY, checked)
+              await setPluginSetting(serverApi, SHOW_NOTIFY, checked)
             }}
             checked={notify}
           />
@@ -642,7 +656,7 @@ const Content: VFC<{
             onChange={async (checked) => {
               setBlackBackground(checked)
               overlayState.SetState(checked ? 1 : 0)
-              await setSettings(BLACK_BACKGROUND_ENABLED, checked)
+              await setPluginSetting(serverApi, BLACK_BACKGROUND_ENABLED, checked)
               if (checked) {
                 Navigation.CloseSideMenus()
               }
@@ -664,7 +678,7 @@ const Content: VFC<{
               const normalizedOpacity = Math.min(1, Math.max(0, value / 100));
               setBlackBackgroundOpacity(normalizedOpacity);
               opacityState.SetState(normalizedOpacity);
-              void setSettings(BLACK_BACKGROUND_OPACITY, normalizedOpacity);
+              void setPluginSetting(serverApi, BLACK_BACKGROUND_OPACITY, normalizedOpacity);
             }}
           />
         </PanelSectionRow>
@@ -675,7 +689,7 @@ const Content: VFC<{
               description={t('close_anykey_tip')}
               onChange={async (checked) => {
                 setCloseOnAnyKey(checked)
-                await setSettings(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, checked)
+                await setPluginSetting(serverApi, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, checked)
               }}
               checked={closeOnAnyKey}
             />
@@ -846,10 +860,6 @@ export default definePlugin((serverApi: ServerAPI) => {
     return await serverApi.callPluginMethod<any, any>("get_event", {});
   }
 
-  const getSettings = async (key: string, defaults: any) => {
-    return await serverApi.callPluginMethod<any, any>("get_settings", {key: key, defaults: defaults});
-  }
-
   const startBackend = async () => {
     return await serverApi.callPluginMethod<any, any>("start_backend", {});
   }
@@ -959,10 +969,8 @@ export default definePlugin((serverApi: ServerAPI) => {
     const now = Date.now();
     if (now - deckyMusicSettingsLastChecked > 30000) {
       deckyMusicSettingsLastChecked = now;
-      const manualApps = await getSettings("manual_apps", []);
-      if (manualApps.success && Array.isArray(manualApps.result)) {
-        deckyMusicEnabled = isDeckyMusicEnabled(manualApps.result);
-      }
+      const manualApps = await getPluginSetting(serverApi, "manual_apps", []);
+      deckyMusicEnabled = isDeckyMusicEnabled(normalizeManualApps(manualApps));
     }
 
     const deckyMusicPlaying = deckyMusicEnabled && isAnyAudioPlaying();
@@ -993,24 +1001,18 @@ export default definePlugin((serverApi: ServerAPI) => {
   }, 3000)
 
   setTimeout(async () => {
-    let blackBackground = await getSettings(BLACK_BACKGROUND_ENABLED, false)
-    if (blackBackground.success && (blackBackground.result === true || blackBackground.result === "true")) {
+    const blackBackground = await getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_ENABLED, false)
+    if (blackBackground) {
       overlayState.SetState(1)
     }
 
-    let blackOpacity = await getSettings(BLACK_BACKGROUND_OPACITY, 1)
-    if (blackOpacity.success) {
-      const opacity = Math.min(1, Math.max(0, Number(blackOpacity.result)));
-      opacityState.SetState(Number.isNaN(opacity) ? 1 : opacity)
-    }
+    const blackOpacity = await getPluginNumberSetting(serverApi, BLACK_BACKGROUND_OPACITY, 1)
+    opacityState.SetState(clampOpacity(blackOpacity))
 
-    let notify = await getSettings(SHOW_NOTIFY, false)
-    if (notify.success) {
-      showNotify = notify.result
-    }
+    showNotify = await getPluginBooleanSetting(serverApi, SHOW_NOTIFY, false)
 
-    let run = await getSettings(RUN_ON_LOGIN, true)
-    if (run.success && run.result) {
+    const run = await getPluginBooleanSetting(serverApi, RUN_ON_LOGIN, true)
+    if (run) {
       backendRunning = true
       await startBackend()
     }

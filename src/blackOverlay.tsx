@@ -4,7 +4,7 @@ import { StateNumber } from "./state";
 import { useCatchAllGamepad } from "./useCatchAllGamepad";
 import { useResumeFromSuspendNotification } from "./useResumeFromSuspendNotification";
 import { UIComposition, useUIComposition } from "./uiComposition";
-import { clampOpacity, getPluginSetting, parseBooleanSetting, setPluginSetting } from "./settingsClient";
+import { clampOpacity, getPluginBooleanSetting, getPluginNumberSetting, setPluginSetting } from "./settingsClient";
 
 export const BLACK_BACKGROUND_ENABLED = "black_background_enabled";
 export const BLACK_BACKGROUND_OPACITY = "black_background_opacity";
@@ -89,17 +89,17 @@ export const BlackOverlay: VFC<{
       }
 
       const [opacityValue, closeOnAnyKeyValue] = await Promise.all([
-        getPluginSetting(serverApi, BLACK_BACKGROUND_OPACITY, opacityState.GetState()),
-        getPluginSetting(serverApi, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false),
+        getPluginNumberSetting(serverApi, BLACK_BACKGROUND_OPACITY, opacityState.GetState()),
+        getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false),
       ]);
       if (token !== stateChangeTokenRef.current) return;
 
-      const nextOpacity = clampOpacity(Number(opacityValue));
+      const nextOpacity = clampOpacity(opacityValue);
       setOpacity(nextOpacity);
       opacityState.SetState(nextOpacity);
       setVisible(true);
 
-      if (parseBooleanSetting(closeOnAnyKeyValue, false)) {
+      if (closeOnAnyKeyValue) {
         scheduleAnyKeyClose();
       } else {
         stopCapture();
