@@ -15,10 +15,5 @@
     "manual_tip": "如果某些软件不发送 D-Bus 请求，你可以在下方运行进程列表中点击进程名将其添加到禁用锁屏列表。",
     "Inhibit List": "当前禁用锁屏列表",
     "Running Processes": "运行中的进程",
-    "Click to add": "点击下方添加到禁用锁屏列表",
-    "Timeout Settings": "超时设置",
-    "Dim Timeout": "息屏超时",
-    "Suspend Timeout": "休眠超时",
-    "sec": "秒",
-    "timeout_tip": "超时值从系统读取，修改后将在解除禁用时保存并应用。"
+    "Click to add": "点击下方添加到禁用锁屏列表"
 }

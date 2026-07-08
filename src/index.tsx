@@ -112,14 +112,10 @@ const SystemSleep = findModule("InitiateSleep")
 const RUN_ON_LOGIN = "run_on_login"
 const SHOW_NOTIFY  = "show_notify"
 const DECKY_MUSIC_APP = "DeckyMusic"
-const DIM_TIMEOUT = "dim_timeout"
-const SUSPEND_TIMEOUT = "suspend_timeout"
 
-const Content: VFC<{ serverApi: ServerAPI; setDimTimeoutFn: (value: number) => void; setSuspendTimeoutFn: (value: number) => void }> = ({serverApi, setDimTimeoutFn, setSuspendTimeoutFn}) => {
+const Content: VFC<{ serverApi: ServerAPI }> = ({serverApi}) => {
   const [running, setRunning] = useState<boolean>(backendRunning);
   const [notify, setNotify] = useState<boolean>(showNotify);
-  const [localDimTimeout, setLocalDimTimeout] = useState<number>(300);
-  const [localSuspendTimeout, setLocalSuspendTimeout] = useState<number>(600);
 
   const startBackend = async () => {
     return await serverApi.callPluginMethod<any, any>("start_backend", {});
@@ -149,23 +145,6 @@ const Content: VFC<{ serverApi: ServerAPI; setDimTimeoutFn: (value: number) => v
 
   useEffect(() => {
     panelVisible.current = true;
-
-    const fetchSystemTimeouts = async () => {
-      const res = await serverApi.callPluginMethod<any, any>("read_system_timeouts", {});
-      if (res.success && res.result) {
-        // Use saved values if they exist, otherwise use system values
-        const dimRes = await getSettings(DIM_TIMEOUT, res.result.dim);
-        const dimVal = dimRes.success && dimRes.result !== undefined ? dimRes.result : res.result.dim;
-        setLocalDimTimeout(dimVal);
-        setDimTimeoutFn(dimVal);
-
-        const suspendRes = await getSettings(SUSPEND_TIMEOUT, res.result.suspend);
-        const suspendVal = suspendRes.success && suspendRes.result !== undefined ? suspendRes.result : res.result.suspend;
-        setLocalSuspendTimeout(suspendVal);
-        setSuspendTimeoutFn(suspendVal);
-      }
-    };
-
     const fetchManualApps = async () => {
       const res = await getSettings("manual_apps", []);
       if (res.success && res.result && res.result.length > 0) {
@@ -177,8 +156,6 @@ const Content: VFC<{ serverApi: ServerAPI; setDimTimeoutFn: (value: number) => v
         await setSettings("manual_apps", defaults);
       }
     };
-
-    fetchSystemTimeouts();
     fetchManualApps();
     fetchRunningProcesses();
     const interval = setInterval(fetchRunningProcesses, 30000);
@@ -254,72 +231,6 @@ const Content: VFC<{ serverApi: ServerAPI; setDimTimeoutFn: (value: number) => v
             }}
             checked={notify}
         />
-      </PanelSection>
-
-      <PanelSection title={t('Timeout Settings')}>
-        <PanelSectionRow>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', padding: '0 12px', boxSizing: 'border-box' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.85em', color: '#ccc' }}>{t('Dim Timeout')}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <input
-                  type="number"
-                  min="0"
-                  max="3600"
-                  value={localDimTimeout}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setLocalDimTimeout(val);
-                    setDimTimeoutFn(val);
-                  }}
-                  onBlur={async () => await setSettings(DIM_TIMEOUT, localDimTimeout)}
-                  style={{
-                    width: '60px',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: 'rgba(255,255,255,0.1)',
-                    color: 'white',
-                    textAlign: 'right',
-                    fontSize: '0.85em'
-                  }}
-                />
-                <span style={{ fontSize: '0.75em', color: '#888' }}>{t('sec')}</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.85em', color: '#ccc' }}>{t('Suspend Timeout')}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <input
-                  type="number"
-                  min="0"
-                  max="3600"
-                  value={localSuspendTimeout}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setLocalSuspendTimeout(val);
-                    setSuspendTimeoutFn(val);
-                  }}
-                  onBlur={async () => await setSettings(SUSPEND_TIMEOUT, localSuspendTimeout)}
-                  style={{
-                    width: '60px',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: 'rgba(255,255,255,0.1)',
-                    color: 'white',
-                    textAlign: 'right',
-                    fontSize: '0.85em'
-                  }}
-                />
-                <span style={{ fontSize: '0.75em', color: '#888' }}>{t('sec')}</span>
-              </div>
-            </div>
-            <div style={{ fontSize: '0.7em', color: '#666', marginTop: '4px' }}>
-              {t('timeout_tip')}
-            </div>
-          </div>
-        </PanelSectionRow>
       </PanelSection>
 
       {/* 2. Inhibit List */}
@@ -430,11 +341,6 @@ export default definePlugin((serverApi: ServerAPI) => {
   let forced_suspend:NodeJS.Timeout;
   let forced_suspend_tip:NodeJS.Timeout;
   let input_changed:boolean = true;
-  let dimTimeout = 300;
-  let suspendTimeout = 600;
-
-  const setDimTimeout = (value: number) => { dimTimeout = value; };
-  const setSuspendTimeout = (value: number) => { suspendTimeout = value; };
 
   const clearSuspendTimeout = () => {
     clearTimeout(forced_suspend)
@@ -651,7 +557,7 @@ export default definePlugin((serverApi: ServerAPI) => {
 
   const stopInhibit = async () => {
     notify(t("ScreenSaver"), t("UnInhibit"))
-    await updateSetting(dimTimeout, dimTimeout, suspendTimeout, suspendTimeout);
+    await updateSetting(300, 300, 600, 600);
     clearSuspendTimeout()
     input_changed = false
     forced_suspend = setTimeout(() => {
@@ -726,7 +632,7 @@ export default definePlugin((serverApi: ServerAPI) => {
 
   return {
     title: <div className={staticClasses.Title}>Suspend Manager</div>,
-    content: <Content serverApi={serverApi} setDimTimeoutFn={setDimTimeout} setSuspendTimeoutFn={setSuspendTimeout} />,
+    content: <Content serverApi={serverApi} />,
     icon: <GiNightSleep />,
     onDismount() {
       clearSuspendTimeout()
