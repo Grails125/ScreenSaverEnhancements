@@ -25,8 +25,15 @@ def build():
         
     # 2. Build frontend
     print("Building frontend...")
-    npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
-    subprocess.run([npm_cmd, "run", "build"], check=True)
+    if os.name == "nt":
+        subprocess.run([
+            "powershell.exe",
+            "-NoProfile",
+            "-Command",
+            "npm.cmd run build",
+        ], check=True)
+    else:
+        subprocess.run(["npm", "run", "build"], check=True)
     
     # 3. Create output directory
     os.makedirs(os.path.join(out_dir, "dist"), exist_ok=True)

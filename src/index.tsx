@@ -24,12 +24,14 @@ let showNotify     = false;
 let language = i18n.getCurrentLanguage()
 const t = i18n.useTranslations(language)
 
-const renderBlackBackgroundTip = () => (
-  <span>
-    {t('black_bg_tip_prefix')}{' '}
-    <QUICK_ACCESS_MENU style={{ height: "18px", width: "auto", marginBottom: "-5px" }} />
-    {' '}{t('black_bg_tip_suffix')}
-  </span>
+const renderBlackBackgroundTip = () => React.createElement(
+  'span',
+  null,
+  t('black_bg_tip_prefix'),
+  ' ',
+  React.createElement(QUICK_ACCESS_MENU, { style: { height: "18px", width: "auto", marginBottom: "-5px" } }),
+  ' ',
+  t('black_bg_tip_suffix')
 )
 
 const toScopedSelector = (className: string) => className
@@ -50,11 +52,11 @@ const PANEL_LAYOUT_CSS = `
   }
 `
 
-const PanelLayout: VFC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="sse-panel-root">
-    <style>{PANEL_LAYOUT_CSS}</style>
-    {children}
-  </div>
+const PanelLayout: VFC<{ children: React.ReactNode }> = ({ children }) => React.createElement(
+  'div',
+  { className: 'sse-panel-root' },
+  React.createElement('style', null, PANEL_LAYOUT_CSS),
+  children
 )
 
 const PANEL_STYLES = {
@@ -111,8 +113,27 @@ const PANEL_STYLES = {
     justifyContent: 'space-between',
     gap: '10px',
     width: '100%',
-    padding: '4px 2px',
+    padding: '6px 2px',
     boxSizing: 'border-box' as const,
+  },
+  menuMain: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    minWidth: 0,
+  },
+  menuIcon: {
+    width: '30px',
+    height: '30px',
+    borderRadius: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(255,255,255,0.08)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    color: 'rgba(255,255,255,0.86)',
+    fontSize: '1em',
+    flexShrink: 0,
   },
   menuText: {
     display: 'flex',
@@ -130,6 +151,22 @@ const PANEL_STYLES = {
     fontSize: '0.75em',
     lineHeight: 1.35,
   },
+  pageHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '10px',
+    width: '100%',
+    padding: '8px 2px',
+    boxSizing: 'border-box' as const,
+  },
+  pageHeaderMain: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    minWidth: 0,
+    flex: 1,
+  },
   backIcon: {
     width: '30px',
     height: '30px',
@@ -145,10 +182,46 @@ const PANEL_STYLES = {
     lineHeight: 1,
     flexShrink: 0,
   },
+  backButton: {
+    width: '34px',
+    height: '34px',
+    borderRadius: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(255,255,255,0.12)',
+    border: '1px solid rgba(255,255,255,0.22)',
+    color: '#fff',
+    fontSize: '1.45em',
+    fontWeight: 700,
+    lineHeight: 1,
+    flexShrink: 0,
+  },
   chevron: {
     color: 'rgba(255,255,255,0.55)',
     fontSize: '1.1em',
     flexShrink: 0,
+  },
+  menuTrailing: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexShrink: 0,
+  },
+  countBadge: {
+    minWidth: '22px',
+    height: '22px',
+    padding: '0 7px',
+    borderRadius: '999px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(125, 214, 160, 0.14)',
+    border: '1px solid rgba(125, 214, 160, 0.28)',
+    color: '#8ee0aa',
+    fontSize: '0.72em',
+    fontWeight: 700,
+    boxSizing: 'border-box' as const,
   },
   processName: {
     color: '#f1f1f1',
@@ -163,7 +236,7 @@ const APP_NAMES: Record<string, string> = {
   "vlc": "VLC 播放器",
   "mpv": "MPV 播放器",
   "chrome": "谷歌浏览器",
-  "firefox": "火狐浏览器",
+  "firefox-bin": "火狐浏览器",
   "wiliwili": "Wiliwili (B站)",
   "steam": "Steam 客户端",
   "gamescope": "游戏窗口管理器",
@@ -320,16 +393,23 @@ const Content: VFC<{
       <PanelLayout>
         <PanelSection>
           <PanelSectionRow>
-            <Focusable
-              style={PANEL_STYLES.menuItem}
-              onClick={() => setShowAppMenu(false)}
-            >
-              <span style={PANEL_STYLES.backIcon}>‹</span>
-              <div style={PANEL_STYLES.menuText}>
-                <span style={PANEL_STYLES.menuTitle}>{t('Back')}</span>
-                <span style={PANEL_STYLES.menuDescription}>{t('Inhibit Apps')}</span>
+            <div style={PANEL_STYLES.pageHeader}>
+              <div style={PANEL_STYLES.pageHeaderMain}>
+                <Focusable
+                  style={PANEL_STYLES.backButton}
+                  onClick={() => setShowAppMenu(false)}
+                >
+                  ‹
+                </Focusable>
+                <div style={PANEL_STYLES.menuText}>
+                  <span style={PANEL_STYLES.menuTitle}>{t('Inhibit Apps')}</span>
+                  <span style={PANEL_STYLES.menuDescription}>{t('app_rules_tip')}</span>
+                </div>
               </div>
-            </Focusable>
+              {manualApps.length > 0 && (
+                <span style={PANEL_STYLES.countBadge}>{manualApps.length}</span>
+              )}
+            </div>
           </PanelSectionRow>
         </PanelSection>
 
@@ -407,18 +487,21 @@ const Content: VFC<{
   return (
     <PanelLayout>
       <PanelSection title={t('Plugin Controls')}>
-        <ToggleField
-          label={t('Background Monitor')}
-          description={t('plugin_switch_tip')}
-          onChange={async (checked) => {
-            setRunning(checked)
-            backendRunning = checked
-            await setSettings(RUN_ON_LOGIN, checked)
-            checked ? await startBackend() : await stopBackend() 
-          }}
-          checked={running}
-        />
-        <ToggleField
+        <PanelSectionRow>
+          <ToggleField
+            label={t('Background Monitor')}
+            description={t('plugin_switch_tip')}
+            onChange={async (checked) => {
+              setRunning(checked)
+              backendRunning = checked
+              await setSettings(RUN_ON_LOGIN, checked)
+              checked ? await startBackend() : await stopBackend() 
+            }}
+            checked={running}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
             label={t('Show Notify')}
             description={t('notify_tip')}
             onChange={async (checked) => {
@@ -427,48 +510,55 @@ const Content: VFC<{
               await setSettings(SHOW_NOTIFY, checked)
             }}
             checked={notify}
-        />
+          />
+        </PanelSectionRow>
       </PanelSection>
 
       <PanelSection title={t('Black Background Section')}>
-        <ToggleField
-          label={t('Black Background')}
-          description={renderBlackBackgroundTip()}
-          onChange={async (checked) => {
-            setBlackBackground(checked)
-            overlayState.SetState(checked ? 1 : 0)
-            await setSettings(BLACK_BACKGROUND_ENABLED, checked)
-            if (checked) {
-              Navigation.CloseSideMenus()
-            }
-          }}
-          checked={blackBackground}
-        />
-        <SliderField
-          value={Math.round(blackBackgroundOpacity * 100)}
-          min={0}
-          max={100}
-          step={5}
-          showValue={true}
-          valueSuffix="%"
-          label={t('Black Opacity')}
-          description={t('black_opacity_tip')}
-          onChange={(value) => {
-            const normalizedOpacity = Math.min(1, Math.max(0, value / 100));
-            setBlackBackgroundOpacity(normalizedOpacity);
-            opacityState.SetState(normalizedOpacity);
-            void setSettings(BLACK_BACKGROUND_OPACITY, normalizedOpacity);
-          }}
-        />
-        <ToggleField
-          label={t('Close On Any Key')}
-          description={t('close_anykey_tip')}
-          onChange={async (checked) => {
-            setCloseOnAnyKey(checked)
-            await setSettings(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, checked)
-          }}
-          checked={closeOnAnyKey}
-        />
+        <PanelSectionRow>
+          <ToggleField
+            label={t('Black Background')}
+            description={renderBlackBackgroundTip()}
+            onChange={async (checked) => {
+              setBlackBackground(checked)
+              overlayState.SetState(checked ? 1 : 0)
+              await setSettings(BLACK_BACKGROUND_ENABLED, checked)
+              if (checked) {
+                Navigation.CloseSideMenus()
+              }
+            }}
+            checked={blackBackground}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <SliderField
+            value={Math.round(blackBackgroundOpacity * 100)}
+            min={0}
+            max={100}
+            step={5}
+            showValue={true}
+            valueSuffix="%"
+            label={t('Black Opacity')}
+            description={t('black_opacity_tip')}
+            onChange={(value) => {
+              const normalizedOpacity = Math.min(1, Math.max(0, value / 100));
+              setBlackBackgroundOpacity(normalizedOpacity);
+              opacityState.SetState(normalizedOpacity);
+              void setSettings(BLACK_BACKGROUND_OPACITY, normalizedOpacity);
+            }}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label={t('Close On Any Key')}
+            description={t('close_anykey_tip')}
+            onChange={async (checked) => {
+              setCloseOnAnyKey(checked)
+              await setSettings(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, checked)
+            }}
+            checked={closeOnAnyKey}
+          />
+        </PanelSectionRow>
       </PanelSection>
 
       <PanelSection title={t('App Rules Section')}>
@@ -477,15 +567,19 @@ const Content: VFC<{
             style={PANEL_STYLES.menuItem}
             onClick={openAppMenu}
           >
-            <div style={PANEL_STYLES.menuText}>
-              <span style={PANEL_STYLES.menuTitle}>{t('Inhibit Apps')}</span>
-              <span style={PANEL_STYLES.menuDescription}>
-                {manualApps.length > 0
-                  ? `${manualApps.length} ${t('Apps Enabled')}`
-                  : t('app_rules_tip')}
-              </span>
+            <div style={PANEL_STYLES.menuMain}>
+              <span style={PANEL_STYLES.menuIcon}>☾</span>
+              <div style={PANEL_STYLES.menuText}>
+                <span style={PANEL_STYLES.menuTitle}>{t('Inhibit Apps')}</span>
+                <span style={PANEL_STYLES.menuDescription}>{t('app_rules_tip')}</span>
+              </div>
             </div>
-            <span style={PANEL_STYLES.chevron}>›</span>
+            <div style={PANEL_STYLES.menuTrailing}>
+              {manualApps.length > 0 && (
+                <span style={PANEL_STYLES.countBadge}>{manualApps.length}</span>
+              )}
+              <span style={PANEL_STYLES.chevron}>›</span>
+            </div>
           </Focusable>
         </PanelSectionRow>
       </PanelSection>
