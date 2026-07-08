@@ -30,5 +30,10 @@
     "manual_tip": "If some software doesn't send D-Bus requests, you can click on a process name in the list below to add it to the inhibit list.",
     "Inhibit List": "Current Inhibit List",
     "Running Processes": "Running Processes",
-    "Click to add": "Click to add"
+    "Click to add": "Click to add",
+    "Active Inhibit Sources": "Active Inhibit Sources",
+    "No Active Inhibit": "No apps are currently inhibiting sleep",
+    "Manual Inhibit Source": "Matched manual rule",
+    "DBus Inhibit Source": "D-Bus request",
+    "Active": "Active"
 }

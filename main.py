@@ -51,6 +51,13 @@ class AppRequest:
         reply = await bus.call(message)
         return reply.message_type != MessageType.ERROR
 
+    def to_status(self):
+        return {
+            "cookie": self.cookie,
+            "application": self.application,
+            "reason": self.reason,
+        }
+
 class BaseInterface(ServiceInterface):
     ignore_application = ["Steam", "./steamwebhelper"]
     request_map = {}
@@ -402,6 +409,22 @@ class Plugin:
             return res
 
         return []
+
+    async def get_inhibit_status(self):
+        Plugin._init_runtime_state(self)
+        manual_apps = settings.getSetting("manual_apps", [])
+        dbus_requests = [
+            request.to_status()
+            for request in BaseInterface.request_map.values()
+        ]
+        return {
+            "manual_apps": manual_apps,
+            "manual_active_app": self.manual_running_app,
+            "manual_active": self.manual_active,
+            "dbus_requests": dbus_requests,
+            "dbus_active": len(dbus_requests) > 0,
+            "is_inhibiting": self.manual_active or len(dbus_requests) > 0,
+        }
 
     async def get_settings(self, key: str, defaults):
         if key != "manual_apps":

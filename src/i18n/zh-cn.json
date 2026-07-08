@@ -30,5 +30,10 @@
     "manual_tip": "如果某些软件不发送 D-Bus 请求，你可以在下方运行进程列表中点击进程名将其添加到禁用息屏列表。",
     "Inhibit List": "当前禁用息屏列表",
     "Running Processes": "运行中的进程",
-    "Click to add": "点击下方添加到禁用息屏列表"
+    "Click to add": "点击下方添加到禁用息屏列表",
+    "Active Inhibit Sources": "当前禁用来源",
+    "No Active Inhibit": "当前没有应用正在禁用息屏",
+    "Manual Inhibit Source": "手动配置命中",
+    "DBus Inhibit Source": "D-Bus 请求",
+    "Active": "生效中"
 }

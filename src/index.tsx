@@ -279,9 +279,28 @@ const SHOW_NOTIFY  = "show_notify"
 const DECKY_MUSIC_APP = "DeckyMusic"
 
 type RunningProcess = { name: string, type: string };
+type InhibitRequest = { cookie: number; application: string; reason: string };
+type InhibitStatus = {
+  manual_apps: string[];
+  manual_active_app: string | null;
+  manual_active: boolean;
+  dbus_requests: InhibitRequest[];
+  dbus_active: boolean;
+  is_inhibiting: boolean;
+};
+
+const EMPTY_INHIBIT_STATUS: InhibitStatus = {
+  manual_apps: [],
+  manual_active_app: null,
+  manual_active: false,
+  dbus_requests: [],
+  dbus_active: false,
+  is_inhibiting: false,
+};
 
 type InhibitAppsPageProps = {
   manualApps: string[];
+  inhibitStatus: InhibitStatus;
   runningProcesses: RunningProcess[];
   refreshing: boolean;
   onBack: () => void;
@@ -292,6 +311,7 @@ type InhibitAppsPageProps = {
 
 const InhibitAppsPage: VFC<InhibitAppsPageProps> = ({
   manualApps,
+  inhibitStatus,
   runningProcesses,
   refreshing,
   onBack,
@@ -343,6 +363,38 @@ const InhibitAppsPage: VFC<InhibitAppsPageProps> = ({
             >
               ✕
             </Focusable>
+          </div>
+        </PanelSectionRow>
+      ))}
+    </PanelSection>
+
+    <PanelSection title={t('Active Inhibit Sources')}>
+      {!inhibitStatus.manual_active && inhibitStatus.dbus_requests.length === 0 && (
+        <PanelSectionRow>
+          <div style={PANEL_STYLES.emptyState}>
+            {t('No Active Inhibit')}
+          </div>
+        </PanelSectionRow>
+      )}
+      {inhibitStatus.manual_active && inhibitStatus.manual_active_app && (
+        <PanelSectionRow>
+          <div style={PANEL_STYLES.processItem}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+              <span style={PANEL_STYLES.processName}>{APP_NAMES[inhibitStatus.manual_active_app] || inhibitStatus.manual_active_app}</span>
+              <span style={PANEL_STYLES.sectionHint}>{t('Manual Inhibit Source')}</span>
+            </div>
+            <span style={PANEL_STYLES.badge('app')}>{t('Active')}</span>
+          </div>
+        </PanelSectionRow>
+      )}
+      {inhibitStatus.dbus_requests.map((request) => (
+        <PanelSectionRow key={request.cookie}>
+          <div style={PANEL_STYLES.processItem}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+              <span style={PANEL_STYLES.processName}>{APP_NAMES[request.application] || request.application}</span>
+              <span style={PANEL_STYLES.sectionHint}>{request.reason || t('DBus Inhibit Source')}</span>
+            </div>
+            <span style={PANEL_STYLES.badge('system')}>{t('Active')}</span>
           </div>
         </PanelSectionRow>
       ))}
@@ -416,6 +468,7 @@ const Content: VFC<{
     return await setPluginSetting(serverApi, key, value);
   }
   const [manualApps, setManualApps] = useState<string[]>([]);
+  const [inhibitStatus, setInhibitStatus] = useState<InhibitStatus>(EMPTY_INHIBIT_STATUS);
   const [runningProcesses, setRunningProcesses] = useState<RunningProcess[]>([]);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [showAppMenu, setShowAppMenu] = useState<boolean>(false);
@@ -434,6 +487,26 @@ const Content: VFC<{
     }
   }
 
+  const fetchInhibitStatus = async () => {
+    if (!panelVisible.current) return;
+    const res = await serverApi.callPluginMethod<any, InhibitStatus>("get_inhibit_status", {});
+    if (res.success && res.result) {
+      setInhibitStatus({
+        ...EMPTY_INHIBIT_STATUS,
+        ...res.result,
+        manual_apps: Array.isArray(res.result.manual_apps) ? res.result.manual_apps : [],
+        dbus_requests: Array.isArray(res.result.dbus_requests) ? res.result.dbus_requests : [],
+      });
+    }
+  }
+
+  const refreshAppMenuData = async () => {
+    await Promise.all([
+      fetchRunningProcesses(),
+      fetchInhibitStatus(),
+    ]);
+  }
+
   useEffect(() => {
     panelVisible.current = true;
     const fetchManualApps = async () => {
@@ -448,8 +521,8 @@ const Content: VFC<{
       }
     };
     fetchManualApps();
-    fetchRunningProcesses();
-    const interval = setInterval(fetchRunningProcesses, 30000);
+    refreshAppMenuData();
+    const interval = setInterval(refreshAppMenuData, 30000);
 
     const loadBlackBackgroundSettings = async () => {
       const [enabledRes, opacityRes, closeOnAnyKeyRes] = await Promise.all([
@@ -510,17 +583,21 @@ const Content: VFC<{
 
   const openAppMenu = () => {
     setShowAppMenu(true);
-    fetchRunningProcesses();
+    refreshAppMenuData();
   }
+
+  const activeInhibitSourceCount =
+    (inhibitStatus.manual_active ? 1 : 0) + inhibitStatus.dbus_requests.length;
 
   if (showAppMenu) {
     return (
       <InhibitAppsPage
         manualApps={manualApps}
+        inhibitStatus={inhibitStatus}
         runningProcesses={runningProcesses}
         refreshing={refreshing}
         onBack={() => setShowAppMenu(false)}
-        onRefresh={fetchRunningProcesses}
+        onRefresh={refreshAppMenuData}
         onAddApp={addApp}
         onRemoveApp={removeApp}
       />
@@ -620,8 +697,8 @@ const Content: VFC<{
               </div>
             </div>
             <div style={PANEL_STYLES.menuTrailing}>
-              {manualApps.length > 0 && (
-                <span style={PANEL_STYLES.countBadge}>{manualApps.length}</span>
+              {activeInhibitSourceCount > 0 && (
+                <span style={PANEL_STYLES.countBadge}>{activeInhibitSourceCount}</span>
               )}
               <span style={PANEL_STYLES.chevron}>›</span>
             </div>
