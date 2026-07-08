@@ -12,7 +12,7 @@ export default defineConfig({
   input: './src/index.tsx',
   plugins: [
     typescript({
-      include: ["src/**/*.ts", "src/**/*.tsx"],
+      include: ["**/*.ts", "**/*.tsx"],
     }),
     commonjs(),
     nodeResolve(),
