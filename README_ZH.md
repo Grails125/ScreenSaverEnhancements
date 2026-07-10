@@ -6,13 +6,36 @@ ScreenSaver Enhancements 是一个 Steam Deck 的 Decky Loader 插件，用于�
 
 本项目基于 [xfangfang/DeckyInhibitScreenSaver](https://github.com/xfangfang/DeckyInhibitScreenSaver) 扩展，保留原版 D-Bus 抑制休眠能力，并新增手动进程监听和更完整的管理界面。
 
-## 1.3.0 更新内容
+## 更新内容
 
-- 新增抑制状态管理面板，实时显示当前状态及其来源。
-- 增强手动进程匹配，支持命令参数、长进程名和 Flatpak 应用 ID。
-- 手动进程监听移至后端，关闭 Decky 面板后仍可持续生效。
-- 新增 DeckyMusic 播放状态检测与黑色背景控制选项。
+### 1.3.0
+
+#### 新增与改进
+
+- 增加黑色遮罩显示开关、透明度调节。
+- 优化功能区分，将禁用息屏应用配置移至二级页面。
 - 优化新版 SteamOS 和 SteamClient API 的兼容性。
+
+### 1.2.0
+
+#### 新增与改进
+
+- 前端轮询间隔 1s → 3s，IPC/后端负载降低 3x。
+- 设置检查频率 5s → 30s，IPC 调用减少 6x。
+- UI 进程列表刷新 10s → 30s，`ps` 子进程调用减少 3x。
+- 移除每秒 DOM 全量扫描 `querySelectorAll('audio')`。
+- `installAudioTracker` 改用共享函数替代每次 `play` 创建闭包，减少 GC 压力。
+- 后端 `get_event()` 移除重复的进程检查调用，`ps` 命令频率从每秒降到每 5–10 秒。
+- `_manual_watch_loop` 自适应轮询：空闲 10s / 活跃 5s，空闲时 CPU 使用降低 83%–91%。
+
+### 1.1.0
+
+#### 新增与改进
+
+- 修复手动阻止休眠列表对新应用不生效的问题。
+- 增强进程匹配能力：支持短进程名、完整启动参数、长可执行文件名和 Flatpak App ID。
+- 新增 DeckyMusic 特殊处理：不再因为 DeckyMusic 插件进程常驻就一直阻止休眠，只有检测到真实音频播放时才阻止休眠。
+- 优化 D-Bus 自动阻止休眠与手动进程阻止休眠的状态合并逻辑。
 
 ## 功能
 
@@ -22,6 +45,13 @@ ScreenSaver Enhancements 是一个 Steam Deck 的 Decky Loader 插件，用于�
 - **后端常驻监听**：手动进程扫描在插件后端运行，不依赖 Decky 面板一直打开。
 - **DeckyMusic 特殊处理**：不会因为 DeckyMusic 插件进程常驻就一直阻止休眠；如果列表中启用了 DeckyMusic，则只在真实音频播放时阻止休眠。
 - **开机自启**：Decky Loader 启动后可自动启动后台监听。
+
+## 截图
+
+| 主面板 | 设置面板 |
+| --- | --- |
+| ![主面板概览](./docs/Screenshot/mainPage_1.jpg) | ![主面板状态](./docs/Screenshot/mainPage_2.jpg) |
+| ![设置概览](./docs/Screenshot/secondaryPage_1.jpg) | ![设置选项](./docs/Screenshot/secondaryPage_2.jpg) |
 
 ## 安装
 

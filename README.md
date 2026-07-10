@@ -6,13 +6,36 @@ ScreenSaver Enhancements is a Decky Loader plugin for Steam Deck. It keeps the s
 
 This project is based on [xfangfang/DeckyInhibitScreenSaver](https://github.com/xfangfang/DeckyInhibitScreenSaver) and adds manual process monitoring plus a richer management panel.
 
-## What's New in 1.3.0
+## Changelog
 
-- Added a management panel that shows the current inhibition state and its source.
-- Improved manual process matching for executable names, command arguments, and Flatpak app IDs.
-- Moved manual process monitoring to the backend so it remains active while the Decky panel is closed.
-- Added DeckyMusic playback-aware inhibition and black-background controls.
-- Improved compatibility with recent SteamOS and SteamClient API variants.
+### 1.3.0
+
+#### Added and improved
+
+- Added a black mask display switch and transparency adjustment.
+- Improved feature separation by moving the application configuration for preventing screen sleep to the secondary page.
+- Improved compatibility with newer SteamOS and SteamClient API versions.
+
+### 1.2.0
+
+#### Added and improved
+
+- Frontend poll interval: 1s → 3s; IPC/backend load reduced by 3x.
+- Settings check frequency: 5s → 30s; IPC calls reduced by 6x.
+- UI process-list refresh: 10s → 30s; `ps` subprocess calls reduced by 3x.
+- Removed the per-second full-DOM scan: `querySelectorAll('audio')`.
+- Reworked `installAudioTracker` to use shared handler functions instead of creating closures for every `play`, reducing GC pressure.
+- Removed duplicate process checks from backend `get_event()`; `ps` command frequency changed from every second to every 5–10 seconds.
+- Added adaptive `_manual_watch_loop` polling: 10s idle / 5s active, reducing idle CPU usage by 83%–91%.
+
+### 1.1.0
+
+#### Added and improved
+
+- Fixed the manual inhibit list not applying to newly added applications.
+- Improved process matching for short command names, complete command arguments, long executable names, and Flatpak app IDs.
+- Added DeckyMusic-specific handling: it inhibits sleep only while actual audio playback is detected, not merely because its plugin process is running.
+- Improved coordination between D-Bus automatic inhibition and manual process inhibition.
 
 ## Features
 
@@ -22,6 +45,13 @@ This project is based on [xfangfang/DeckyInhibitScreenSaver](https://github.com/
 - **Backend watcher**: Manual process checks run in the plugin backend, so they do not depend on the Decky panel staying open.
 - **DeckyMusic special handling**: DeckyMusic is not inhibited merely because its plugin process is running. If enabled in the inhibit list, it is handled by frontend audio playback detection.
 - **Run on login**: Automatically starts the background monitor when Decky Loader starts.
+
+## Screenshots
+
+| Main panel | Settings panel |
+| --- | --- |
+| ![Main panel overview](./docs/Screenshot/mainPage_1.jpg) | ![Main panel status](./docs/Screenshot/mainPage_2.jpg) |
+| ![Settings overview](./docs/Screenshot/secondaryPage_1.jpg) | ![Settings options](./docs/Screenshot/secondaryPage_2.jpg) |
 
 ## Install
 
