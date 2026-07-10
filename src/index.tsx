@@ -28,6 +28,7 @@ import {
   normalizePowerSettings,
   PowerSettings,
   shouldApplyPowerSettingsImmediately,
+  getForceSuspendWarningDelayMs,
 } from './powerSettings'
 import {
   areStringArraysEqual,
@@ -1225,7 +1226,7 @@ export default definePlugin((serverApi: ServerAPI) => {
         playSound: false,
         icon: <GiNightSleep />,
       });
-    }, 450_000)
+    }, getForceSuspendWarningDelayMs(configuredPowerSettings))
   }
 
   let deckyMusicEnabled = false;

@@ -45,7 +45,7 @@
     "Battery Suspend Timeout": "电池休眠超时",
     "AC Suspend Timeout": "接电休眠超时",
     "Force Suspend": "空闲后强制休眠",
-    "Force Suspend Description": "在恢复后的超时时间到达后，显示五秒提示并强制设备进入休眠。",
+    "Force Suspend Description": "在所选系统休眠超时或 7 分半钟中较早的时刻前显示五秒提示，然后强制设备休眠。",
     "Zero Disables Timeout": "设为 0 可关闭该超时。",
     "Power Settings Apply Failed": "电源配置应用失败",
     "Power Settings Apply Failed Body": "Steam 未能应用此配置，已恢复之前的值。",

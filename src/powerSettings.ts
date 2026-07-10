@@ -32,3 +32,20 @@ export const shouldApplyPowerSettingsImmediately = (
   backendInhibiting: boolean,
   deckyMusicInhibiting: boolean,
 ) => !backendInhibiting && !deckyMusicInhibiting;
+
+const FORCE_SUSPEND_DELAY_MS = 450_000;
+const FORCE_SUSPEND_WARNING_MS = 5_000;
+
+export const getForceSuspendWarningDelayMs = (settings: PowerSettings) => {
+  const enabledSuspendTimeouts = [settings.batterySuspend, settings.acSuspend]
+    .filter((timeout) => timeout > 0)
+    .map((timeout) => timeout * 1_000);
+  const earliestSystemSuspend = enabledSuspendTimeouts.length > 0
+    ? Math.min(...enabledSuspendTimeouts)
+    : Number.POSITIVE_INFINITY;
+
+  return Math.max(
+    0,
+    Math.min(FORCE_SUSPEND_DELAY_MS, earliestSystemSuspend - FORCE_SUSPEND_WARNING_MS),
+  );
+};
