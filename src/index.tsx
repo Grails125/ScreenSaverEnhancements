@@ -1055,6 +1055,9 @@ export default definePlugin((serverApi: ServerAPI) => {
       );
     }
     setConfiguredPowerSettings(settings);
+    if (shouldApplyPowerSettingsImmediately(backendInhibiting, deckyMusicInhibiting)) {
+      scheduleForceSuspend();
+    }
   }
 
   const readCurrentPowerSettings = async (): Promise<PowerSettings | null> => {
@@ -1211,8 +1214,15 @@ export default definePlugin((serverApi: ServerAPI) => {
       restoreSettings.acSuspend,
     );
     capturedPowerSettings = null;
+    scheduleForceSuspend()
+  }
+
+  function scheduleForceSuspend() {
     clearSuspendTimeout()
     if (!configuredPowerSettings.forceSuspend) return;
+    const warningDelay = getForceSuspendWarningDelayMs(configuredPowerSettings);
+    if (warningDelay === null) return;
+
     input_changed = false
     forced_suspend = setTimeout(() => {
       forced_suspend_tip = setTimeout(()=>{
@@ -1226,7 +1236,7 @@ export default definePlugin((serverApi: ServerAPI) => {
         playSound: false,
         icon: <GiNightSleep />,
       });
-    }, getForceSuspendWarningDelayMs(configuredPowerSettings))
+    }, warningDelay)
   }
 
   let deckyMusicEnabled = false;

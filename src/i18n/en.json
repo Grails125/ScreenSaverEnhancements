@@ -45,7 +45,7 @@
     "Battery Suspend Timeout": "Battery Suspend Timeout",
     "AC Suspend Timeout": "AC Suspend Timeout",
     "Force Suspend": "Force suspend after inactivity",
-    "Force Suspend Description": "Show a five-second warning before the earlier of the selected system sleep timeout or 7.5 minutes, then force sleep.",
+    "Force Suspend Description": "Show a five-second warning before the earliest selected system sleep timeout, then force sleep.",
     "Zero Disables Timeout": "0 disables this timeout.",
     "Power Settings Apply Failed": "Power Settings Apply Failed",
     "Power Settings Apply Failed Body": "Steam could not apply this profile. The previous value has been restored.",

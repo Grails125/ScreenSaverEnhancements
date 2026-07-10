@@ -54,7 +54,7 @@ test("only applies a changed profile immediately while no source is inhibiting s
   assert.equal(shouldApplyPowerSettingsImmediately(true, true), false);
 });
 
-test("schedules the force-suspend warning before the earliest configured system sleep", () => {
+test("schedules the force-suspend warning five seconds before the earliest configured system sleep", () => {
   assert.equal(getForceSuspendWarningDelayMs({
     batteryDim: 60,
     acDim: 60,
@@ -69,7 +69,7 @@ test("schedules the force-suspend warning before the earliest configured system 
     batterySuspend: 600,
     acSuspend: 0,
     forceSuspend: true,
-  }), 450_000);
+  }), 595_000);
 
   assert.equal(getForceSuspendWarningDelayMs({
     batteryDim: 60,
@@ -77,5 +77,5 @@ test("schedules the force-suspend warning before the earliest configured system 
     batterySuspend: 0,
     acSuspend: 0,
     forceSuspend: true,
-  }), 450_000);
+  }), null);
 });
