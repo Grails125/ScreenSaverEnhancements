@@ -47,7 +47,9 @@ export const selectSystemPowerSettingsSnapshot = (
 
 export const shouldPlayNotificationSound = (notificationsMuted: boolean) => !notificationsMuted;
 
-export const getNotificationSound = (notificationsMuted: boolean) => notificationsMuted ? 0 : 6;
+// Steam accepts a falsy sound value to suppress playback, although Decky's type only allows numbers.
+export const getNotificationSound = (notificationsMuted: boolean): number =>
+  (notificationsMuted ? false : 6) as unknown as number;
 
 export const shouldApplyPowerSettingsImmediately = (
   backendInhibiting: boolean,
