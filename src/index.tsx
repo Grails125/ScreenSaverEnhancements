@@ -332,6 +332,7 @@ const EMPTY_INHIBIT_STATUS: InhibitStatus = {
 type InhibitAppsPageProps = {
   manualApps: string[];
   inhibitStatus: InhibitStatus;
+  deckyMusicActive: boolean;
   runningProcesses: RunningProcess[];
   refreshing: boolean;
   onBack: () => void;
@@ -343,6 +344,7 @@ type InhibitAppsPageProps = {
 const InhibitAppsPage: VFC<InhibitAppsPageProps> = ({
   manualApps,
   inhibitStatus,
+  deckyMusicActive,
   runningProcesses,
   refreshing,
   onBack,
@@ -400,7 +402,7 @@ const InhibitAppsPage: VFC<InhibitAppsPageProps> = ({
     </PanelSection>
 
     <PanelSection title={t('Active Inhibit Sources')}>
-      {!inhibitStatus.manual_active && inhibitStatus.dbus_requests.length === 0 && (
+      {!inhibitStatus.manual_active && !deckyMusicActive && inhibitStatus.dbus_requests.length === 0 && (
         <PanelSectionRow>
           <div style={PANEL_STYLES.emptyState}>
             {t('No Active Inhibit')}
@@ -413,6 +415,17 @@ const InhibitAppsPage: VFC<InhibitAppsPageProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
               <span style={PANEL_STYLES.processName}>{APP_NAMES[inhibitStatus.manual_active_app] || inhibitStatus.manual_active_app}</span>
               <span style={PANEL_STYLES.sectionHint}>{t('Manual Inhibit Source')}</span>
+            </div>
+            <span style={PANEL_STYLES.badge('app')}>{t('Active')}</span>
+          </div>
+        </PanelSectionRow>
+      )}
+      {deckyMusicActive && (
+        <PanelSectionRow>
+          <div style={PANEL_STYLES.processItem}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+              <span style={PANEL_STYLES.processName}>{DECKY_MUSIC_APP}</span>
+              <span style={PANEL_STYLES.sectionHint}>{t('DeckyMusic Inhibit Source')}</span>
             </div>
             <span style={PANEL_STYLES.badge('app')}>{t('Active')}</span>
           </div>
@@ -479,9 +492,10 @@ const Content: VFC<{
   serverApi: ServerAPI;
   overlayState: StateNumber;
   opacityState: StateNumber;
+  deckyMusicState: StateNumber;
   onPowerSettingsLoaded: (settings: PowerSettings) => void;
   onPowerSettingsApply: (settings: PowerSettings) => Promise<void>;
-}> = ({serverApi, overlayState, opacityState, onPowerSettingsLoaded, onPowerSettingsApply}) => {
+}> = ({serverApi, overlayState, opacityState, deckyMusicState, onPowerSettingsLoaded, onPowerSettingsApply}) => {
   const [running, setRunning] = useState<boolean>(backendRunning);
   const [notify, setNotify] = useState<boolean>(showNotify);
   const [muted, setMuted] = useState<boolean>(notificationsMuted);
@@ -490,6 +504,7 @@ const Content: VFC<{
   const [closeOnAnyKey, setCloseOnAnyKey] = useState<boolean>(false);
   const [closeOnAnyKeyLoaded, setCloseOnAnyKeyLoaded] = useState<boolean>(false);
   const [powerSettings, setPowerSettings] = useState<PowerSettings>(DEFAULT_POWER_SETTINGS);
+  const [deckyMusicActive, setDeckyMusicActive] = useState<boolean>(deckyMusicState.GetState() === 1);
 
   const startBackend = async () => {
     return await serverApi.callPluginMethod<any, any>("start_backend", {});
@@ -672,6 +687,8 @@ const Content: VFC<{
     };
     overlayState.onStateChanged(onOverlayChanged);
     opacityState.onStateChanged(onOpacityChanged);
+    const onDeckyMusicChanged = (value: number) => setDeckyMusicActive(value === 1);
+    deckyMusicState.onStateChanged(onDeckyMusicChanged);
 
     return () => {
       panelVisible.current = false;
@@ -679,8 +696,9 @@ const Content: VFC<{
       clearInterval(interval);
       overlayState.offStateChanged(onOverlayChanged);
       opacityState.offStateChanged(onOpacityChanged);
+      deckyMusicState.offStateChanged(onDeckyMusicChanged);
     };
-  }, [overlayState, opacityState]);
+  }, [overlayState, opacityState, deckyMusicState]);
 
   const addApp = async (appName: string) => {
     const newList = normalizeManualApps([...manualApps, appName]);
@@ -702,13 +720,14 @@ const Content: VFC<{
   }
 
   const activeInhibitSourceCount =
-    (inhibitStatus.manual_active ? 1 : 0) + inhibitStatus.dbus_requests.length;
+    (inhibitStatus.manual_active ? 1 : 0) + (deckyMusicActive ? 1 : 0) + inhibitStatus.dbus_requests.length;
 
   if (showAppMenu) {
     return (
       <InhibitAppsPage
         manualApps={manualApps}
         inhibitStatus={inhibitStatus}
+        deckyMusicActive={deckyMusicActive}
         runningProcesses={runningProcesses}
         refreshing={refreshing}
         onBack={() => setShowAppMenu(false)}
@@ -946,6 +965,7 @@ const Content: VFC<{
 export default definePlugin((serverApi: ServerAPI) => {
   const overlayState = new StateNumber(0);
   const opacityState = new StateNumber(1);
+  const deckyMusicState = new StateNumber(0);
   let forced_suspend:NodeJS.Timeout;
   let forced_suspend_tip:NodeJS.Timeout;
   let input_changed:boolean = true;
@@ -1368,11 +1388,13 @@ export default definePlugin((serverApi: ServerAPI) => {
       if (deckyMusicPlaying && !deckyMusicInhibiting) {
         const shouldStart = shouldStartInhibit(backendInhibiting, deckyMusicInhibiting);
         deckyMusicInhibiting = true;
+        deckyMusicState.SetState(1);
         if (shouldStart) {
           await startInhibit();
         }
       } else if (!deckyMusicPlaying && deckyMusicInhibiting) {
         deckyMusicInhibiting = false;
+        deckyMusicState.SetState(0);
         if (!backendInhibiting) {
           await stopInhibit();
         }
@@ -1437,12 +1459,14 @@ export default definePlugin((serverApi: ServerAPI) => {
       serverApi={serverApi}
       overlayState={overlayState}
       opacityState={opacityState}
+      deckyMusicState={deckyMusicState}
       onPowerSettingsLoaded={setConfiguredPowerSettings}
       onPowerSettingsApply={applyConfiguredPowerSettings}
     />,
     icon: <GiNightSleep />,
     onDismount() {
       clearSuspendTimeout()
+      deckyMusicState.SetState(0)
       clearTimeout(timeout)
       eventPollingActive = false
       clearTimeout(eventPollTimeout)

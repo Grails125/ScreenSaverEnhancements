@@ -37,6 +37,7 @@
     "No Active Inhibit": "当前没有应用正在禁用息屏",
     "Manual Inhibit Source": "手动配置命中",
     "DBus Inhibit Source": "D-Bus 请求",
+    "DeckyMusic Inhibit Source": "正在播放音频",
     "Active": "生效中",
     "Settings Save Failed": "设置保存失败",
     "Settings Save Failed Body": "已恢复原来的设置，请重试。",
