@@ -47,6 +47,8 @@ export const selectSystemPowerSettingsSnapshot = (
 
 export const shouldPlayNotificationSound = (notificationsMuted: boolean) => !notificationsMuted;
 
+export const getNotificationSound = (notificationsMuted: boolean) => notificationsMuted ? 0 : 6;
+
 export const shouldApplyPowerSettingsImmediately = (
   backendInhibiting: boolean,
   deckyMusicInhibiting: boolean,

@@ -25,6 +25,7 @@ import { QUICK_ACCESS_MENU } from './ButtonIcons'
 import { StateNumber } from './state'
 import {
   DEFAULT_POWER_SETTINGS,
+  getNotificationSound,
   minutesToSeconds,
   normalizePowerSettings,
   PowerSettings,
@@ -531,6 +532,7 @@ const Content: VFC<{
         icon: <GiNightSleep />,
         critical: true,
         duration: 4000,
+        sound: getNotificationSound(notificationsMuted),
         playSound: shouldPlayNotificationSound(notificationsMuted),
       });
       return false;
@@ -614,6 +616,7 @@ const Content: VFC<{
         icon: <GiNightSleep />,
         critical: true,
         duration: 4000,
+        sound: getNotificationSound(notificationsMuted),
         playSound: shouldPlayNotificationSound(notificationsMuted),
       });
     }
@@ -764,6 +767,7 @@ const Content: VFC<{
                   icon: <GiNightSleep />,
                   critical: true,
                   duration: 4000,
+                  sound: getNotificationSound(notificationsMuted),
                   playSound: shouldPlayNotificationSound(notificationsMuted),
                 });
               }
@@ -1314,6 +1318,7 @@ export default definePlugin((serverApi: ServerAPI) => {
         title: title,
         body: body,
         duration: 1_500,
+        sound: getNotificationSound(notificationsMuted),
         playSound: shouldPlayNotificationSound(notificationsMuted),
         icon: <GiNightSleep />,
       });
@@ -1358,6 +1363,7 @@ export default definePlugin((serverApi: ServerAPI) => {
         body: t("suspend_tip_body"),
         critical: true,
         duration: 5_000,
+        sound: getNotificationSound(notificationsMuted),
         playSound: shouldPlayNotificationSound(notificationsMuted),
         icon: <GiNightSleep />,
       });
