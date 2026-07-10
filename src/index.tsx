@@ -761,6 +761,16 @@ export default definePlugin((serverApi: ServerAPI) => {
 
   // SteamClient version 1759461205 does not have `RegisterForControllerStateChanges`
   let controllerHandle: any = null;
+  const releaseSteamHandle = (handle: any) => {
+    if (typeof handle === "function") {
+      handle();
+    } else if (typeof handle?.unregister === "function") {
+      handle.unregister();
+    } else if (typeof handle?.Unregister === "function") {
+      handle.Unregister();
+    }
+  }
+
   controllerHandle =
     SteamClient.Input.RegisterForControllerStateChanges &&
     SteamClient.Input.RegisterForControllerStateChanges (
@@ -1060,8 +1070,11 @@ export default definePlugin((serverApi: ServerAPI) => {
     icon: <GiNightSleep />,
     onDismount() {
       clearSuspendTimeout()
+      clearTimeout(timeout)
       eventPollingActive = false
       clearTimeout(eventPollTimeout)
+      releaseSteamHandle(controllerHandle)
+      releaseSteamHandle(suspendHandle)
       serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")
     },
   };
