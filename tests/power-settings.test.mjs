@@ -16,6 +16,8 @@ vm.runInNewContext(compiled, { module, exports: module.exports });
 const {
   normalizePowerTimeout,
   normalizePowerSettings,
+  minutesToSeconds,
+  secondsToMinutes,
   shouldApplyPowerSettingsImmediately,
   getForceSuspendWarningDelayMs,
 } = module.exports;
@@ -36,6 +38,7 @@ test("normalizes every power profile field and preserves the force-suspend choic
       batterySuspend: 300,
       acSuspend: 600,
       forceSuspend: true,
+      customPowerSettings: false,
     }))),
     {
       batteryDim: 60,
@@ -43,8 +46,18 @@ test("normalizes every power profile field and preserves the force-suspend choic
       batterySuspend: 300,
       acSuspend: 600,
       forceSuspend: true,
+      customPowerSettings: false,
     },
   );
+});
+
+test("defaults to the system power configuration and converts displayed minutes", () => {
+  const settings = JSON.parse(JSON.stringify(normalizePowerSettings({})));
+  assert.equal(settings.customPowerSettings, false);
+  assert.equal(minutesToSeconds(1), 60);
+  assert.equal(minutesToSeconds(60), 3600);
+  assert.equal(secondsToMinutes(60), 1);
+  assert.equal(secondsToMinutes(300), 5);
 });
 
 test("only applies a changed profile immediately while no source is inhibiting sleep", () => {
