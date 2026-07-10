@@ -472,6 +472,28 @@ const Content: VFC<{
     return await serverApi.callPluginMethod<any, any>("stop_backend", {});
   }
 
+  const saveSetting = async (
+    key: string,
+    value: any,
+    rollback: () => void,
+  ): Promise<boolean> => {
+    try {
+      const response = await setPluginSetting(serverApi, key, value);
+      if (response.success) return true;
+      throw new Error("settings RPC failed");
+    } catch {
+      rollback();
+      serverApi.toaster.toast({
+        title: t("Settings Save Failed"),
+        body: t("Settings Save Failed Body"),
+        icon: <GiNightSleep />,
+        critical: true,
+        duration: 4000,
+      });
+      return false;
+    }
+  }
+
   const [manualApps, setManualApps] = useState<string[]>([]);
   const [inhibitStatus, setInhibitStatus] = useState<InhibitStatus>(EMPTY_INHIBIT_STATUS);
   const [runningProcesses, setRunningProcesses] = useState<RunningProcess[]>([]);
@@ -583,14 +605,14 @@ const Content: VFC<{
     const newList = normalizeManualApps([...manualApps, appName]);
     if (areStringArraysEqual(newList, manualApps)) return;
     setManualApps(newList);
-    await setPluginSetting(serverApi, "manual_apps", newList);
+    await saveSetting("manual_apps", newList, () => setManualApps(manualApps));
   }
 
   const removeApp = async (app: string) => {
     const normalizedApp = String(app).trim();
     const newList = normalizeManualApps(manualApps.filter(a => a !== normalizedApp));
     setManualApps(newList);
-    await setPluginSetting(serverApi, "manual_apps", newList);
+    await saveSetting("manual_apps", newList, () => setManualApps(manualApps));
   }
 
   const openAppMenu = () => {
@@ -624,10 +646,27 @@ const Content: VFC<{
             label={t('Background Monitor')}
             description={t('plugin_switch_tip')}
             onChange={async (checked) => {
+              const previous = running;
               setRunning(checked)
               backendRunning = checked
-              await setPluginSetting(serverApi, RUN_ON_LOGIN, checked)
-              checked ? await startBackend() : await stopBackend() 
+              if (!await saveSetting(RUN_ON_LOGIN, checked, () => {
+                setRunning(previous)
+                backendRunning = previous
+              })) return;
+
+              const response = checked ? await startBackend() : await stopBackend();
+              if (!response.success) {
+                setRunning(previous)
+                backendRunning = previous
+                await setPluginSetting(serverApi, RUN_ON_LOGIN, previous);
+                serverApi.toaster.toast({
+                  title: t("Background Monitor Failed"),
+                  body: t("Settings Save Failed Body"),
+                  icon: <GiNightSleep />,
+                  critical: true,
+                  duration: 4000,
+                });
+              }
             }}
             checked={running}
           />
@@ -637,9 +676,13 @@ const Content: VFC<{
             label={t('Show Notify')}
             description={t('notify_tip')}
             onChange={async (checked) => {
+              const previous = notify;
               setNotify(checked)
               showNotify = checked
-              await setPluginSetting(serverApi, SHOW_NOTIFY, checked)
+              await saveSetting(SHOW_NOTIFY, checked, () => {
+                setNotify(previous)
+                showNotify = previous
+              });
             }}
             checked={notify}
           />
@@ -652,9 +695,13 @@ const Content: VFC<{
             label={t('Black Background')}
             description={renderBlackBackgroundTip()}
             onChange={async (checked) => {
+              const previous = blackBackground;
               setBlackBackground(checked)
               overlayState.SetState(checked ? 1 : 0)
-              await setPluginSetting(serverApi, BLACK_BACKGROUND_ENABLED, checked)
+              if (!await saveSetting(BLACK_BACKGROUND_ENABLED, checked, () => {
+                setBlackBackground(previous)
+                overlayState.SetState(previous ? 1 : 0)
+              })) return;
               if (checked) {
                 Navigation.CloseSideMenus()
               }
@@ -686,8 +733,11 @@ const Content: VFC<{
               label={t('Close On Any Key')}
               description={t('close_anykey_tip')}
               onChange={async (checked) => {
+                const previous = closeOnAnyKey;
                 setCloseOnAnyKey(checked)
-                await setPluginSetting(serverApi, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, checked)
+                await saveSetting(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, checked, () => {
+                  setCloseOnAnyKey(previous)
+                });
               }}
               checked={closeOnAnyKey}
             />

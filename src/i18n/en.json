@@ -35,5 +35,8 @@
     "No Active Inhibit": "No apps are currently inhibiting sleep",
     "Manual Inhibit Source": "Matched manual rule",
     "DBus Inhibit Source": "D-Bus request",
-    "Active": "Active"
+    "Active": "Active",
+    "Settings Save Failed": "Settings Save Failed",
+    "Settings Save Failed Body": "The previous value has been restored. Please try again.",
+    "Background Monitor Failed": "Background Monitor Failed"
 }
