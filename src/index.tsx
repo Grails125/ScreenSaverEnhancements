@@ -719,8 +719,7 @@ const Content: VFC<{
     refreshAppMenuData();
   }
 
-  const activeInhibitSourceCount =
-    (inhibitStatus.manual_active ? 1 : 0) + (deckyMusicActive ? 1 : 0) + inhibitStatus.dbus_requests.length;
+  const inhibitAppCount = manualApps.length;
 
   if (showAppMenu) {
     return (
@@ -949,8 +948,8 @@ const Content: VFC<{
               </div>
             </div>
             <div style={PANEL_STYLES.menuTrailing}>
-              {activeInhibitSourceCount > 0 && (
-                <span style={PANEL_STYLES.countBadge}>{activeInhibitSourceCount}</span>
+              {inhibitAppCount > 0 && (
+                <span style={PANEL_STYLES.countBadge}>{inhibitAppCount}</span>
               )}
               <span style={PANEL_STYLES.chevron}>›</span>
             </div>
