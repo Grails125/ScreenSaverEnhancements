@@ -208,6 +208,16 @@ def display_process_name(comm, args):
 def is_decky_music_name(name):
     return normalize_process_name(name) == "deckymusic"
 
+
+def get_process_lines(command):
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+        return result.stdout.splitlines() if result.returncode == 0 else []
+    except Exception as e:
+        decky_plugin.logger.error(f"Error getting process list: {e}")
+        return []
+
+
 class Plugin:
     def _init_runtime_state(self):
         if not hasattr(self, 'manual_active'):
@@ -219,17 +229,11 @@ class Plugin:
         if not hasattr(self, 'manual_inhibit_process'):
             self.manual_inhibit_process = None
 
-    def _get_all_process_lines(self):
-        try:
-            res = subprocess.run(['ps', '-eo', 'comm=,args='], capture_output=True, text=True)
-            if res.returncode == 0:
-                return res.stdout.splitlines()
-        except Exception as e:
-            decky_plugin.logger.error(f"Error getting process list: {e}")
-        return []
+    async def _get_all_process_lines(self):
+        return await asyncio.to_thread(get_process_lines, ['ps', '-eo', 'comm=,args='])
 
-    def _is_process_running(self, name):
-        lines = Plugin._get_all_process_lines(self)
+    async def _is_process_running(self, name):
+        lines = await Plugin._get_all_process_lines(self)
         target = normalize_process_name(name)
         for line in lines:
             parts = line.split(None, 1)
@@ -241,11 +245,11 @@ class Plugin:
                 return True
         return False
 
-    def _find_running_manual_app(self, manual_apps):
+    async def _find_running_manual_app(self, manual_apps):
         apps_to_check = [app for app in manual_apps if not is_decky_music_name(app)]
         if not apps_to_check:
             return None
-        lines = Plugin._get_all_process_lines(self)
+        lines = await Plugin._get_all_process_lines(self)
         # Build candidate sets once for all running processes
         proc_candidates_list = []
         for line in lines:
@@ -300,7 +304,7 @@ class Plugin:
                     not is_decky_music_name(app)
                     for app in manual_apps
                 )
-                running_app = Plugin._find_running_manual_app(self, manual_apps)
+                running_app = await Plugin._find_running_manual_app(self, manual_apps)
                 Plugin._set_manual_active(self, running_app)
             except asyncio.CancelledError:
                 raise
@@ -354,34 +358,29 @@ class Plugin:
         return bus is not None
 
     async def get_running_processes(self):
-        try:
-            # 获取进程名和所属用户
-            res = subprocess.run(['ps', '-eo', 'comm=,user=,args='], capture_output=True, text=True)
-            if res.returncode == 0:
-                lines = res.stdout.splitlines()
-                proc_map = {}
-                for line in lines:
-                    parts = line.split(None, 2)
-                    if len(parts) >= 2:
-                        comm, user = parts[0], parts[1]
-                        args = parts[2] if len(parts) > 2 else ""
-                        name = display_process_name(comm, args)
-                        if name and not name.startswith('['):
-                            proc_type = "app" if user == "deck" else "system"
-                            if name not in proc_map or proc_type == "app":
-                                proc_map[name] = proc_type
-                
-                result = []
-                for name, ptype in proc_map.items():
-                    result.append({"name": name, "type": ptype})
-                
-                # 排序：应用在前，然后按名称字母排序
-                result.sort(key=lambda x: (0 if x['type'] == 'app' else 1, x['name'].lower()))
-                return result
-            return []
-        except Exception as e:
-            decky_plugin.logger.error(f"Error getting processes: {e}")
-            return []
+        lines = await asyncio.to_thread(
+            get_process_lines,
+            ['ps', '-eo', 'comm=,user=,args='],
+        )
+        proc_map = {}
+        for line in lines:
+            parts = line.split(None, 2)
+            if len(parts) >= 2:
+                comm, user = parts[0], parts[1]
+                args = parts[2] if len(parts) > 2 else ""
+                name = display_process_name(comm, args)
+                if name and not name.startswith('['):
+                    proc_type = "app" if user == "deck" else "system"
+                    if name not in proc_map or proc_type == "app":
+                        proc_map[name] = proc_type
+
+        result = []
+        for name, ptype in proc_map.items():
+            result.append({"name": name, "type": ptype})
+
+        # 排序：应用在前，然后按名称字母排序
+        result.sort(key=lambda x: (0 if x['type'] == 'app' else 1, x['name'].lower()))
+        return result
 
     async def get_event(self):
         Plugin._init_runtime_state(self)
