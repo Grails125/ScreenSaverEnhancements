@@ -739,6 +739,14 @@ const Content: VFC<{
         </PanelSectionRow>
         <PanelSectionRow>
           <ToggleField
+            label={t('Sleep Warning')}
+            description={t('Sleep Warning Description')}
+            onChange={(checked) => void updatePowerSetting('forceSuspend', checked)}
+            checked={powerSettings.forceSuspend}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
             label={t('Show Notify')}
             description={t('notify_tip')}
             onChange={async (checked) => {
@@ -815,14 +823,6 @@ const Content: VFC<{
               label={t('AC Suspend Timeout')}
               description={t('Zero Disables Timeout')}
               onChange={(value) => void updatePowerSetting('acSuspend', minutesToSeconds(value))}
-            />
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ToggleField
-              label={t('Show Sleep Warning')}
-              description={t('Show Sleep Warning Description')}
-              onChange={(checked) => void updatePowerSetting('forceSuspend', checked)}
-              checked={powerSettings.forceSuspend}
             />
           </PanelSectionRow>
         </>}
@@ -1307,7 +1307,7 @@ export default definePlugin((serverApi: ServerAPI) => {
         body: t("suspend_tip_body"),
         critical: true,
         duration: 5_000,
-        playSound: false,
+        playSound: true,
         icon: <GiNightSleep />,
       });
     }, warningDelay)
