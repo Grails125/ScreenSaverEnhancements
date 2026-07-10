@@ -534,15 +534,9 @@ const Content: VFC<{
       if (!isCurrentRequest(token)) return;
 
       const normalizedApps = normalizeManualApps(storedApps);
-      if (normalizedApps.length > 0) {
-        setManualApps(normalizedApps);
-        if (Array.isArray(storedApps) && !areStringArraysEqual(normalizedApps, storedApps)) {
-          await setPluginSetting(serverApi, "manual_apps", normalizedApps);
-        }
-      } else {
-        const defaults = normalizeManualApps(["chrome", "mpv", "wiliwili"]);
-        setManualApps(defaults);
-        await setPluginSetting(serverApi, "manual_apps", defaults);
+      setManualApps(normalizedApps);
+      if (Array.isArray(storedApps) && !areStringArraysEqual(normalizedApps, storedApps)) {
+        await setPluginSetting(serverApi, "manual_apps", normalizedApps);
       }
     };
     fetchManualApps();

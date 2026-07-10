@@ -22,6 +22,8 @@ decky_plugin.logger.info("Main.py Loading...")
 decky_plugin.logger.info("Environment setup complete")
 settings_dir = decky_plugin.DECKY_PLUGIN_SETTINGS_DIR
 settings = SettingsManager(name="settings", settings_directory=settings_dir)
+if settings.getSetting("manual_apps", None) is None:
+    settings.setSetting("manual_apps", ["chrome", "mpv", "wiliwili"])
 event_queue = queue.Queue()
 decky_plugin.logger.info(f"Settings directory: {settings_dir}")
 
