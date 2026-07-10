@@ -6,6 +6,14 @@ ScreenSaver Enhancements 是一个 Steam Deck 的 Decky Loader 插件，用于�
 
 本项目基于 [xfangfang/DeckyInhibitScreenSaver](https://github.com/xfangfang/DeckyInhibitScreenSaver) 扩展，保留原版 D-Bus 抑制休眠能力，并新增手动进程监听和更完整的管理界面。
 
+## 1.3.0 更新内容
+
+- 新增抑制状态管理面板，实时显示当前状态及其来源。
+- 增强手动进程匹配，支持命令参数、长进程名和 Flatpak 应用 ID。
+- 手动进程监听移至后端，关闭 Decky 面板后仍可持续生效。
+- 新增 DeckyMusic 播放状态检测与黑色背景控制选项。
+- 优化新版 SteamOS 和 SteamClient API 的兼容性。
+
 ## 功能
 
 - **D-Bus 自动抑制**：兼容 VLC、Chrome、mpv、wiliwili 等会主动发送 inhibit 请求的应用。
@@ -45,7 +53,8 @@ DeckyMusic 是一个常驻插件进程，单纯按进程名监听会导致它即
 
 ```powershell
 npm.cmd install
+npm.cmd test
 python build.py
 ```
 
-构建产物会输出到 `build/ScreenSaverEnhancements` 和 `build/ScreenSaverEnhancements.zip`。
+`npm.cmd test` 会执行 TypeScript 校验和已发现的单元测试。构建产物会输出到 `build/ScreenSaverEnhancements` 和 `build/ScreenSaverEnhancements.zip`。
