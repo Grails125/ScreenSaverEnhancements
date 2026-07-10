@@ -25,6 +25,8 @@ settings = SettingsManager(name="settings", settings_directory=settings_dir)
 if settings.getSetting("manual_apps", None) is None:
     settings.setSetting("manual_apps", ["chrome", "mpv", "wiliwili"])
 event_queue = queue.Queue()
+manual_inhibiting = False
+inhibit_active = False
 decky_plugin.logger.info(f"Settings directory: {settings_dir}")
 
 import asyncio
@@ -32,6 +34,15 @@ from dbus_next.aio import MessageBus
 from dbus_next import Message, MessageType
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
 bus = None
+
+
+def sync_inhibit_state():
+    global inhibit_active
+    active = manual_inhibiting or len(BaseInterface.request_map) > 0
+    if active == inhibit_active:
+        return
+    inhibit_active = active
+    event_queue.put({"type": "Inhibit" if active else "UnInhibit"})
 
 class AppRequest:
     def __init__(self, sender, cookie, application, reason):
@@ -71,10 +82,10 @@ class BaseInterface(ServiceInterface):
     async def _inhibit_impl(self, application, reason):
         if application in BaseInterface.ignore_application: return 0
         decky_plugin.logger.info(f'called Inhibit with application={application} and reason={reason}')
-        event_queue.put({"type": "Inhibit"})
         sender = ServiceInterface.last_msg.sender
         BaseInterface.cookie += 1
         BaseInterface.request_map[BaseInterface.cookie] = AppRequest(sender, BaseInterface.cookie, application, reason)
+        sync_inhibit_state()
         return BaseInterface.cookie
 
     async def _un_inhibit_impl(self, cookie):
@@ -82,8 +93,7 @@ class BaseInterface(ServiceInterface):
         decky_plugin.logger.info(f'called UnInhibit with cookie={cookie}')
         if BaseInterface.request_map.pop(cookie, None) is None:
             decky_plugin.logger.info(f'cannot find cookie={cookie}')
-        if len(BaseInterface.request_map) == 0:
-            event_queue.put({"type": "UnInhibit"})
+        sync_inhibit_state()
 
 class InhibitInterface(BaseInterface):
     def __init__(self):
@@ -133,6 +143,7 @@ def clear_event_queue():
 def clear_dbus_requests():
     BaseInterface.request_map.clear()
     BaseInterface.cookie = 0
+    sync_inhibit_state()
 
 
 async def is_dbus_request_connected(request):
@@ -295,6 +306,7 @@ class Plugin:
         self.manual_inhibit_process = None
 
     def _set_manual_active(self, running_app, emit_events=True):
+        global manual_inhibiting
         manual_active = running_app is not None
         changed = manual_active != self.manual_active or running_app != self.manual_running_app
 
@@ -306,15 +318,14 @@ class Plugin:
         if changed:
             if manual_active:
                 decky_plugin.logger.info(f"Manual Inhibit triggered by process: {running_app}")
-                if emit_events:
-                    event_queue.put({"type": "Inhibit"})
             else:
                 decky_plugin.logger.info("Manual UnInhibit: no monitored processes running")
-                if emit_events and len(BaseInterface.request_map) == 0:
-                    event_queue.put({"type": "UnInhibit"})
 
         self.manual_active = manual_active
         self.manual_running_app = running_app
+        manual_inhibiting = manual_active
+        if emit_events:
+            sync_inhibit_state()
 
     async def _manual_watch_loop(self):
         decky_plugin.logger.info("Manual process watcher started")
@@ -348,6 +359,7 @@ class Plugin:
             decky_plugin.logger.error(f"Error starting manual process watcher: {e}")
 
     async def _stop_manual_watch(self):
+        global manual_inhibiting
         Plugin._init_runtime_state(self)
         task = self.manual_watch_task
         self.manual_watch_task = None
@@ -362,6 +374,8 @@ class Plugin:
         Plugin._stop_manual_inhibitor(self)
         self.manual_active = False
         self.manual_running_app = None
+        manual_inhibiting = False
+        sync_inhibit_state()
 
     async def start_backend(self):
         global bus
@@ -410,7 +424,7 @@ class Plugin:
 
     async def get_event(self):
         Plugin._init_runtime_state(self)
-        global bus
+        global bus, inhibit_active
         if bus is None:
             res = []
             while True:
@@ -439,6 +453,7 @@ class Plugin:
 
         dbus_active = len(BaseInterface.request_map) > 0
         if clear and not dbus_active:
+            inhibit_active = manual_active
             res.append({"type": "UnInhibit"})
 
         # manual apps state is managed by _manual_watch_loop, just read current state
