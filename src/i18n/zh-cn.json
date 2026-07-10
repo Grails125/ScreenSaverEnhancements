@@ -38,5 +38,16 @@
     "Active": "生效中",
     "Settings Save Failed": "设置保存失败",
     "Settings Save Failed Body": "已恢复原来的设置，请重试。",
-    "Background Monitor Failed": "后台监控切换失败"
+    "Background Monitor Failed": "后台监控切换失败",
+    "Power Profiles": "电源配置",
+    "Battery Dim Timeout": "电池息屏超时",
+    "AC Dim Timeout": "接电息屏超时",
+    "Battery Suspend Timeout": "电池休眠超时",
+    "AC Suspend Timeout": "接电休眠超时",
+    "Force Suspend": "空闲后强制休眠",
+    "Force Suspend Description": "在恢复后的超时时间到达后，显示五秒提示并强制设备进入休眠。",
+    "Zero Disables Timeout": "设为 0 可关闭该超时。",
+    "Power Settings Apply Failed": "电源配置应用失败",
+    "Power Settings Apply Failed Body": "Steam 未能应用此配置，已恢复之前的值。",
+    "Seconds": " 秒"
 }

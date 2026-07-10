@@ -24,6 +24,12 @@ import {
 import { QUICK_ACCESS_MENU } from './ButtonIcons'
 import { StateNumber } from './state'
 import {
+  DEFAULT_POWER_SETTINGS,
+  normalizePowerSettings,
+  PowerSettings,
+  shouldApplyPowerSettingsImmediately,
+} from './powerSettings'
+import {
   areStringArraysEqual,
   clampOpacity,
   getPluginBooleanSetting,
@@ -37,6 +43,13 @@ let backendRunning = false;
 let showNotify     = false;
 let language = i18n.getCurrentLanguage()
 const t = i18n.useTranslations(language)
+const POWER_SETTING_KEYS = {
+  batteryDim: "battery_dim_timeout",
+  acDim: "ac_dim_timeout",
+  batterySuspend: "battery_suspend_timeout",
+  acSuspend: "ac_suspend_timeout",
+  forceSuspend: "force_suspend_enabled",
+} as const
 
 const renderBlackBackgroundTip = () => React.createElement(
   'span',
@@ -456,13 +469,16 @@ const Content: VFC<{
   serverApi: ServerAPI;
   overlayState: StateNumber;
   opacityState: StateNumber;
-}> = ({serverApi, overlayState, opacityState}) => {
+  onPowerSettingsLoaded: (settings: PowerSettings) => void;
+  onPowerSettingsApply: (settings: PowerSettings) => Promise<void>;
+}> = ({serverApi, overlayState, opacityState, onPowerSettingsLoaded, onPowerSettingsApply}) => {
   const [running, setRunning] = useState<boolean>(backendRunning);
   const [notify, setNotify] = useState<boolean>(showNotify);
   const [blackBackground, setBlackBackground] = useState<boolean>(overlayState.GetState() === 1);
   const [blackBackgroundOpacity, setBlackBackgroundOpacity] = useState<number>(opacityState.GetState());
   const [closeOnAnyKey, setCloseOnAnyKey] = useState<boolean>(false);
   const [closeOnAnyKeyLoaded, setCloseOnAnyKeyLoaded] = useState<boolean>(false);
+  const [powerSettings, setPowerSettings] = useState<PowerSettings>(DEFAULT_POWER_SETTINGS);
 
   const startBackend = async () => {
     return await serverApi.callPluginMethod<any, any>("start_backend", {});
@@ -547,6 +563,34 @@ const Content: VFC<{
     ]);
   }
 
+  const updatePowerSetting = async (
+    field: keyof PowerSettings,
+    value: unknown,
+  ) => {
+    const previous = powerSettings;
+    const next = normalizePowerSettings({ ...powerSettings, [field]: value });
+    setPowerSettings(next);
+    const saved = await saveSetting(POWER_SETTING_KEYS[field], next[field], () => {
+      setPowerSettings(previous);
+    });
+    if (!saved) return;
+
+    try {
+      await onPowerSettingsApply(next);
+    } catch (error) {
+      console.error("[ScreenSaverEnhancements] Could not apply power settings", error);
+      setPowerSettings(previous);
+      void setPluginSetting(serverApi, POWER_SETTING_KEYS[field], previous[field]);
+      serverApi.toaster.toast({
+        title: t("Power Settings Apply Failed"),
+        body: t("Power Settings Apply Failed Body"),
+        icon: <GiNightSleep />,
+        critical: true,
+        duration: 4000,
+      });
+    }
+  }
+
   useEffect(() => {
     panelVisible.current = true;
     const token = requestTokenRef.current + 1;
@@ -582,6 +626,21 @@ const Content: VFC<{
       setCloseOnAnyKeyLoaded(true);
     };
     loadBlackBackgroundSettings();
+
+    const loadPowerSettings = async () => {
+      const [batteryDim, acDim, batterySuspend, acSuspend, forceSuspend] = await Promise.all([
+        getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batteryDim, DEFAULT_POWER_SETTINGS.batteryDim),
+        getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acDim, DEFAULT_POWER_SETTINGS.acDim),
+        getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batterySuspend, DEFAULT_POWER_SETTINGS.batterySuspend),
+        getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acSuspend, DEFAULT_POWER_SETTINGS.acSuspend),
+        getPluginBooleanSetting(serverApi, POWER_SETTING_KEYS.forceSuspend, DEFAULT_POWER_SETTINGS.forceSuspend),
+      ]);
+      if (!isCurrentRequest(token)) return;
+      const next = normalizePowerSettings({ batteryDim, acDim, batterySuspend, acSuspend, forceSuspend });
+      setPowerSettings(next);
+      onPowerSettingsLoaded(next);
+    };
+    loadPowerSettings();
 
     const onOverlayChanged = (mode: number) => {
       setBlackBackground(mode === 1);
@@ -689,6 +748,69 @@ const Content: VFC<{
         </PanelSectionRow>
       </PanelSection>
 
+      <PanelSection title={t('Power Profiles')}>
+        <PanelSectionRow>
+          <SliderField
+            value={powerSettings.batteryDim}
+            min={0}
+            max={3600}
+            step={60}
+            showValue={true}
+            valueSuffix={t('Seconds')}
+            label={t('Battery Dim Timeout')}
+            description={t('Zero Disables Timeout')}
+            onChange={(value) => void updatePowerSetting('batteryDim', value)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <SliderField
+            value={powerSettings.acDim}
+            min={0}
+            max={3600}
+            step={60}
+            showValue={true}
+            valueSuffix={t('Seconds')}
+            label={t('AC Dim Timeout')}
+            description={t('Zero Disables Timeout')}
+            onChange={(value) => void updatePowerSetting('acDim', value)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <SliderField
+            value={powerSettings.batterySuspend}
+            min={0}
+            max={3600}
+            step={60}
+            showValue={true}
+            valueSuffix={t('Seconds')}
+            label={t('Battery Suspend Timeout')}
+            description={t('Zero Disables Timeout')}
+            onChange={(value) => void updatePowerSetting('batterySuspend', value)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <SliderField
+            value={powerSettings.acSuspend}
+            min={0}
+            max={3600}
+            step={60}
+            showValue={true}
+            valueSuffix={t('Seconds')}
+            label={t('AC Suspend Timeout')}
+            description={t('Zero Disables Timeout')}
+            onChange={(value) => void updatePowerSetting('acSuspend', value)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label={t('Force Suspend')}
+            description={t('Force Suspend Description')}
+            onChange={(checked) => void updatePowerSetting('forceSuspend', checked)}
+            checked={powerSettings.forceSuspend}
+          />
+        </PanelSectionRow>
+      </PanelSection>
+
       <PanelSection title={t('Black Background Section')}>
         <PanelSectionRow>
           <ToggleField
@@ -778,6 +900,14 @@ export default definePlugin((serverApi: ServerAPI) => {
   let forced_suspend:NodeJS.Timeout;
   let forced_suspend_tip:NodeJS.Timeout;
   let input_changed:boolean = true;
+  let configuredPowerSettings: PowerSettings = { ...DEFAULT_POWER_SETTINGS };
+  let capturedPowerSettings: PowerSettings | null = null;
+  let backendInhibiting = false;
+  let deckyMusicInhibiting = false;
+
+  const setConfiguredPowerSettings = (settings: PowerSettings) => {
+    configuredPowerSettings = { ...settings };
+  }
 
   const clearSuspendTimeout = () => {
     clearTimeout(forced_suspend)
@@ -913,6 +1043,62 @@ export default definePlugin((serverApi: ServerAPI) => {
     await updateIdleSetting(_battery_idle+_ac_idle);
     await updateSuspendSetting(_battery_suspend+_ac_suspend);
   }
+
+  const applyConfiguredPowerSettings = async (settings: PowerSettings) => {
+    if (shouldApplyPowerSettingsImmediately(backendInhibiting, deckyMusicInhibiting)) {
+      await updateSetting(
+        settings.batteryDim,
+        settings.acDim,
+        settings.batterySuspend,
+        settings.acSuspend,
+      );
+    }
+    setConfiguredPowerSettings(settings);
+  }
+
+  const readCurrentPowerSettings = async (): Promise<PowerSettings | null> => {
+    const getSettings = (SteamClient.System as any)?.GetSettings;
+    if (typeof getSettings !== "function") return null;
+
+    try {
+      const result = await getSettings.call(SteamClient.System);
+      const settings = result && typeof result === "object"
+        ? ((result as any).settings ?? result) as Record<string, unknown>
+        : null;
+      if (!settings) return null;
+
+      const readValue = (...keys: string[]) => {
+        for (const key of keys) {
+          const value = Number(settings[key]);
+          if (Number.isFinite(value)) return value;
+        }
+        return undefined;
+      };
+      const batteryDim = readValue("battery_idle", "batteryIdle");
+      const acDim = readValue("ac_idle", "acIdle");
+      const batterySuspend = readValue("battery_suspend", "batterySuspend");
+      const acSuspend = readValue("ac_suspend", "acSuspend");
+      if ([batteryDim, acDim, batterySuspend, acSuspend].some(value => value === undefined)) {
+        return null;
+      }
+
+      return normalizePowerSettings({
+        batteryDim,
+        acDim,
+        batterySuspend,
+        acSuspend,
+        forceSuspend: configuredPowerSettings.forceSuspend,
+      });
+    } catch (error) {
+      console.warn("[ScreenSaverEnhancements] Could not read current power settings", error);
+      return null;
+    }
+  }
+
+  const capturePowerSettings = async () => {
+    if (capturedPowerSettings) return;
+    capturedPowerSettings = await readCurrentPowerSettings() ?? { ...configuredPowerSettings };
+  }
   
   const getEvent = async () => {
     return await serverApi.callPluginMethod<any, any>("get_event", {});
@@ -1010,13 +1196,22 @@ export default definePlugin((serverApi: ServerAPI) => {
   const startInhibit = async () => {
     notify(t("ScreenSaver"), t("Inhibit"))
     clearSuspendTimeout()
+    await capturePowerSettings()
     await updateSetting(0, 0, 0, 0);
   }
 
   const stopInhibit = async () => {
     notify(t("ScreenSaver"), t("UnInhibit"))
-    await updateSetting(300, 300, 600, 600);
+    const restoreSettings = capturedPowerSettings ?? configuredPowerSettings;
+    await updateSetting(
+      restoreSettings.batteryDim,
+      restoreSettings.acDim,
+      restoreSettings.batterySuspend,
+      restoreSettings.acSuspend,
+    );
+    capturedPowerSettings = null;
     clearSuspendTimeout()
+    if (!configuredPowerSettings.forceSuspend) return;
     input_changed = false
     forced_suspend = setTimeout(() => {
       forced_suspend_tip = setTimeout(()=>{
@@ -1033,8 +1228,6 @@ export default definePlugin((serverApi: ServerAPI) => {
     }, 450_000)
   }
 
-  let backendInhibiting = false;
-  let deckyMusicInhibiting = false;
   let deckyMusicEnabled = false;
   let deckyMusicSettingsLastChecked = 0;
   let eventPollTimeout: NodeJS.Timeout;
@@ -1116,7 +1309,13 @@ export default definePlugin((serverApi: ServerAPI) => {
 
   return {
     title: <div className={staticClasses.Title}>Suspend Manager</div>,
-    content: <Content serverApi={serverApi} overlayState={overlayState} opacityState={opacityState} />,
+    content: <Content
+      serverApi={serverApi}
+      overlayState={overlayState}
+      opacityState={opacityState}
+      onPowerSettingsLoaded={setConfiguredPowerSettings}
+      onPowerSettingsApply={applyConfiguredPowerSettings}
+    />,
     icon: <GiNightSleep />,
     onDismount() {
       clearSuspendTimeout()
