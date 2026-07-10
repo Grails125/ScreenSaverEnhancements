@@ -25,12 +25,10 @@ import { QUICK_ACCESS_MENU } from './ButtonIcons'
 import { StateNumber } from './state'
 import {
   DEFAULT_POWER_SETTINGS,
-  getNotificationSound,
   minutesToSeconds,
   normalizePowerSettings,
   PowerSettings,
   selectSystemPowerSettingsSnapshot,
-  shouldPlayNotificationSound,
   shouldStartInhibit,
   secondsToMinutes,
   shouldApplyPowerSettingsImmediately,
@@ -48,7 +46,6 @@ import {
 
 let backendRunning = false;
 let showNotify     = false;
-let notificationsMuted = false;
 let language = i18n.getCurrentLanguage()
 const t = i18n.useTranslations(language)
 const POWER_SETTING_KEYS = {
@@ -307,7 +304,6 @@ const SystemSleep = findModule("InitiateSleep")
 
 const RUN_ON_LOGIN = "run_on_login"
 const SHOW_NOTIFY  = "show_notify"
-const MUTE_NOTIFICATIONS = "mute_notifications"
 const DECKY_MUSIC_APP = "DeckyMusic"
 
 type RunningProcess = { name: string, type: string };
@@ -499,7 +495,6 @@ const Content: VFC<{
 }> = ({serverApi, overlayState, opacityState, deckyMusicState, onPowerSettingsLoaded, onPowerSettingsApply}) => {
   const [running, setRunning] = useState<boolean>(backendRunning);
   const [notify, setNotify] = useState<boolean>(showNotify);
-  const [muted, setMuted] = useState<boolean>(notificationsMuted);
   const [blackBackground, setBlackBackground] = useState<boolean>(overlayState.GetState() === 1);
   const [blackBackgroundOpacity, setBlackBackgroundOpacity] = useState<number>(opacityState.GetState());
   const [closeOnAnyKey, setCloseOnAnyKey] = useState<boolean>(false);
@@ -532,8 +527,6 @@ const Content: VFC<{
         icon: <GiNightSleep />,
         critical: true,
         duration: 4000,
-        sound: getNotificationSound(notificationsMuted),
-        playSound: shouldPlayNotificationSound(notificationsMuted),
       });
       return false;
     }
@@ -616,8 +609,6 @@ const Content: VFC<{
         icon: <GiNightSleep />,
         critical: true,
         duration: 4000,
-        sound: getNotificationSound(notificationsMuted),
-        playSound: shouldPlayNotificationSound(notificationsMuted),
       });
     }
   }
@@ -657,14 +648,6 @@ const Content: VFC<{
       setCloseOnAnyKeyLoaded(true);
     };
     loadBlackBackgroundSettings();
-
-    const loadNotificationSettings = async () => {
-      const value = await getPluginBooleanSetting(serverApi, MUTE_NOTIFICATIONS, false);
-      if (!isCurrentRequest(token)) return;
-      notificationsMuted = value;
-      setMuted(value);
-    };
-    loadNotificationSettings();
 
     const loadPowerSettings = async () => {
       const [batteryDim, acDim, batterySuspend, acSuspend, forceSuspend, customPowerSettings] = await Promise.all([
@@ -767,8 +750,6 @@ const Content: VFC<{
                   icon: <GiNightSleep />,
                   critical: true,
                   duration: 4000,
-                  sound: getNotificationSound(notificationsMuted),
-                  playSound: shouldPlayNotificationSound(notificationsMuted),
                 });
               }
             }}
@@ -781,22 +762,6 @@ const Content: VFC<{
             description={t('Sleep Warning Description')}
             onChange={(checked) => void updatePowerSetting('forceSuspend', checked)}
             checked={powerSettings.forceSuspend}
-          />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ToggleField
-            label={t('Mute Notifications')}
-            description={t('Mute Notifications Description')}
-            onChange={async (checked) => {
-              const previous = muted;
-              setMuted(checked);
-              notificationsMuted = checked;
-              await saveSetting(MUTE_NOTIFICATIONS, checked, () => {
-                setMuted(previous);
-                notificationsMuted = previous;
-              });
-            }}
-            checked={muted}
           />
         </PanelSectionRow>
         <PanelSectionRow>
@@ -1318,8 +1283,7 @@ export default definePlugin((serverApi: ServerAPI) => {
         title: title,
         body: body,
         duration: 1_500,
-        sound: getNotificationSound(notificationsMuted),
-        playSound: shouldPlayNotificationSound(notificationsMuted),
+        sound: 1,
         icon: <GiNightSleep />,
       });
     }, 2000)
@@ -1363,8 +1327,7 @@ export default definePlugin((serverApi: ServerAPI) => {
         body: t("suspend_tip_body"),
         critical: true,
         duration: 5_000,
-        sound: getNotificationSound(notificationsMuted),
-        playSound: shouldPlayNotificationSound(notificationsMuted),
+        playSound: true,
         icon: <GiNightSleep />,
       });
     }, warningDelay)
@@ -1444,8 +1407,6 @@ export default definePlugin((serverApi: ServerAPI) => {
     opacityState.SetState(clampOpacity(blackOpacity))
 
     showNotify = await getPluginBooleanSetting(serverApi, SHOW_NOTIFY, false)
-    notificationsMuted = await getPluginBooleanSetting(serverApi, MUTE_NOTIFICATIONS, false)
-
     const run = await getPluginBooleanSetting(serverApi, RUN_ON_LOGIN, true)
     if (run) {
       backendRunning = true

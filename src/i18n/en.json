@@ -2,8 +2,6 @@
     "Settings": "Settings",
     "Background Monitor": "Background Monitor",
     "Show Notify": "Show Notify",
-    "Mute Notifications": "Mute Notifications",
-    "Mute Notifications Description": "Show this plugin's notifications without sound.",
     "ScreenSaver": "ScreenSaver",
     "Plugin Controls": "Plugin Controls",
     "plugin_switch_tip": "Enable background service and take over system breather settings",
