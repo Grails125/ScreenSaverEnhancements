@@ -26,12 +26,7 @@ def build():
     # 2. Build frontend
     print("Building frontend...")
     if os.name == "nt":
-        subprocess.run([
-            "powershell.exe",
-            "-NoProfile",
-            "-Command",
-            "npm.cmd run build",
-        ], check=True)
+        subprocess.run(["cmd.exe", "/c", "npm.cmd", "run", "build"], check=True)
     else:
         subprocess.run(["npm", "run", "build"], check=True)
     

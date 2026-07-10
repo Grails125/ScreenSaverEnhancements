@@ -2,18 +2,14 @@ import commonjs from '@rollup/plugin-commonjs';
 import json from '@rollup/plugin-json';
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import replace from '@rollup/plugin-replace';
-import typescript from '@rollup/plugin-typescript';
 import { defineConfig } from 'rollup';
 import importAssets from 'rollup-plugin-import-assets';
 
 import { name } from "./plugin.json";
 
 export default defineConfig({
-  input: './src/index.tsx',
+  input: './dist/index.js',
   plugins: [
-    typescript({
-      include: ["**/*.ts", "**/*.tsx"],
-    }),
     commonjs(),
     nodeResolve(),
     json(),
