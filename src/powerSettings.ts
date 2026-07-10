@@ -52,6 +52,11 @@ export const shouldApplyPowerSettingsImmediately = (
   deckyMusicInhibiting: boolean,
 ) => !backendInhibiting && !deckyMusicInhibiting;
 
+export const shouldStartInhibit = (
+  backendInhibiting: boolean,
+  deckyMusicInhibiting: boolean,
+) => !backendInhibiting && !deckyMusicInhibiting;
+
 const FORCE_SUSPEND_WARNING_MS = 5_000;
 
 export const getForceSuspendWarningDelayMs = (settings: PowerSettings) => {

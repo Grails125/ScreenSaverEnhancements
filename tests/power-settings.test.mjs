@@ -20,6 +20,7 @@ const {
   secondsToMinutes,
   selectSystemPowerSettingsSnapshot,
   shouldPlayNotificationSound,
+  shouldStartInhibit,
   shouldApplyPowerSettingsImmediately,
   getForceSuspendWarningDelayMs,
 } = module.exports;
@@ -73,6 +74,13 @@ test("uses the saved profile only when Steam cannot expose the current power set
 test("mutes every plugin notification sound when the global mute setting is enabled", () => {
   assert.equal(shouldPlayNotificationSound(false), true);
   assert.equal(shouldPlayNotificationSound(true), false);
+});
+
+test("only starts a new inhibit session when no source is already active", () => {
+  assert.equal(shouldStartInhibit(false, false), true);
+  assert.equal(shouldStartInhibit(true, false), false);
+  assert.equal(shouldStartInhibit(false, true), false);
+  assert.equal(shouldStartInhibit(true, true), false);
 });
 
 test("only applies a changed profile immediately while no source is inhibiting sleep", () => {

@@ -30,6 +30,7 @@ import {
   PowerSettings,
   selectSystemPowerSettingsSnapshot,
   shouldPlayNotificationSound,
+  shouldStartInhibit,
   secondsToMinutes,
   shouldApplyPowerSettingsImmediately,
   getForceSuspendWarningDelayMs,
@@ -1365,8 +1366,11 @@ export default definePlugin((serverApi: ServerAPI) => {
 
       const deckyMusicPlaying = deckyMusicEnabled && isAnyAudioPlaying();
       if (deckyMusicPlaying && !deckyMusicInhibiting) {
+        const shouldStart = shouldStartInhibit(backendInhibiting, deckyMusicInhibiting);
         deckyMusicInhibiting = true;
-        await startInhibit();
+        if (shouldStart) {
+          await startInhibit();
+        }
       } else if (!deckyMusicPlaying && deckyMusicInhibiting) {
         deckyMusicInhibiting = false;
         if (!backendInhibiting) {
@@ -1379,8 +1383,11 @@ export default definePlugin((serverApi: ServerAPI) => {
         let event = data.result;
         for (let e of event) {
           if (e.type == 'Inhibit') {
+            const shouldStart = shouldStartInhibit(backendInhibiting, deckyMusicInhibiting);
             backendInhibiting = true;
-            await startInhibit();
+            if (shouldStart) {
+              await startInhibit();
+            }
           } else if (e.type == 'UnInhibit') {
             backendInhibiting = false;
             if (!deckyMusicInhibiting) {
