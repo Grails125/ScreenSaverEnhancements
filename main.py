@@ -121,6 +121,20 @@ class GnomeInterface(BaseInterface):
     async def Uninhibit(self, cookie: 'u'):
         return await self._un_inhibit_impl(cookie)
 
+
+def clear_event_queue():
+    while True:
+        try:
+            event_queue.get_nowait()
+        except queue.Empty:
+            return
+
+
+def clear_dbus_requests():
+    BaseInterface.request_map.clear()
+    BaseInterface.cookie = 0
+
+
 async def stop_dbus():
     global bus
     try:
@@ -342,16 +356,20 @@ class Plugin:
         self.manual_running_app = None
 
     async def start_backend(self):
+        global bus
         decky_plugin.logger.info("Start backend server")
         Plugin._init_runtime_state(self)
-        await start_dbus()
+        if bus is None:
+            await start_dbus()
         Plugin._start_manual_watch(self)
 
     async def stop_backend(self):
         decky_plugin.logger.info("Stop backend server")
         await Plugin._stop_manual_watch(self)
         await stop_dbus()
-        event_queue.queue.clear()
+        clear_dbus_requests()
+        clear_event_queue()
+        event_queue.put({"type": "UnInhibit"})
 
     async def is_running(self):
         global bus
@@ -386,13 +404,19 @@ class Plugin:
         Plugin._init_runtime_state(self)
         global bus
         if bus is None:
-            return []
+            res = []
+            while True:
+                try:
+                    res.append(event_queue.get_nowait())
+                except queue.Empty:
+                    return res
+
         res = []
-        while not event_queue.empty():
+        while True:
             try:
                 res.append(event_queue.get_nowait())
             except queue.Empty:
-                continue
+                break
         # check closed dbus connection (only when there are active cookies)
         cookies = list(BaseInterface.request_map.keys())
         clear = False
@@ -452,8 +476,7 @@ class Plugin:
 
     async def _unload(self):
         decky_plugin.logger.info("Goodnight World!")
-        await Plugin._stop_manual_watch(self)
-        await stop_dbus()
+        await Plugin.stop_backend(self)
 
     async def _uninstall(self):
         pass
