@@ -7,7 +7,11 @@ export const clampOpacity = (value: number): number => {
 
 export const parseBooleanSetting = (value: unknown, fallback = false): boolean => {
   if (typeof value === "boolean") return value;
-  if (typeof value === "string") return value.trim().toLowerCase() === "true";
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
   return fallback;
 };
 
@@ -19,13 +23,18 @@ export const parseNumberSetting = (value: unknown, fallback: number): number => 
 export const normalizeManualApps = (apps: unknown): string[] => {
   if (!Array.isArray(apps)) return [];
 
-  return Array.from(
-    new Set(
-      apps
-        .map((app) => String(app).trim())
-        .filter(Boolean)
-    )
-  ).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  const seen = new Set<string>();
+  const normalized = apps.reduce<string[]>((result, app) => {
+    const value = String(app).trim();
+    const key = value.toLowerCase();
+    if (value && !seen.has(key)) {
+      seen.add(key);
+      result.push(value);
+    }
+    return result;
+  }, []);
+
+  return normalized.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 };
 
 export const areStringArraysEqual = (left: string[], right: string[]): boolean => {
