@@ -18,6 +18,7 @@ const {
   normalizePowerSettings,
   minutesToSeconds,
   secondsToMinutes,
+  selectSystemPowerSettingsSnapshot,
   shouldApplyPowerSettingsImmediately,
   getForceSuspendWarningDelayMs,
 } = module.exports;
@@ -58,6 +59,14 @@ test("defaults to the system power configuration and converts displayed minutes"
   assert.equal(minutesToSeconds(60), 3600);
   assert.equal(secondsToMinutes(60), 1);
   assert.equal(secondsToMinutes(300), 5);
+});
+
+test("uses the saved profile only when Steam cannot expose the current power settings", () => {
+  const savedProfile = normalizePowerSettings({ batterySuspend: 360, acSuspend: 600 });
+  const liveProfile = normalizePowerSettings({ batterySuspend: 60, acSuspend: 120 });
+
+  assert.equal(selectSystemPowerSettingsSnapshot(liveProfile, savedProfile).batterySuspend, 60);
+  assert.equal(selectSystemPowerSettingsSnapshot(null, savedProfile).batterySuspend, 360);
 });
 
 test("only applies a changed profile immediately while no source is inhibiting sleep", () => {

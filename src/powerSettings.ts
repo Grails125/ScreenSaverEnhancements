@@ -40,6 +40,11 @@ export const secondsToMinutes = (seconds: unknown) => Math.round(
   normalizePowerTimeout(seconds, 0) / 60,
 );
 
+export const selectSystemPowerSettingsSnapshot = (
+  currentSettings: PowerSettings | null,
+  savedProfile: PowerSettings,
+) => currentSettings ?? savedProfile;
+
 export const shouldApplyPowerSettingsImmediately = (
   backendInhibiting: boolean,
   deckyMusicInhibiting: boolean,

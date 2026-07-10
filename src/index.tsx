@@ -28,6 +28,7 @@ import {
   minutesToSeconds,
   normalizePowerSettings,
   PowerSettings,
+  selectSystemPowerSettingsSnapshot,
   secondsToMinutes,
   shouldApplyPowerSettingsImmediately,
   getForceSuspendWarningDelayMs,
@@ -1090,8 +1091,10 @@ export default definePlugin((serverApi: ServerAPI) => {
   }
 
   const captureSystemPowerSettings = async () => {
-    const currentSettings = capturedPowerSettings ?? await readCurrentPowerSettings();
-    if (!currentSettings) throw new Error("could not read current system power settings");
+    const currentSettings = selectSystemPowerSettingsSnapshot(
+      capturedPowerSettings ?? await readCurrentPowerSettings(),
+      configuredPowerSettings,
+    );
     await saveSystemPowerSettingsSnapshot(currentSettings);
   }
 
