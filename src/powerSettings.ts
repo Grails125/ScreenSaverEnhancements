@@ -45,6 +45,8 @@ export const selectSystemPowerSettingsSnapshot = (
   savedProfile: PowerSettings,
 ) => currentSettings ?? savedProfile;
 
+export const shouldPlayNotificationSound = (notificationsMuted: boolean) => !notificationsMuted;
+
 export const shouldApplyPowerSettingsImmediately = (
   backendInhibiting: boolean,
   deckyMusicInhibiting: boolean,

@@ -19,6 +19,7 @@ const {
   minutesToSeconds,
   secondsToMinutes,
   selectSystemPowerSettingsSnapshot,
+  shouldPlayNotificationSound,
   shouldApplyPowerSettingsImmediately,
   getForceSuspendWarningDelayMs,
 } = module.exports;
@@ -67,6 +68,11 @@ test("uses the saved profile only when Steam cannot expose the current power set
 
   assert.equal(selectSystemPowerSettingsSnapshot(liveProfile, savedProfile).batterySuspend, 60);
   assert.equal(selectSystemPowerSettingsSnapshot(null, savedProfile).batterySuspend, 360);
+});
+
+test("mutes every plugin notification sound when the global mute setting is enabled", () => {
+  assert.equal(shouldPlayNotificationSound(false), true);
+  assert.equal(shouldPlayNotificationSound(true), false);
 });
 
 test("only applies a changed profile immediately while no source is inhibiting sleep", () => {

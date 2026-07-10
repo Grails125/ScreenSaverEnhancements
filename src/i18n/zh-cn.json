@@ -2,6 +2,8 @@
     "Settings": "设置",
     "Background Monitor": "后台监控",
     "Show Notify": "显示通知",
+    "Mute Notifications": "通知静音",
+    "Mute Notifications Description": "显示本插件的通知，但不播放声音。",
     "ScreenSaver": "屏幕保护",
     "Plugin Controls": "插件控制",
     "plugin_switch_tip": "启用后台服务，接管系统息屏设置",
