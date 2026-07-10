@@ -1,12 +1,15 @@
 import decky_plugin
+import asyncio
+import os
 import queue
-import urllib.error
+import ssl
 import urllib.request
 from typing import Any, Dict
 import json
 from settings import SettingsManager
 
 GITHUB_RELEASE_API = "https://api.github.com/repos/grails125/ScreenSaverEnhancements/releases/latest"
+SYSTEM_CA_BUNDLE = "/etc/ssl/certs/ca-bundle.crt"
 UPDATE_CHECK_HEADERS = {
     "User-Agent": "ScreenSaverEnhancements-UpdateCheck",
     "Accept": "application/vnd.github+json",
@@ -225,6 +228,7 @@ class Plugin:
             "has_update": False,
             "current": "",
             "latest": "",
+            "notes": "",
             "error": "",
         }
 
@@ -444,31 +448,39 @@ class Plugin:
         decky_plugin.logger.debug(f"get_plugin_version: {version}")
         return version
 
-    async def get_latest_version(self) -> str:
+    async def get_latest_release(self) -> Dict[str, str]:
         try:
-            req = urllib.request.Request(
-                GITHUB_RELEASE_API,
-                headers=UPDATE_CHECK_HEADERS,
-            )
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
-            latest = (payload.get("tag_name") or "").strip()
-            decky_plugin.logger.debug(f"get_latest_version: {latest}")
-            return latest
-        except urllib.error.URLError as e:
-            decky_plugin.logger.error(f"get_latest_version failed: {e}")
-            return ""
+            def fetch_latest() -> Dict[str, str]:
+                context = ssl.create_default_context(
+                    cafile=SYSTEM_CA_BUNDLE if os.path.exists(SYSTEM_CA_BUNDLE) else None,
+                )
+                request = urllib.request.Request(
+                    GITHUB_RELEASE_API,
+                    headers=UPDATE_CHECK_HEADERS,
+                )
+                with urllib.request.urlopen(request, context=context, timeout=8) as response:
+                    payload = json.load(response)
+                return {
+                    "version": (payload.get("tag_name") or "").strip(),
+                    "notes": (payload.get("body") or "").strip(),
+                }
+
+            release = await asyncio.to_thread(fetch_latest)
+            decky_plugin.logger.debug(f"get_latest_release: {release['version']}")
+            return release
         except Exception as e:
-            decky_plugin.logger.error(f"get_latest_version failed: {e}")
-            return ""
+            decky_plugin.logger.error(f"get_latest_release failed: {e}")
+            return {}
 
     async def check_update(self) -> Dict[str, Any]:
         result = Plugin._version_result(self)
         try:
             current = Plugin._normalize_version(self, decky_plugin.DECKY_PLUGIN_VERSION)
-            latest = Plugin._normalize_version(self, await self.get_latest_version())
+            release = await Plugin.get_latest_release(self)
+            latest = Plugin._normalize_version(self, release.get("version", ""))
             result["current"] = current
             result["latest"] = latest
+            result["notes"] = release.get("notes", "")
             if not latest or not current:
                 raise RuntimeError("version info unavailable")
             result["has_update"] = current != latest

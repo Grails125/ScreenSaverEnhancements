@@ -35,5 +35,17 @@
     "No Active Inhibit": "当前没有应用正在禁用息屏",
     "Manual Inhibit Source": "手动配置命中",
     "DBus Inhibit Source": "D-Bus 请求",
-    "Active": "生效中"
+    "Active": "生效中",
+    "Update": "更新",
+    "Current Version": "当前版本",
+    "Latest Version": "最新版本",
+    "Release Notes": "更新说明",
+    "No Release Notes": "该版本未提供更新说明。",
+    "Check Update": "检查更新",
+    "Checking": "正在检查…",
+    "Update Available": "发现新版本",
+    "No Update": "无需更新",
+    "Already Latest Version": "已是最新版本",
+    "Update Check Failed": "检查更新失败",
+    "Unknown Error": "未知错误"
 }

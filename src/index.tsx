@@ -4,6 +4,7 @@ import {
   SliderField,
   PanelSection,
   PanelSectionRow,
+  ButtonItem,
   Navigation,
   ServerAPI,
   findModuleChild,
@@ -86,6 +87,47 @@ const PANEL_STYLES = {
     color: 'rgba(255,255,255,0.88)',
     fontSize: '0.85em',
     flexShrink: 0,
+  },
+  updateSummary: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '7px',
+    width: '100%',
+    padding: '9px 10px',
+    background: 'rgba(255,255,255,0.035)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '6px',
+    boxSizing: 'border-box' as const,
+  },
+  updateVersionRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+  },
+  updateVersionLabel: {
+    color: '#8d8d8d',
+    fontSize: '0.76em',
+  },
+  updateVersionValue: {
+    color: '#f1f1f1',
+    fontSize: '0.82em',
+    fontWeight: 'bold' as const,
+    overflowWrap: 'anywhere' as const,
+    textAlign: 'right' as const,
+  },
+  releaseNotes: {
+    width: '100%',
+    padding: '9px 10px',
+    background: 'rgba(93,185,255,0.06)',
+    border: '1px solid rgba(93,185,255,0.2)',
+    borderRadius: '6px',
+    boxSizing: 'border-box' as const,
+    color: '#d7e8f7',
+    fontSize: '0.78em',
+    lineHeight: 1.45,
+    whiteSpace: 'pre-wrap' as const,
+    overflowWrap: 'anywhere' as const,
   },
   badge: (type: string) => ({
     fontSize: '0.65em',
@@ -463,9 +505,10 @@ const Content: VFC<{
   const [blackBackgroundOpacity, setBlackBackgroundOpacity] = useState<number>(opacityState.GetState());
   const [closeOnAnyKey, setCloseOnAnyKey] = useState<boolean>(false);
   const [closeOnAnyKeyLoaded, setCloseOnAnyKeyLoaded] = useState<boolean>(false);
-  const [autoCheckUpdate, setAutoCheckUpdate] = useState<boolean>(true);
   const [pluginVersion, setPluginVersion] = useState<string>("");
   const [latestVersion, setLatestVersion] = useState<string>("");
+  const [updateNotes, setUpdateNotes] = useState<string>("");
+  const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
   const [checkingUpdate, setCheckingUpdate] = useState<boolean>(false);
 
   const startBackend = async () => {
@@ -523,16 +566,20 @@ const Content: VFC<{
   }
 
   const checkUpdate = async (showToast: boolean = false) => {
+    if (checkingUpdate) return;
     setCheckingUpdate(true);
     try {
       const res = await serverApi.callPluginMethod<any, {
         has_update: boolean;
         current: string;
         latest: string;
+        notes: string;
         error: string;
       }>("check_update", {});
 
       if (!res.success || !res.result) {
+        setUpdateAvailable(false);
+        setUpdateNotes("");
         if (showToast) {
           serverApi.toaster.toast({
             title: t("Update Check Failed"),
@@ -545,9 +592,11 @@ const Content: VFC<{
         return;
       }
 
-      const { has_update, current, latest, error } = res.result;
+      const { has_update, current, latest, notes, error } = res.result;
       if (current) setPluginVersion(current);
       if (latest) setLatestVersion(latest);
+      setUpdateAvailable(has_update && !error);
+      setUpdateNotes(has_update && !error ? notes : "");
 
       if (!error && showToast) {
         if (has_update) {
@@ -638,20 +687,14 @@ const Content: VFC<{
     overlayState.onStateChanged(onOverlayChanged);
     opacityState.onStateChanged(onOpacityChanged);
 
-    const loadUpdateSettings = async () => {
-      const auto = await getPluginSetting(serverApi, "auto_check_update", true);
-      if (!isCurrentRequest(token)) return;
-      setAutoCheckUpdate(Boolean(auto));
+    const loadPluginVersion = async () => {
       const versionRes = await serverApi.callPluginMethod<any, string>("get_plugin_version", {});
       if (!isCurrentRequest(token)) return;
       if (versionRes.success && versionRes.result) {
         setPluginVersion(versionRes.result);
       }
-      if (Boolean(auto)) {
-        checkUpdate();
-      }
     };
-    loadUpdateSettings();
+    loadPluginVersion();
 
     return () => {
       panelVisible.current = false;
@@ -780,35 +823,33 @@ const Content: VFC<{
 
       <PanelSection title={t('Update')}>
         <PanelSectionRow>
-          <div style={{display: 'flex', flexDirection: 'column', gap: '5px', width: '100%'}}>
-            <div style={PANEL_STYLES.sectionHint}>
-              {t('Current Version')}: {pluginVersion || "-"}
+          <div style={PANEL_STYLES.updateSummary}>
+            <div style={PANEL_STYLES.updateVersionRow}>
+              <span style={PANEL_STYLES.updateVersionLabel}>{t('Current Version')}</span>
+              <span style={PANEL_STYLES.updateVersionValue}>{pluginVersion || "-"}</span>
             </div>
-            <div style={PANEL_STYLES.sectionHint}>
-              {t('Latest Version')}: {latestVersion || "-"}
+            <div style={PANEL_STYLES.updateVersionRow}>
+              <span style={PANEL_STYLES.updateVersionLabel}>{t('Latest Version')}</span>
+              <span style={PANEL_STYLES.updateVersionValue}>{latestVersion || "-"}</span>
             </div>
           </div>
         </PanelSectionRow>
+        {updateAvailable && (
+          <PanelSectionRow>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', width: '100%' }}>
+              <div style={PANEL_STYLES.sectionHint}>{t('Release Notes')}</div>
+              <div style={PANEL_STYLES.releaseNotes}>{updateNotes || t('No Release Notes')}</div>
+            </div>
+          </PanelSectionRow>
+        )}
         <PanelSectionRow>
-          <ToggleField
-            label={t('Auto Check Update')}
-            description={t('Auto Check Update')}
-            onChange={async (checked) => {
-              setAutoCheckUpdate(checked);
-              await setPluginSetting(serverApi, "auto_check_update", checked);
-            }}
-            checked={autoCheckUpdate}
-          />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end' }}>
-            <Focusable
-              style={PANEL_STYLES.panelAction}
-              onClick={() => void checkUpdate(true)}
-            >
-              {checkingUpdate ? t('Checking') : t('Check Update')}
-            </Focusable>
-          </div>
+          <ButtonItem
+            layout="below"
+            disabled={checkingUpdate}
+            onClick={() => void checkUpdate(true)}
+          >
+            {checkingUpdate ? t('Checking') : t('Check Update')}
+          </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
 
