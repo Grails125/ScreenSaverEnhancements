@@ -6,6 +6,14 @@ ScreenSaver Enhancements is a Decky Loader plugin for Steam Deck. It keeps the s
 
 This project is based on [xfangfang/DeckyInhibitScreenSaver](https://github.com/xfangfang/DeckyInhibitScreenSaver) and adds manual process monitoring plus a richer management panel.
 
+## What's New in 1.3.0
+
+- Added a management panel that shows the current inhibition state and its source.
+- Improved manual process matching for executable names, command arguments, and Flatpak app IDs.
+- Moved manual process monitoring to the backend so it remains active while the Decky panel is closed.
+- Added DeckyMusic playback-aware inhibition and black-background controls.
+- Improved compatibility with recent SteamOS and SteamClient API variants.
+
 ## Features
 
 - **D-Bus inhibit support**: Compatible with apps that use standard inhibit APIs, such as VLC, Chrome, mpv, and wiliwili.
@@ -45,7 +53,8 @@ If `DeckyMusic` is in the inhibit list, the frontend watches real HTML media pla
 
 ```powershell
 npm.cmd install
+npm.cmd test
 python build.py
 ```
 
-Build output is written to `build/ScreenSaverEnhancements` and `build/ScreenSaverEnhancements.zip`.
+`npm.cmd test` runs TypeScript validation and any discovered unit tests. Build output is written to `build/ScreenSaverEnhancements` and `build/ScreenSaverEnhancements.zip`.
