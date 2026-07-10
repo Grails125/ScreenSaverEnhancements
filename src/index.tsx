@@ -463,6 +463,10 @@ const Content: VFC<{
   const [blackBackgroundOpacity, setBlackBackgroundOpacity] = useState<number>(opacityState.GetState());
   const [closeOnAnyKey, setCloseOnAnyKey] = useState<boolean>(false);
   const [closeOnAnyKeyLoaded, setCloseOnAnyKeyLoaded] = useState<boolean>(false);
+  const [autoCheckUpdate, setAutoCheckUpdate] = useState<boolean>(true);
+  const [pluginVersion, setPluginVersion] = useState<string>("");
+  const [latestVersion, setLatestVersion] = useState<string>("");
+  const [checkingUpdate, setCheckingUpdate] = useState<boolean>(false);
 
   const startBackend = async () => {
     return await serverApi.callPluginMethod<any, any>("start_backend", {});
@@ -516,6 +520,64 @@ const Content: VFC<{
 
   const refreshInhibitStatus = async () => {
     await fetchInhibitStatus();
+  }
+
+  const checkUpdate = async (showToast: boolean = false) => {
+    setCheckingUpdate(true);
+    try {
+      const res = await serverApi.callPluginMethod<any, {
+        has_update: boolean;
+        current: string;
+        latest: string;
+        error: string;
+      }>("check_update", {});
+
+      if (!res.success || !res.result) {
+        if (showToast) {
+          serverApi.toaster.toast({
+            title: t("Update Check Failed"),
+            body: t("Unknown Error"),
+            icon: <GiNightSleep />,
+            critical: true,
+            duration: 4000,
+          });
+        }
+        return;
+      }
+
+      const { has_update, current, latest, error } = res.result;
+      if (current) setPluginVersion(current);
+      if (latest) setLatestVersion(latest);
+
+      if (!error && showToast) {
+        if (has_update) {
+          serverApi.toaster.toast({
+            title: t("Update Available"),
+            body: `${current || pluginVersion} => ${latest}`,
+            icon: <GiNightSleep />,
+            critical: true,
+            duration: 5000,
+          });
+        } else {
+          serverApi.toaster.toast({
+            title: t("No Update"),
+            body: t("Already Latest Version"),
+            icon: <GiNightSleep />,
+            duration: 3000,
+          });
+        }
+      } else if (error && showToast) {
+        serverApi.toaster.toast({
+          title: t("Update Check Failed"),
+          body: error,
+          icon: <GiNightSleep />,
+          critical: true,
+          duration: 4000,
+        });
+      }
+    } finally {
+      setCheckingUpdate(false);
+    }
   }
 
   const refreshAppMenuData = async () => {
@@ -575,6 +637,21 @@ const Content: VFC<{
     };
     overlayState.onStateChanged(onOverlayChanged);
     opacityState.onStateChanged(onOpacityChanged);
+
+    const loadUpdateSettings = async () => {
+      const auto = await getPluginSetting(serverApi, "auto_check_update", true);
+      if (!isCurrentRequest(token)) return;
+      setAutoCheckUpdate(Boolean(auto));
+      const versionRes = await serverApi.callPluginMethod<any, string>("get_plugin_version", {});
+      if (!isCurrentRequest(token)) return;
+      if (versionRes.success && versionRes.result) {
+        setPluginVersion(versionRes.result);
+      }
+      if (Boolean(auto)) {
+        checkUpdate();
+      }
+    };
+    loadUpdateSettings();
 
     return () => {
       panelVisible.current = false;
@@ -699,6 +776,40 @@ const Content: VFC<{
             />
           </PanelSectionRow>
         )}
+      </PanelSection>
+
+      <PanelSection title={t('Update')}>
+        <PanelSectionRow>
+          <div style={{display: 'flex', flexDirection: 'column', gap: '5px', width: '100%'}}>
+            <div style={PANEL_STYLES.sectionHint}>
+              {t('Current Version')}: {pluginVersion || "-"}
+            </div>
+            <div style={PANEL_STYLES.sectionHint}>
+              {t('Latest Version')}: {latestVersion || "-"}
+            </div>
+          </div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label={t('Auto Check Update')}
+            description={t('Auto Check Update')}
+            onChange={async (checked) => {
+              setAutoCheckUpdate(checked);
+              await setPluginSetting(serverApi, "auto_check_update", checked);
+            }}
+            checked={autoCheckUpdate}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end' }}>
+            <Focusable
+              style={PANEL_STYLES.panelAction}
+              onClick={() => void checkUpdate(true)}
+            >
+              {checkingUpdate ? t('Checking') : t('Check Update')}
+            </Focusable>
+          </div>
+        </PanelSectionRow>
       </PanelSection>
 
       <PanelSection title={t('App Rules Section')}>

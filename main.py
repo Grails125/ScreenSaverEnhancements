@@ -1,6 +1,16 @@
 import decky_plugin
 import queue
+import urllib.error
+import urllib.request
+from typing import Any, Dict
+import json
 from settings import SettingsManager
+
+GITHUB_RELEASE_API = "https://api.github.com/repos/grails125/ScreenSaverEnhancements/releases/latest"
+UPDATE_CHECK_HEADERS = {
+    "User-Agent": "ScreenSaverEnhancements-UpdateCheck",
+    "Accept": "application/vnd.github+json",
+}
 
 def import_third_party_lib():
     import sys
@@ -207,6 +217,17 @@ def is_decky_music_name(name):
     return normalize_process_name(name) == "deckymusic"
 
 class Plugin:
+    def _normalize_version(self, value: str) -> str:
+        return (value or "").strip().lstrip("vV")
+
+    def _version_result(self) -> Dict[str, Any]:
+        return {
+            "has_update": False,
+            "current": "",
+            "latest": "",
+            "error": "",
+        }
+
     def _init_runtime_state(self):
         if not hasattr(self, 'manual_active'):
             self.manual_active = False
@@ -417,6 +438,45 @@ class Plugin:
             return res
 
         return []
+
+    async def get_plugin_version(self) -> str:
+        version = decky_plugin.DECKY_PLUGIN_VERSION
+        decky_plugin.logger.debug(f"get_plugin_version: {version}")
+        return version
+
+    async def get_latest_version(self) -> str:
+        try:
+            req = urllib.request.Request(
+                GITHUB_RELEASE_API,
+                headers=UPDATE_CHECK_HEADERS,
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            latest = (payload.get("tag_name") or "").strip()
+            decky_plugin.logger.debug(f"get_latest_version: {latest}")
+            return latest
+        except urllib.error.URLError as e:
+            decky_plugin.logger.error(f"get_latest_version failed: {e}")
+            return ""
+        except Exception as e:
+            decky_plugin.logger.error(f"get_latest_version failed: {e}")
+            return ""
+
+    async def check_update(self) -> Dict[str, Any]:
+        result = Plugin._version_result(self)
+        try:
+            current = Plugin._normalize_version(self, decky_plugin.DECKY_PLUGIN_VERSION)
+            latest = Plugin._normalize_version(self, await self.get_latest_version())
+            result["current"] = current
+            result["latest"] = latest
+            if not latest or not current:
+                raise RuntimeError("version info unavailable")
+            result["has_update"] = current != latest
+        except Exception as e:
+            result["error"] = str(e)
+            decky_plugin.logger.error(f"check_update failed: {e}")
+
+        return result
 
     async def get_inhibit_status(self):
         Plugin._init_runtime_state(self)

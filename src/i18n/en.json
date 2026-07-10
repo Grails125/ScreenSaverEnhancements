@@ -35,5 +35,16 @@
     "No Active Inhibit": "No apps are currently inhibiting sleep",
     "Manual Inhibit Source": "Matched manual rule",
     "DBus Inhibit Source": "D-Bus request",
-    "Active": "Active"
+    "Active": "Active",
+    "Update": "Update",
+    "Current Version": "Current Version",
+    "Latest Version": "Latest Version",
+    "Auto Check Update": "Auto Check Update",
+    "Check Update": "Check Update",
+    "Checking": "Checking...",
+    "Update Available": "Update Available",
+    "No Update": "No Update",
+    "Already Latest Version": "Already Latest Version",
+    "Update Check Failed": "Update Check Failed",
+    "Unknown Error": "Unknown Error"
 }
