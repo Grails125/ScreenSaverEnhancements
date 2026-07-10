@@ -135,6 +135,14 @@ def clear_dbus_requests():
     BaseInterface.cookie = 0
 
 
+async def is_dbus_request_connected(request):
+    try:
+        return await asyncio.wait_for(request.is_connected(), timeout=2)
+    except Exception as e:
+        decky_plugin.logger.debug(f"D-Bus connection check failed: {e}")
+        return False
+
+
 async def stop_dbus():
     global bus
     try:
@@ -418,13 +426,15 @@ class Plugin:
             except queue.Empty:
                 break
         # check closed dbus connection (only when there are active cookies)
-        cookies = list(BaseInterface.request_map.keys())
+        requests = list(BaseInterface.request_map.items())
         clear = False
-        if cookies:
-            for c in cookies:
-                connected = await BaseInterface.request_map[c].is_connected()
+        if requests:
+            connected_requests = await asyncio.gather(
+                *(is_dbus_request_connected(request) for _, request in requests),
+            )
+            for (cookie, _), connected in zip(requests, connected_requests):
                 if not connected:
-                    BaseInterface.request_map.pop(c)
+                    BaseInterface.request_map.pop(cookie, None)
                     clear = True
 
         dbus_active = len(BaseInterface.request_map) > 0
