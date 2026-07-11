@@ -791,8 +791,8 @@ const Content: FC<{
   const refreshDiagnostics = async () => {
     setDiagnosticsLoading(true);
     try {
-      const response = await serverApi.callPluginMethod<any, unknown>("get_diagnostics", {});
-      setDiagnostics(response.success ? parseDiagnostics(response.result) : null);
+      const result = await serverApi.getDiagnostics();
+      setDiagnostics(parseDiagnostics(result));
     } catch (error) {
       console.warn("[ScreenSaverEnhancements] Could not load diagnostics", error);
       setDiagnostics(null);

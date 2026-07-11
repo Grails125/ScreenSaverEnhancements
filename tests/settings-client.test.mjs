@@ -14,16 +14,39 @@ const compiled = ts.transpileModule(source, {
 const module = { exports: {} };
 vm.runInNewContext(compiled, { module, exports: module.exports });
 const {
+  getPluginSetting,
   isPluginSettingSaveSuccessful,
   normalizeManualApps,
   parseBooleanSetting,
   parseNumberSetting,
+  setPluginSetting,
+  setPluginSettings,
 } = module.exports;
 
 test("only treats an RPC save as successful when persistence returns true", () => {
-  assert.equal(isPluginSettingSaveSuccessful({ success: true, result: true }), true);
-  assert.equal(isPluginSettingSaveSuccessful({ success: true, result: false }), false);
-  assert.equal(isPluginSettingSaveSuccessful({ success: false, result: true }), false);
+  assert.equal(isPluginSettingSaveSuccessful(true), true);
+  assert.equal(isPluginSettingSaveSuccessful(false), false);
+  assert.equal(isPluginSettingSaveSuccessful({ success: true, result: true }), false);
+});
+
+test("uses direct setting RPC results and preserves read fallbacks", async () => {
+  const serverApi = {
+    async getSetting(key, defaults) {
+      if (key === "missing") throw new Error("backend unavailable");
+      return key === "manual_apps" ? ["mpv"] : defaults;
+    },
+    async setSetting() {
+      return true;
+    },
+    async setSettings() {
+      return false;
+    },
+  };
+
+  assert.deepEqual(Array.from(await getPluginSetting(serverApi, "manual_apps", [])), ["mpv"]);
+  assert.equal(await getPluginSetting(serverApi, "missing", "fallback"), "fallback");
+  assert.equal(await setPluginSetting(serverApi, "show_notify", true), true);
+  assert.equal(await setPluginSettings(serverApi, { show_notify: true }), false);
 });
 
 test("normalizes manual app rules without discarding an empty list", () => {

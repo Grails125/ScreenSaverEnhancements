@@ -47,8 +47,11 @@ export const getPluginSetting = async <T,>(
   key: string,
   defaults: T
 ): Promise<T> => {
-  const response = await serverApi.callPluginMethod<any, any>("get_settings", { key, defaults });
-  return response.success ? response.result : defaults;
+  try {
+    return await serverApi.getSetting(key, defaults);
+  } catch {
+    return defaults;
+  }
 };
 
 export const getPluginBooleanSetting = async (
@@ -74,16 +77,16 @@ export const setPluginSetting = async (
   key: string,
   value: any
 ) => {
-  return await serverApi.callPluginMethod<any, any>("set_settings", { key, value });
+  return await serverApi.setSetting(key, value);
 };
 
 export const isPluginSettingSaveSuccessful = (
-  response: { success?: boolean; result?: unknown } | null | undefined,
-): boolean => response?.success === true && response.result === true;
+  response: unknown,
+): response is true => response === true;
 
 export const setPluginSettings = async (
   serverApi: PluginBackendClient,
   values: Record<string, unknown>,
 ) => {
-  return await serverApi.callPluginMethod<any, any>("set_settings_batch", { values });
+  return await serverApi.setSettings(values);
 };

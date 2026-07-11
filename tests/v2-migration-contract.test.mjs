@@ -117,3 +117,21 @@ test("the full plugin entry uses the modern Decky UI shell", () => {
   assert.match(source, /definePlugin\(\(\) =>/);
   assert.doesNotMatch(source, /decky-frontend-lib|ServerAPI/);
 });
+
+test("settings and diagnostics use direct typed RPC results", () => {
+  const settingsSource = readFileSync(
+    new URL("../src/settingsClient.ts", import.meta.url),
+    "utf8",
+  );
+  const pluginSource = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(settingsSource, /serverApi\.getSetting/);
+  assert.match(settingsSource, /serverApi\.setSetting/);
+  assert.match(settingsSource, /serverApi\.setSettings/);
+  assert.doesNotMatch(settingsSource, /callPluginMethod|\.success|\.result/);
+  assert.match(pluginSource, /serverApi\.getDiagnostics/);
+  assert.doesNotMatch(pluginSource, /callPluginMethod[^\n]*get_diagnostics/);
+});
