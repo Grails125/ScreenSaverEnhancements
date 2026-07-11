@@ -5,20 +5,21 @@ import queue
 import re
 
 
-def load_settings_manager():
-    module_path = Path(__file__).with_name("settings.py")
+def load_local_module(module_name, file_name):
+    module_path = Path(__file__).with_name(file_name)
     spec = importlib.util.spec_from_file_location(
-        "screensaver_enhancements_settings",
+        f"screensaver_enhancements_{module_name}",
         module_path,
     )
     if spec is None or spec.loader is None:
         raise ImportError(f"Could not load settings module from {module_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.SettingsManager
+    return module
 
 
-SettingsManager = load_settings_manager()
+SettingsManager = load_local_module("settings", "settings.py").SettingsManager
+plugin_contract = load_local_module("contract", "plugin_contract.py")
 
 STEAM_CONFIG_PATHS = (
     "/home/deck/.local/share/Steam/config/config.vdf",
@@ -603,13 +604,15 @@ class Plugin:
         return settings.unsetSettings((POWER_OVERRIDE_ACTIVE, POWER_OVERRIDE_SNAPSHOT))
 
     async def set_settings(self, key: str, value):
+        if not plugin_contract.validate_setting_key(key):
+            decky_plugin.logger.warning(f"Rejected unknown setting key: {key!r}")
+            return False
         decky_plugin.logger.info('[settings] set {}: {}'.format(key, value))
         return settings.setSetting(key, value)
 
     async def set_settings_batch(self, values: dict):
-        if not isinstance(values, dict) or len(values) > 32:
-            return False
-        if any(not isinstance(key, str) or len(key) > 128 for key in values):
+        if not plugin_contract.validate_settings_batch(values):
+            decky_plugin.logger.warning("Rejected invalid settings batch")
             return False
         decky_plugin.logger.info('[settings] batch set keys: {}'.format(list(values.keys())))
         return settings.setSettings(values)
