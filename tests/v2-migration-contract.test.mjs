@@ -299,3 +299,17 @@ test("Stage 4.1 performs silent full-state sync before polling and after reconne
   assert.match(source, /shouldStopInhibit\(backendWasInhibiting, deckyMusicInhibiting\)/);
   assert.match(source, /backendState\.SetState\(running \? 1 : 0\)/);
 });
+
+test("Stage 4.2 pushes settings changes while critical power edges stay long-polled", () => {
+  const source = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /serverApi\.subscribeSettingsChanged\(\(\) =>/);
+  assert.match(source, /enqueuePowerOperation\(\(\) => refreshDeckyMusicSetting\(\)\)/);
+  assert.match(source, /unsubscribeSettingsChanged\?\.\(\)/);
+  assert.doesNotMatch(source, /event\.type === "SettingsChanged"/);
+  assert.match(source, /event\.type === "Inhibit"/);
+  assert.match(source, /event\.type === "UnInhibit"/);
+});

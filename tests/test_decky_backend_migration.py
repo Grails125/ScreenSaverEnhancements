@@ -50,6 +50,10 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn('"plugin_contract.py"', build_source)
         self.assertIn('"process_events.py"', build_source)
 
+    def test_manual_app_settings_use_a_noncritical_decky_push_event(self):
+        self.assertIn('await decky.emit("settings_changed", "manual_apps")', self.main_source)
+        self.assertNotIn('queue_event({"type": "SettingsChanged"', self.main_source)
+
 
 if __name__ == "__main__":
     unittest.main()

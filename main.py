@@ -131,6 +131,14 @@ def queue_event(event):
     record_diagnostic_event(event.get("type", "event"), event.get("application") or event.get("key"))
 
 
+async def emit_manual_apps_changed():
+    try:
+        await decky.emit("settings_changed", "manual_apps")
+        record_diagnostic_event("settings_changed", "manual_apps")
+    except Exception as e:
+        decky.logger.warning(f"Could not emit settings_changed: {e}")
+
+
 def sync_inhibit_state(application=None):
     global inhibit_active
     active = manual_inhibiting or len(BaseInterface.request_map) > 0
@@ -776,7 +784,7 @@ class Plugin:
         decky.logger.info('[settings] set {}: {}'.format(key, value))
         saved = settings.setSetting(key, value)
         if saved and key == "manual_apps":
-            queue_event({"type": "SettingsChanged", "key": key})
+            await emit_manual_apps_changed()
             self.manual_watch_wakeup.set()
         return saved
 
@@ -787,7 +795,7 @@ class Plugin:
         decky.logger.info('[settings] batch set keys: {}'.format(list(values.keys())))
         saved = settings.setSettings(values)
         if saved and "manual_apps" in values:
-            queue_event({"type": "SettingsChanged", "key": "manual_apps"})
+            await emit_manual_apps_changed()
             self.manual_watch_wakeup.set()
         return saved
 

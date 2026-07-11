@@ -1662,6 +1662,7 @@ export default definePlugin(() => {
 
   let deckyMusicEnabled = false;
   let eventListenerActive = true;
+  let unsubscribeSettingsChanged: (() => void) | null = null;
   let powerOperation = Promise.resolve();
 
   const enqueuePowerOperation = (operation: () => Promise<void>) => {
@@ -1741,9 +1742,7 @@ export default definePlugin(() => {
 
   const processBackendEvents = async (events: PluginEvent[]) => {
     for (const event of events) {
-      if (event.type === "SettingsChanged" && event.key === "manual_apps") {
-        await refreshDeckyMusicSetting();
-      } else if (event.type === "Inhibit") {
+      if (event.type === "Inhibit") {
         const shouldStart = shouldStartInhibit(backendInhibiting, deckyMusicInhibiting);
         backendInhibiting = true;
         if (shouldStart) {
@@ -1820,6 +1819,9 @@ export default definePlugin(() => {
         } catch (error) {
           console.error("[ScreenSaverEnhancements] Could not synchronize runtime state", error)
         }
+        unsubscribeSettingsChanged = serverApi.subscribeSettingsChanged(() => {
+          enqueuePowerOperation(() => refreshDeckyMusicSetting());
+        });
         void listenForPowerEvents()
       }
     }
@@ -1851,6 +1853,8 @@ export default definePlugin(() => {
       deckyMusicState.SetState(0)
       clearTimeout(timeout)
       eventListenerActive = false
+      unsubscribeSettingsChanged?.()
+      unsubscribeSettingsChanged = null
       disposeAudioTracker()
       serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")
     },

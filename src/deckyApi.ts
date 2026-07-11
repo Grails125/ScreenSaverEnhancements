@@ -24,7 +24,6 @@ export type InhibitStatus = {
   is_inhibiting: boolean;
 };
 export type PluginEvent =
-  | { type: "SettingsChanged"; key: string }
   | { type: "Inhibit"; application?: string }
   | { type: "UnInhibit"; reason?: "monitor_stopped" };
 export type SettingsChangedKey = "manual_apps";
