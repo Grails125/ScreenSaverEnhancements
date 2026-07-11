@@ -1399,7 +1399,7 @@ export default definePlugin(() => {
    */
   function genSettings(field: any, value: number) {
     const buf = [];
-    
+
     let key = (field.field << 3) | field.wireType;
     do {
       let b = key & 0x7F;
@@ -1505,7 +1505,7 @@ export default definePlugin(() => {
     }
     setConfiguredPowerSettings(settings);
   }
-  
+
   const isDeckyMusicEnabled = (apps: string[]) => {
     return apps.some(app => app.toLowerCase() === DECKY_MUSIC_APP.toLowerCase());
   }
