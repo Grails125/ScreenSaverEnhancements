@@ -1,4 +1,4 @@
-import { VFC, useCallback, useEffect, useRef, useState } from "react";
+import { FC, useCallback, useEffect, useRef, useState } from "react";
 import { ServerAPI } from "decky-frontend-lib";
 import { StateNumber } from "./state";
 import { useCatchAllGamepad } from "./useCatchAllGamepad";
@@ -10,7 +10,7 @@ export const BLACK_BACKGROUND_ENABLED = "black_background_enabled";
 export const BLACK_BACKGROUND_OPACITY = "black_background_opacity";
 export const BLACK_BACKGROUND_CLOSE_ON_ANY_KEY = "black_background_close_on_any_key";
 
-const BlackBackground: VFC<{ opacity: number }> = ({ opacity }) => {
+const BlackBackground: FC<{ opacity: number }> = ({ opacity }) => {
   useUIComposition(UIComposition.Overlay);
 
   return (
@@ -30,7 +30,7 @@ const BlackBackground: VFC<{ opacity: number }> = ({ opacity }) => {
   );
 };
 
-export const BlackOverlay: VFC<{
+export const BlackOverlay: FC<{
   serverApi: ServerAPI;
   overlayState: StateNumber;
   opacityState: StateNumber;

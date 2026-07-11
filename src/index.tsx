@@ -11,7 +11,7 @@ import {
   Focusable,
   useQuickAccessVisible,
 } from "decky-frontend-lib";
-import React, { VFC } from "react";
+import React, { FC } from "react";
 import { useState, useEffect, useRef } from 'react'
 import { GiNightSleep } from "react-icons/gi";
 import { RiArrowDownSFill, RiArrowUpSFill } from "react-icons/ri";
@@ -39,6 +39,7 @@ import {
   shouldApplyPowerSettingsImmediately,
   shouldSyncSystemPowerSettings,
 } from './powerSettings'
+
 import {
   areStringArraysEqual,
   clampOpacity,
@@ -50,6 +51,11 @@ import {
   setPluginSetting,
   setPluginSettings,
 } from './settingsClient'
+
+// decky-frontend-lib 3.x renders children but omits them from ButtonItemProps.
+const ButtonItemWithChildren = ButtonItem as FC<
+  React.ComponentProps<typeof ButtonItem> & { children?: React.ReactNode }
+>;
 
 let backendRunning = false;
 let showNotify     = false;
@@ -91,7 +97,7 @@ const PANEL_LAYOUT_CSS = `
   }
 `
 
-const PanelLayout: VFC<{ children: React.ReactNode }> = ({ children }) => React.createElement(
+const PanelLayout: FC<{ children: React.ReactNode }> = ({ children }) => React.createElement(
   'div',
   { className: 'sse-panel-root' },
   React.createElement('style', null, PANEL_LAYOUT_CSS),
@@ -332,7 +338,7 @@ type InhibitAppsPageProps = {
   onRemoveApp: (appName: string) => void;
 };
 
-const InhibitAppsPage: VFC<InhibitAppsPageProps> = ({
+const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
   manualApps,
   inhibitStatus,
   deckyMusicActive,
@@ -493,7 +499,7 @@ const formatProcessMonitorMode = (mode: string) => {
   }
 };
 
-const DiagnosticRow: VFC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
+const DiagnosticRow: FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <PanelSectionRow>
     <div style={PANEL_STYLES.processItem}>
       <span style={PANEL_STYLES.sectionHint}>{label}</span>
@@ -511,7 +517,7 @@ type DiagnosticsPageProps = {
   onExport: () => void;
 };
 
-const DiagnosticsPage: VFC<DiagnosticsPageProps> = ({
+const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
   diagnostics,
   loading,
   exportStatus,
@@ -593,7 +599,7 @@ const DiagnosticsPage: VFC<DiagnosticsPageProps> = ({
 
         <PanelSection>
           <PanelSectionRow>
-            <ButtonItem layout="below" onClick={onExport}>{exportStatus || t('Copy Diagnostic Report')}</ButtonItem>
+            <ButtonItemWithChildren layout="below" onClick={onExport}>{exportStatus || t('Copy Diagnostic Report')}</ButtonItemWithChildren>
           </PanelSectionRow>
         </PanelSection>
       </>
@@ -601,7 +607,7 @@ const DiagnosticsPage: VFC<DiagnosticsPageProps> = ({
   </PanelLayout>
 );
 
-const Content: VFC<{
+const Content: FC<{
   serverApi: ServerAPI;
   overlayState: StateNumber;
   opacityState: StateNumber;
@@ -1077,7 +1083,7 @@ const Content: VFC<{
         </PanelSectionRow>
         <PanelSectionRow>
           <div className="ScreenSaverEnhancements_PowerConfigCollapse" style={{ marginTop: '-2px', marginBottom: '4px' }}>
-            <ButtonItem
+            <ButtonItemWithChildren
               layout="below"
               bottomSeparator={powerConfigCollapsed ? "standard" : "none"}
               onClick={() => setPowerConfigCollapsed(!powerConfigCollapsed)}
@@ -1085,7 +1091,7 @@ const Content: VFC<{
               {powerConfigCollapsed
                 ? <RiArrowDownSFill style={{ transform: 'translate(0, -13px)', fontSize: '1.5em' }} />
                 : <RiArrowUpSFill style={{ transform: 'translate(0, -12px)', fontSize: '1.5em' }} />}
-            </ButtonItem>
+            </ButtonItemWithChildren>
           </div>
         </PanelSectionRow>
         {!powerConfigCollapsed && <>
