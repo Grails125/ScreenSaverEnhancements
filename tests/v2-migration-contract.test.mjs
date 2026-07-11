@@ -93,6 +93,19 @@ test("shared frontend modules no longer depend on decky-frontend-lib", () => {
   }
 });
 
+test("Steam module lookups avoid deprecated Decky helpers", () => {
+  const lookupModules = [
+    "../src/sleepManager.ts",
+    "../src/uiComposition.ts",
+  ];
+
+  for (const modulePath of lookupModules) {
+    const source = readFileSync(new URL(modulePath, import.meta.url), "utf8");
+    assert.match(source, /findModuleExport/);
+    assert.doesNotMatch(source, /findModuleChild/);
+  }
+});
+
 test("the full plugin entry uses the modern Decky UI shell", () => {
   const source = readFileSync(
     new URL("../src/index.tsx", import.meta.url),
