@@ -24,6 +24,7 @@ import { QUICK_ACCESS_MENU } from './ButtonIcons'
 import { copyTextToClipboard } from './clipboard'
 import { Diagnostics, parseDiagnostics } from './diagnostics'
 import { InhibitStatus, PluginServerApi, RunningProcess, serverApi } from './deckyApi'
+import { createPushListenerHealth } from './pushListenerHealth'
 import { StateNumber } from './state'
 import {
   DEFAULT_POWER_SETTINGS,
@@ -1676,9 +1677,11 @@ export default definePlugin(() => {
   let pluginActive = true;
   let unsubscribeSettingsChanged: (() => void) | null = null;
   let unsubscribeInhibitStateChanged: (() => void) | null = null;
-  const eventChannelDiagnostics: EventChannelDiagnostics = {
-    pushListenerActive: false,
-    pushReconnectCount: 0,
+  const pushListenerHealth = createPushListenerHealth();
+  const eventChannelDiagnostics: Pick<
+    EventChannelDiagnostics,
+    'lastFullSyncAt' | 'lastFullSyncSuccessful'
+  > = {
     lastFullSyncAt: null,
     lastFullSyncSuccessful: null,
   };
@@ -1775,6 +1778,42 @@ export default definePlugin(() => {
     }
   }
 
+  const disconnectPushListeners = () => {
+    unsubscribeSettingsChanged?.();
+    unsubscribeSettingsChanged = null;
+    unsubscribeInhibitStateChanged?.();
+    unsubscribeInhibitStateChanged = null;
+    pushListenerHealth.markDisconnected();
+  }
+
+  const reconnectPushListeners = (synchronizeAfterConnect = false) => {
+    if (!pluginActive) return;
+    disconnectPushListeners();
+    try {
+      unsubscribeSettingsChanged = serverApi.subscribeSettingsChanged(() => {
+        if (!pluginActive) return;
+        enqueuePowerOperation(() => refreshDeckyMusicSetting())
+          .catch(() => reconnectPushListeners(true));
+      });
+      unsubscribeInhibitStateChanged = serverApi.subscribeInhibitStateChanged(() => {
+        if (!pluginActive) return;
+        enqueuePowerOperation(() => synchronizeRuntimeState(true))
+          .catch(() => reconnectPushListeners(true));
+      });
+      pushListenerHealth.markConnected();
+      if (synchronizeAfterConnect) {
+        enqueuePowerOperation(() => synchronizeRuntimeState())
+          .catch((syncError) => console.error(
+            "[ScreenSaverEnhancements] Could not synchronize after reconnecting push listeners",
+            syncError,
+          ));
+      }
+    } catch (error) {
+      disconnectPushListeners();
+      console.error("[ScreenSaverEnhancements] Could not connect push listeners", error);
+    }
+  }
+
   const initializePlugin = async () => {
     try {
       const blackBackground = await getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_ENABLED, false)
@@ -1810,15 +1849,7 @@ export default definePlugin(() => {
         } catch (error) {
           console.error("[ScreenSaverEnhancements] Could not synchronize runtime state", error)
         }
-        unsubscribeSettingsChanged = serverApi.subscribeSettingsChanged(() => {
-          if (!pluginActive) return;
-          enqueuePowerOperation(() => refreshDeckyMusicSetting());
-        });
-        unsubscribeInhibitStateChanged = serverApi.subscribeInhibitStateChanged(() => {
-          if (!pluginActive) return;
-          enqueuePowerOperation(() => synchronizeRuntimeState(true));
-        });
-        eventChannelDiagnostics.pushListenerActive = true;
+        reconnectPushListeners();
       }
     }
   }
@@ -1843,7 +1874,10 @@ export default definePlugin(() => {
       onPowerSettingsApply={applyConfiguredPowerSettings}
       readSystemPowerSettings={readSystemPowerSettings}
       onMonitorChanged={() => enqueuePowerOperation(() => synchronizeRuntimeState())}
-      getEventChannelDiagnostics={() => ({ ...eventChannelDiagnostics })}
+      getEventChannelDiagnostics={() => ({
+        ...pushListenerHealth.snapshot(),
+        ...eventChannelDiagnostics,
+      })}
     />,
     icon: <GiNightSleep />,
     onDismount() {
@@ -1851,11 +1885,7 @@ export default definePlugin(() => {
       deckyMusicState.SetState(0)
       clearTimeout(timeout)
       pluginActive = false
-      unsubscribeSettingsChanged?.()
-      unsubscribeSettingsChanged = null
-      unsubscribeInhibitStateChanged?.()
-      unsubscribeInhibitStateChanged = null
-      eventChannelDiagnostics.pushListenerActive = false
+      disconnectPushListeners()
       disposeAudioTracker()
       serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")
     },

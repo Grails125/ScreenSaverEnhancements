@@ -303,7 +303,8 @@ test("Stage 4.1 performs silent full-state sync before event subscriptions", () 
   assert.match(source, /serverApi\.getInhibitStatus\(\)/);
   assert.match(source, /getPowerSyncAction\(/);
   assert.match(source, /refreshDeckyMusicSetting\(false, running\)/);
-  assert.match(source, /await synchronizeRuntimeState\(\);[\s\S]*subscribeInhibitStateChanged/);
+  assert.match(source, /await synchronizeRuntimeState\(\);[\s\S]*reconnectPushListeners\(\)/);
+  assert.match(source, /const reconnectPushListeners = \([^)]*\) =>[\s\S]*subscribeSettingsChanged[\s\S]*subscribeInhibitStateChanged/);
   assert.match(source, /backendState\.SetState\(running \? 1 : 0\)/);
 });
 
@@ -370,6 +371,11 @@ test("Stage 4.4 diagnostics report push health instead of polling counters", () 
   assert.match(diagnosticsSource, /lastFullSyncAt: number \| null/);
   assert.match(diagnosticsSource, /lastFullSyncSuccessful: boolean \| null/);
   assert.match(source, /getEventChannelDiagnostics/);
+  assert.match(source, /reconnectPushListeners/);
+  assert.match(source, /reconnectPushListeners\(true\)/);
+  assert.match(source, /if \(synchronizeAfterConnect\)[\s\S]*synchronizeRuntimeState\(\)/);
+  assert.match(source, /markDisconnected\(\)/);
+  assert.match(source, /markConnected\(\)/);
   assert.doesNotMatch(source, /t\('Long Poll Requests'\)|t\('Long Poll Timeouts'\)|t\('Queued Events'\)/);
   assert.equal(zh["Push Listener"], "推送监听");
   assert.equal(zh["Reconnect Count"], "重连次数");
