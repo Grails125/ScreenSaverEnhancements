@@ -67,9 +67,15 @@ class ProcessEventSource:
 
 
 if __name__ == "__main__":
-    source = ProcessEventSource()
-    try:
-        source.open()
-        print("proc_connector")
-    finally:
-        source.close()
+    async def probe():
+        source = ProcessEventSource()
+        try:
+            source.open()
+            process = await asyncio.create_subprocess_exec("/usr/bin/true")
+            event_type = await asyncio.wait_for(source.wait_for_process_change(), timeout=3)
+            await process.wait()
+            print(f"proc_connector:{event_type}")
+        finally:
+            source.close()
+
+    asyncio.run(probe())
