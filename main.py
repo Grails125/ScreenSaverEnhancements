@@ -1,7 +1,24 @@
 import decky_plugin
+import importlib.util
+from pathlib import Path
 import queue
 import re
-from settings import SettingsManager
+
+
+def load_settings_manager():
+    module_path = Path(__file__).with_name("settings.py")
+    spec = importlib.util.spec_from_file_location(
+        "screensaver_enhancements_settings",
+        module_path,
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load settings module from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.SettingsManager
+
+
+SettingsManager = load_settings_manager()
 
 STEAM_CONFIG_PATHS = (
     "/home/deck/.local/share/Steam/config/config.vdf",
