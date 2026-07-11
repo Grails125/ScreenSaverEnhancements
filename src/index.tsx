@@ -27,6 +27,7 @@ import { InhibitStatus, PluginEvent, PluginServerApi, RunningProcess, serverApi 
 import { StateNumber } from './state'
 import {
   DEFAULT_POWER_SETTINGS,
+  getPowerSyncAction,
   minutesToSeconds,
   normalizePowerSettings,
   parseSteamPowerSettings,
@@ -34,6 +35,7 @@ import {
   PowerSettings,
   PowerOverrideState,
   shouldStartInhibit,
+  shouldStopInhibit,
   secondsToMinutes,
   shouldApplyPowerSettingsImmediately,
   shouldSyncSystemPowerSettings,
@@ -51,7 +53,6 @@ import {
   setPluginSettings,
 } from './settingsClient'
 
-let backendRunning = false;
 let showNotify     = false;
 let language = i18n.getCurrentLanguage()
 const t = i18n.useTranslations(language)
@@ -657,14 +658,15 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
 
 const Content: FC<{
   serverApi: PluginServerApi;
+  backendState: StateNumber;
   overlayState: StateNumber;
   opacityState: StateNumber;
   deckyMusicState: StateNumber;
   onPowerSettingsLoaded: (settings: PowerSettings) => void;
   onPowerSettingsApply: (settings: PowerSettings) => Promise<void>;
   readSystemPowerSettings: () => Promise<PowerSettings | null>;
-}> = ({serverApi, overlayState, opacityState, deckyMusicState, onPowerSettingsLoaded, onPowerSettingsApply, readSystemPowerSettings}) => {
-  const [running, setRunning] = useState<boolean>(backendRunning);
+}> = ({serverApi, backendState, overlayState, opacityState, deckyMusicState, onPowerSettingsLoaded, onPowerSettingsApply, readSystemPowerSettings}) => {
+  const [running, setRunning] = useState<boolean>(backendState.GetState() === 1);
   const [notify, setNotify] = useState<boolean>(showNotify);
   const [blackBackground, setBlackBackground] = useState<boolean>(overlayState.GetState() === 1);
   const [blackBackgroundOpacity, setBlackBackgroundOpacity] = useState<number>(opacityState.GetState());
@@ -927,7 +929,7 @@ const Content: FC<{
       try {
         const isRunning = await isBackendRunning();
         if (!isCurrentRequest(token)) return;
-        backendRunning = isRunning;
+        backendState.SetState(isRunning ? 1 : 0);
         setRunning(isRunning);
       } catch (error) {
         console.warn("[ScreenSaverEnhancements] Could not read backend state", error);
@@ -972,9 +974,13 @@ const Content: FC<{
     const onOverlayChanged = (mode: number) => {
       setBlackBackground(mode === 1);
     };
+    const onBackendChanged = (mode: number) => {
+      setRunning(mode === 1);
+    };
     const onOpacityChanged = (value: number) => {
       setBlackBackgroundOpacity(Math.min(1, Math.max(0, value)));
     };
+    backendState.onStateChanged(onBackendChanged);
     overlayState.onStateChanged(onOverlayChanged);
     opacityState.onStateChanged(onOpacityChanged);
     const onDeckyMusicChanged = (value: number) => setDeckyMusicActive(value === 1);
@@ -990,11 +996,12 @@ const Content: FC<{
         void setPluginSetting(serverApi, BLACK_BACKGROUND_OPACITY, pendingOpacityRef.current);
         pendingOpacityRef.current = null;
       }
+      backendState.offStateChanged(onBackendChanged);
       overlayState.offStateChanged(onOverlayChanged);
       opacityState.offStateChanged(onOpacityChanged);
       deckyMusicState.offStateChanged(onDeckyMusicChanged);
     };
-  }, [overlayState, opacityState, deckyMusicState]);
+  }, [backendState, overlayState, opacityState, deckyMusicState]);
 
   useEffect(() => {
     if (!quickAccessVisible) return;
@@ -1082,10 +1089,10 @@ const Content: FC<{
             onChange={async (checked) => {
               const previous = running;
               setRunning(checked)
-              backendRunning = checked
+              backendState.SetState(checked ? 1 : 0)
               if (!await saveSetting(RUN_ON_LOGIN, checked, () => {
                 setRunning(previous)
-                backendRunning = previous
+                backendState.SetState(previous ? 1 : 0)
               })) return;
 
               try {
@@ -1094,7 +1101,7 @@ const Content: FC<{
                 notifyMonitorStatus(checked);
               } catch {
                 setRunning(previous)
-                backendRunning = previous
+                backendState.SetState(previous ? 1 : 0)
                 await setPluginSetting(serverApi, RUN_ON_LOGIN, previous);
                 serverApi.toaster.toast({
                   title: t("Background Monitor Failed"),
@@ -1314,6 +1321,7 @@ const Content: FC<{
 
 
 export default definePlugin(() => {
+  const backendState = new StateNumber(0);
   const overlayState = new StateNumber(0);
   const opacityState = new StateNumber(1);
   const deckyMusicState = new StateNumber(0);
@@ -1485,10 +1493,6 @@ export default definePlugin(() => {
     return await serverApi.waitForEvents(25);
   }
 
-  const isBackendRunning = async () => {
-    return await serverApi.isRunning();
-  }
-
   const isDeckyMusicEnabled = (apps: string[]) => {
     return apps.some(app => app.toLowerCase() === DECKY_MUSIC_APP.toLowerCase());
   }
@@ -1608,25 +1612,38 @@ export default definePlugin(() => {
     }, 2000)
   }
 
-  const startInhibit = async (application?: string) => {
+  const activateInhibit = async (
+    snapshot: PowerSettings,
+    application?: string,
+    showNotification = true,
+  ) => {
     const displayName = getAppDisplayName(application);
     const message = displayName ? `${displayName} ${t("Inhibit")}` : t("Inhibit");
-    const snapshot = await readSystemPowerSettings() ?? configuredPowerSettings;
     if (!await beginPowerOverride(snapshot)) {
       throw new Error("Could not save the power override recovery snapshot");
     }
     setConfiguredPowerSettings(snapshot);
     try {
       await updateSetting(0, 0, 0, 0);
-      notify(t("ScreenSaver"), message)
+      if (showNotification) {
+        notify(t("ScreenSaver"), message)
+      }
     } catch (error) {
       await endPowerOverride();
       throw error;
     }
   }
 
-  const stopInhibit = async (showRestoreNotification = true) => {
-    const state = await getPowerOverrideState();
+  const startInhibit = async (application?: string) => {
+    const snapshot = await readSystemPowerSettings() ?? configuredPowerSettings;
+    await activateInhibit(snapshot, application);
+  }
+
+  const stopInhibit = async (
+    showRestoreNotification = true,
+    knownState?: PowerOverrideState,
+  ) => {
+    const state = knownState ?? await getPowerOverrideState();
     const restoreSettings = state.snapshot ?? configuredPowerSettings;
     await updateSetting(
       restoreSettings.batteryDim,
@@ -1675,7 +1692,7 @@ export default definePlugin(() => {
     enqueuePowerOperation(reconcileDeckyMusicState);
   }
 
-  const refreshDeckyMusicSetting = async () => {
+  const refreshDeckyMusicSetting = async (reconcilePower = true) => {
     const manualApps = await getPluginSetting(serverApi, "manual_apps", []);
     deckyMusicEnabled = isDeckyMusicEnabled(normalizeManualApps(manualApps));
     if (deckyMusicEnabled) {
@@ -1683,7 +1700,43 @@ export default definePlugin(() => {
     } else {
       disposeAudioTracker();
     }
-    await reconcileDeckyMusicState();
+    if (reconcilePower) {
+      await reconcileDeckyMusicState();
+    } else {
+      deckyMusicInhibiting = deckyMusicEnabled && isAnyAudioPlaying();
+      deckyMusicState.SetState(deckyMusicInhibiting ? 1 : 0);
+    }
+  }
+
+  const synchronizeRuntimeState = async () => {
+    const [running, inhibitStatus, rawOverrideState, rawSystemSettings] = await Promise.all([
+      serverApi.isRunning(),
+      serverApi.getInhibitStatus(),
+      serverApi.getPowerOverrideState(),
+      serverApi.getSystemPowerSettings(),
+    ]);
+    const overrideState = parsePowerOverrideState(rawOverrideState);
+    const systemSettings = parseSteamPowerSettings(rawSystemSettings);
+
+    backendState.SetState(running ? 1 : 0);
+    backendInhibiting = running && inhibitStatus.is_inhibiting;
+    await refreshDeckyMusicSetting(false);
+
+    if (overrideState.active && overrideState.snapshot) {
+      setConfiguredPowerSettings(overrideState.snapshot);
+    }
+    const shouldBeInhibiting = backendInhibiting || deckyMusicInhibiting;
+    const action = getPowerSyncAction(shouldBeInhibiting, overrideState, systemSettings);
+    if (action === "start") {
+      const snapshot = systemSettings && shouldSyncSystemPowerSettings(systemSettings, true)
+        ? systemSettings
+        : configuredPowerSettings;
+      await activateInhibit(snapshot, undefined, false);
+    } else if (action === "reapply") {
+      await updateSetting(0, 0, 0, 0);
+    } else if (action === "restore") {
+      await stopInhibit(false, overrideState);
+    }
   }
 
   const processBackendEvents = async (events: PluginEvent[]) => {
@@ -1697,8 +1750,9 @@ export default definePlugin(() => {
           await startInhibit(event.application);
         }
       } else if (event.type === "UnInhibit") {
+        const backendWasInhibiting = backendInhibiting;
         backendInhibiting = false;
-        if (!deckyMusicInhibiting) {
+        if (shouldStopInhibit(backendWasInhibiting, deckyMusicInhibiting)) {
           await stopInhibit(event.reason !== "monitor_stopped");
         }
       }
@@ -1717,7 +1771,16 @@ export default definePlugin(() => {
     } catch (error) {
       console.error("[ScreenSaverEnhancements] Event listener failed", error);
       if (eventListenerActive) {
-        setTimeout(() => void listenForPowerEvents(), 3000);
+        setTimeout(() => enqueuePowerOperation(async () => {
+          try {
+            await synchronizeRuntimeState();
+          } catch (syncError) {
+            console.error("[ScreenSaverEnhancements] Runtime state resync failed", syncError);
+          }
+          if (eventListenerActive) {
+            void listenForPowerEvents();
+          }
+        }), 3000);
       }
     }
   }
@@ -1747,21 +1810,15 @@ export default definePlugin(() => {
         acSuspend,
       }))
 
-      await restorePendingPowerOverride()
-
-      const run = await getPluginBooleanSetting(serverApi, RUN_ON_LOGIN, true)
-      if (run) {
-        backendRunning = await isBackendRunning()
-      }
     } catch (error) {
-      backendRunning = false
+      backendState.SetState(0)
       console.error("[ScreenSaverEnhancements] Plugin initialization failed", error)
     } finally {
       if (eventListenerActive) {
         try {
-          await refreshDeckyMusicSetting()
+          await synchronizeRuntimeState();
         } catch (error) {
-          console.error("[ScreenSaverEnhancements] Could not initialize DeckyMusic tracking", error)
+          console.error("[ScreenSaverEnhancements] Could not synchronize runtime state", error)
         }
         void listenForPowerEvents()
       }
@@ -1780,6 +1837,7 @@ export default definePlugin(() => {
     titleView: <div className={staticClasses.Title}>Suspend Manager</div>,
     content: <Content
       serverApi={serverApi}
+      backendState={backendState}
       overlayState={overlayState}
       opacityState={opacityState}
       deckyMusicState={deckyMusicState}

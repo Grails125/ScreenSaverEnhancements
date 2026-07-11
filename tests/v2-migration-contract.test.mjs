@@ -284,3 +284,18 @@ test("diagnostics merge monitor state and process mode behind an accessible deta
   assert.match(source, /<MonitorStatusRow/);
   assert.match(source, /aria-expanded=\{detailsVisible\}/);
 });
+
+test("Stage 4.1 performs silent full-state sync before polling and after reconnects", () => {
+  const source = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /const synchronizeRuntimeState = async \(\) =>/);
+  assert.match(source, /serverApi\.getInhibitStatus\(\)/);
+  assert.match(source, /getPowerSyncAction\(/);
+  assert.match(source, /refreshDeckyMusicSetting\(false\)/);
+  assert.match(source, /await synchronizeRuntimeState\(\);[\s\S]*void listenForPowerEvents\(\)/);
+  assert.match(source, /shouldStopInhibit\(backendWasInhibiting, deckyMusicInhibiting\)/);
+  assert.match(source, /backendState\.SetState\(running \? 1 : 0\)/);
+});
