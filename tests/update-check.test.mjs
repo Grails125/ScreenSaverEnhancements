@@ -38,3 +38,12 @@ test("update installation persists the target version until the reloaded plugin 
   assert.match(pluginSource, /version === restartTarget/);
   assert.match(pluginSource, /localStorage\.removeItem\(UPDATE_RESTART_TARGET_KEY\)/);
 });
+
+test("update checking is the final section in the plugin panel", () => {
+  const diagnosticsSection = pluginSource.indexOf("<PanelSection title={t('Diagnostics Section')}>");
+  const updateSection = pluginSource.indexOf("<PanelSection title={t('Update')}>");
+
+  assert.ok(diagnosticsSection >= 0);
+  assert.ok(updateSection > diagnosticsSection);
+  assert.equal(pluginSource.indexOf("<PanelSection title=", updateSection + 1), -1);
+});

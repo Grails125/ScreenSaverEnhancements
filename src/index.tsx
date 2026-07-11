@@ -1446,6 +1446,44 @@ const Content: FC<{
         )}
       </PanelSection>
 
+      <PanelSection title={t('App Rules Section')}>
+        <PanelSectionRow>
+          <Focusable
+            style={PANEL_STYLES.menuItem}
+            onClick={openAppMenu}
+          >
+            <div style={PANEL_STYLES.menuMain}>
+              <span style={PANEL_STYLES.menuIcon}>☾</span>
+              <div style={PANEL_STYLES.menuText}>
+                <span style={PANEL_STYLES.menuTitle}>{t('Inhibit Apps')}</span>
+                <span style={PANEL_STYLES.menuDescription}>{t('app_rules_tip')}</span>
+              </div>
+            </div>
+            <div style={PANEL_STYLES.menuTrailing}>
+              {inhibitAppCount > 0 && (
+                <span style={PANEL_STYLES.countBadge}>{inhibitAppCount}</span>
+              )}
+              <span style={PANEL_STYLES.chevron}>›</span>
+            </div>
+          </Focusable>
+        </PanelSectionRow>
+      </PanelSection>
+
+      <PanelSection title={t('Diagnostics Section')}>
+        <PanelSectionRow>
+          <Focusable style={PANEL_STYLES.menuItem} onClick={openDiagnostics}>
+            <div style={PANEL_STYLES.menuMain}>
+              <span style={PANEL_STYLES.menuIcon}>i</span>
+              <div style={PANEL_STYLES.menuText}>
+                <span style={PANEL_STYLES.menuTitle}>{t('Diagnostics')}</span>
+                <span style={PANEL_STYLES.menuDescription}>{t('diagnostics_tip')}</span>
+              </div>
+            </div>
+            <span style={PANEL_STYLES.chevron}>›</span>
+          </Focusable>
+        </PanelSectionRow>
+      </PanelSection>
+
       <PanelSection title={t('Update')}>
         <PanelSectionRow>
           <div style={PANEL_STYLES.updateSummary}>
@@ -1486,44 +1524,6 @@ const Content: FC<{
           >
             {checkingUpdate ? t('Checking') : t('Check Update')}
           </ButtonItem>
-        </PanelSectionRow>
-      </PanelSection>
-
-      <PanelSection title={t('App Rules Section')}>
-        <PanelSectionRow>
-          <Focusable
-            style={PANEL_STYLES.menuItem}
-            onClick={openAppMenu}
-          >
-            <div style={PANEL_STYLES.menuMain}>
-              <span style={PANEL_STYLES.menuIcon}>☾</span>
-              <div style={PANEL_STYLES.menuText}>
-                <span style={PANEL_STYLES.menuTitle}>{t('Inhibit Apps')}</span>
-                <span style={PANEL_STYLES.menuDescription}>{t('app_rules_tip')}</span>
-              </div>
-            </div>
-            <div style={PANEL_STYLES.menuTrailing}>
-              {inhibitAppCount > 0 && (
-                <span style={PANEL_STYLES.countBadge}>{inhibitAppCount}</span>
-              )}
-              <span style={PANEL_STYLES.chevron}>›</span>
-            </div>
-          </Focusable>
-        </PanelSectionRow>
-      </PanelSection>
-
-      <PanelSection title={t('Diagnostics Section')}>
-        <PanelSectionRow>
-          <Focusable style={PANEL_STYLES.menuItem} onClick={openDiagnostics}>
-            <div style={PANEL_STYLES.menuMain}>
-              <span style={PANEL_STYLES.menuIcon}>i</span>
-              <div style={PANEL_STYLES.menuText}>
-                <span style={PANEL_STYLES.menuTitle}>{t('Diagnostics')}</span>
-                <span style={PANEL_STYLES.menuDescription}>{t('diagnostics_tip')}</span>
-              </div>
-            </div>
-            <span style={PANEL_STYLES.chevron}>›</span>
-          </Focusable>
         </PanelSectionRow>
       </PanelSection>
     </PanelLayout>
@@ -2056,8 +2056,8 @@ export default definePlugin(() => {
   );
 
   return {
-    name: "屏幕保护增强",
-    titleView: <div className={staticClasses.Title}>Suspend Manager</div>,
+    name: t("Plugin Name"),
+    titleView: <div className={staticClasses.Title}>{t("Plugin Name")}</div>,
     content: <Content
       serverApi={serverApi}
       backendState={backendState}

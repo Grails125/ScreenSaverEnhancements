@@ -23,7 +23,7 @@ test("pins the Decky 3.2.6 compatible modern frontend toolchain", () => {
   assert.equal(pluginJson.api_version, 1);
 });
 
-test("Stage 4 release metadata advances from the installed 1.3.0 baseline", () => {
+test("release metadata advances to the 2.0.0 V2 release", () => {
   const pnpmLock = readFileSync(
     new URL("../pnpm-lock.yaml", import.meta.url),
     "utf8",
@@ -33,9 +33,9 @@ test("Stage 4 release metadata advances from the installed 1.3.0 baseline", () =
     "utf8",
   );
 
-  assert.equal(packageJson.version, "1.4.0");
-  assert.equal(packageLock.version, "1.4.0");
-  assert.equal(packageLock.packages[""].version, "1.4.0");
+  assert.equal(packageJson.version, "2.0.0");
+  assert.equal(packageLock.version, "2.0.0");
+  assert.equal(packageLock.packages[""].version, "2.0.0");
   assert.match(pnpmLock, /'@decky\/api':/);
   assert.doesNotMatch(pnpmLock, /decky-frontend-lib:/);
   assert.match(deckyStub, /async def emit\(event: str, \*args: Any\) -> None:/);
@@ -137,6 +137,17 @@ test("the full plugin entry uses the modern Decky UI shell", () => {
   assert.match(source, /from ["']@decky\/api["']/);
   assert.match(source, /definePlugin\(\(\) =>/);
   assert.doesNotMatch(source, /decky-frontend-lib|ServerAPI/);
+});
+
+test("plugin name and title use the active locale", () => {
+  const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
+  const en = JSON.parse(readFileSync(new URL("../src/i18n/en.json", import.meta.url), "utf8"));
+  const zh = JSON.parse(readFileSync(new URL("../src/i18n/zh-cn.json", import.meta.url), "utf8"));
+
+  assert.match(source, /name: t\("Plugin Name"\)/);
+  assert.match(source, /titleView: <div className=\{staticClasses\.Title\}>\{t\("Plugin Name"\)\}<\/div>/);
+  assert.equal(en["Plugin Name"], "ScreenSaver Enhancements");
+  assert.equal(zh["Plugin Name"], "屏幕保护增强");
 });
 
 test("settings and diagnostics use direct typed RPC results", () => {

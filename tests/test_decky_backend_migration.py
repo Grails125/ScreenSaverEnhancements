@@ -35,13 +35,21 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn("logger", decky_attributes)
         self.assertIn("DECKY_PLUGIN_SETTINGS_DIR", decky_attributes)
 
-    def test_build_packages_the_modern_decky_type_stub(self):
+    def test_type_stub_is_kept_for_development_but_excluded_from_release(self):
         build_source = (ROOT / "build.py").read_text(encoding="utf-8")
 
         self.assertTrue((ROOT / "decky.pyi").is_file())
         self.assertFalse((ROOT / "decky_plugin.pyi").exists())
-        self.assertIn('"decky.pyi"', build_source)
+        self.assertNotIn('"decky.pyi"', build_source)
         self.assertNotIn("decky_plugin.pyi", build_source)
+
+    def test_build_bundles_the_python_dependencies_required_by_decky_sandbox(self):
+        build_source = (ROOT / "build.py").read_text(encoding="utf-8")
+
+        self.assertIn('os.path.join("defaults", "dbus_next")', build_source)
+        self.assertIn('os.path.join("defaults", "lib", "x")', build_source)
+        self.assertNotIn('"py_modules"', build_source)
+        self.assertNotIn('defaults_dir = "defaults"', build_source)
 
     def test_build_packages_every_local_backend_module(self):
         build_source = (ROOT / "build.py").read_text(encoding="utf-8")

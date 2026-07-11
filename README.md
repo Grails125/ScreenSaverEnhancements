@@ -8,6 +8,23 @@ This project is based on [xfangfang/DeckyInhibitScreenSaver](https://github.com/
 
 ## Changelog
 
+### 2.0.0
+
+#### V2 architecture
+
+- Migrated the frontend to Decky V2 ESM with `@decky/api`, `@decky/ui`, and typed callable RPC.
+- Migrated the backend to the modern `decky` module and removed the legacy RPC adapter and event long polling.
+- Replaced polling with Decky push events backed by full-state synchronization for loss, ordering, and reconnect recovery.
+- Added power-override recovery snapshots and disconnected D-Bus client reconciliation so system sleep settings can recover after failures.
+
+#### Features and experience
+
+- Renamed the background monitor to Sleep Inhibition Monitor with explicit enable and disable notifications.
+- Added separate custom screen-dim and system-suspend timeouts for battery and AC power, with the user configuration restored after inhibition ends.
+- Consolidated monitor and process-listener diagnostics and added push-listener, reconnect-count, and last-full-sync status.
+- Added manual update checking, version details, and release notes at the bottom of the plugin panel.
+- Fixed DeckyMusic inhibition remaining active after the monitor was disabled.
+
 ### 1.3.0
 
 #### Added and improved
@@ -65,13 +82,10 @@ This project is based on [xfangfang/DeckyInhibitScreenSaver](https://github.com/
 
 The plugin uses two paths:
 
-- **Automatic mode** registers the same D-Bus services as the original project. Apps that call `Inhibit` produce events, and the frontend applies SteamOS idle/suspend settings to keep the screen awake.
-- **Manual mode** periodically scans running processes from the backend. When a configured process is found, the backend emits an `Inhibit` event through the same event path used by automatic mode.
+- **D-Bus mode** registers standard sleep-inhibition services. When an app calls `Inhibit`, the backend emits a Decky state-change signal and the frontend fetches the complete state before managing SteamOS idle and suspend settings.
+- **Manual mode** prefers kernel process events and automatically falls back to low-frequency scanning when unavailable. Matches use the same state synchronization and power-control path as D-Bus requests.
 
-When no automatic or manual inhibitor is active, the plugin restores the default settings:
-
-- dim: 5 minutes
-- suspend: 10 minutes
+The plugin stores the current system power configuration before inhibition starts. When every inhibitor ends, or when the plugin recovers from an interruption, it restores that snapshot instead of writing fixed defaults.
 
 ## DeckyMusic
 

@@ -1,6 +1,5 @@
 import os
 import shutil
-import json
 import subprocess
 
 def ignore_build_artifacts(_dir, names):
@@ -38,7 +37,6 @@ def build():
         "main.py",
         "plugin.json",
         "package.json",
-        "decky.pyi",
         "README_ZH.md",
         "README.md",
         "LICENSE",
@@ -52,35 +50,23 @@ def build():
         if os.path.exists(f):
             shutil.copy(f, out_dir)
             
-    # 5. Extract contents from 'defaults' to the root of the output directory
-    defaults_dir = "defaults"
-    if os.path.exists(defaults_dir):
-        print(f"Extracting contents from {defaults_dir} to root...")
-        for item in os.listdir(defaults_dir):
-            s = os.path.join(defaults_dir, item)
-            d = os.path.join(out_dir, item)
-            if os.path.isdir(s):
-                if os.path.exists(d): shutil.rmtree(d)
-                shutil.copytree(s, d, ignore=ignore_build_artifacts)
-            else:
-                shutil.copy2(s, d)
+    # 5. Bundle the Python dependencies required by Decky's restricted runtime.
+    bundled_directories = (
+        (
+            os.path.join("defaults", "dbus_next"),
+            os.path.join(out_dir, "dbus_next"),
+        ),
+        (
+            os.path.join("defaults", "lib", "x"),
+            os.path.join(out_dir, "lib", "x"),
+        ),
+    )
+    for source, destination in bundled_directories:
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        shutil.copytree(source, destination, ignore=ignore_build_artifacts)
 
-    # 6. Copy directories
-    dirs_to_copy = [
-        "py_modules",
-        "dist"
-    ]
-    
-    for d in dirs_to_copy:
-        if os.path.exists(d) and d != "defaults":
-            dest = os.path.join(out_dir, d)
-            if d == "dist":
-                # Only copy index.js
-                os.makedirs(dest, exist_ok=True)
-                shutil.copy(os.path.join(d, "index.js"), dest)
-            else:
-                if os.path.exists(dest): shutil.rmtree(dest)
-                shutil.copytree(d, dest, ignore=ignore_build_artifacts)
+    # 6. Copy only the production frontend entry point.
+    shutil.copy(os.path.join("dist", "index.js"), os.path.join(out_dir, "dist"))
 
     # 7. Zip the result
     print(f"Creating zip...")

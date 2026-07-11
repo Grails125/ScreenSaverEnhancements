@@ -15,18 +15,30 @@ tmp
 
 # Coverage reports
 coverage
+.coverage
+.coverage.*
+htmlcov/
+.nyc_output/
 
 # API keys and secrets
 .env
+.env.*
+!.env.example
 
 # Dependency directory
 node_modules
 bower_components
 .pnpm-store
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Editors
 .idea
 *.iml
+.vscode/*.local.json
+*.code-workspace
 
 # OS metadata
 .DS_Store
@@ -35,8 +47,21 @@ Thumbs.db
 # Ignore built ts files
 dist/
 build/
+*.tsbuildinfo
+.eslintcache
 
 __pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.venv/
+venv/
+env/
 
 /.yalc
 yalc.lock
@@ -44,6 +69,7 @@ yalc.lock
 .vscode/settings.json
 .codegraph/
 .codex_tmp/
+.codex/
 
 # Ignore output folder
 
@@ -59,3 +85,11 @@ cli/
 cli/*
 cli/decky
 deck.json
+
+# Local patches, editor backups, and generated release archives
+*.tmp
+*.bak
+*.orig
+*.rej
+*~
+/ScreenSaverEnhancements*.zip
