@@ -664,7 +664,8 @@ const Content: FC<{
   onPowerSettingsLoaded: (settings: PowerSettings) => void;
   onPowerSettingsApply: (settings: PowerSettings) => Promise<void>;
   readSystemPowerSettings: () => Promise<PowerSettings | null>;
-}> = ({serverApi, backendState, overlayState, opacityState, deckyMusicState, onPowerSettingsLoaded, onPowerSettingsApply, readSystemPowerSettings}) => {
+  onMonitorChanged: () => Promise<void>;
+}> = ({serverApi, backendState, overlayState, opacityState, deckyMusicState, onPowerSettingsLoaded, onPowerSettingsApply, readSystemPowerSettings, onMonitorChanged}) => {
   const [running, setRunning] = useState<boolean>(backendState.GetState() === 1);
   const [notify, setNotify] = useState<boolean>(showNotify);
   const [blackBackground, setBlackBackground] = useState<boolean>(overlayState.GetState() === 1);
@@ -1097,6 +1098,7 @@ const Content: FC<{
               try {
                 const succeeded = checked ? await startBackend() : await stopBackend();
                 if (succeeded !== true) throw new Error("backend lifecycle RPC failed");
+                await onMonitorChanged();
                 notifyMonitorStatus(checked);
               } catch {
                 setRunning(previous)
@@ -1665,9 +1667,10 @@ export default definePlugin(() => {
   let powerOperation = Promise.resolve();
 
   const enqueuePowerOperation = (operation: () => Promise<void>) => {
-    powerOperation = powerOperation
-      .then(operation)
+    const operationResult = powerOperation.then(operation);
+    powerOperation = operationResult
       .catch((error) => console.error("[ScreenSaverEnhancements] Power state update failed", error));
+    return operationResult;
   }
 
   const reconcileDeckyMusicState = async () => {
@@ -1692,9 +1695,13 @@ export default definePlugin(() => {
     enqueuePowerOperation(reconcileDeckyMusicState);
   }
 
-  const refreshDeckyMusicSetting = async (reconcilePower = true) => {
+  const refreshDeckyMusicSetting = async (
+    reconcilePower = true,
+    monitorRunning = backendState.GetState() === 1,
+  ) => {
     const manualApps = await getPluginSetting(serverApi, "manual_apps", []);
-    deckyMusicEnabled = isDeckyMusicEnabled(normalizeManualApps(manualApps));
+    deckyMusicEnabled = monitorRunning
+      && isDeckyMusicEnabled(normalizeManualApps(manualApps));
     if (deckyMusicEnabled) {
       ensureAudioTracker(scheduleDeckyMusicReconciliation);
     } else {
@@ -1723,7 +1730,7 @@ export default definePlugin(() => {
 
     backendState.SetState(running ? 1 : 0);
     backendInhibiting = running && inhibitStatus.is_inhibiting;
-    await refreshDeckyMusicSetting(false);
+    await refreshDeckyMusicSetting(false, running);
 
     if (overrideState.active && overrideState.snapshot) {
       setConfiguredPowerSettings(overrideState.snapshot);
@@ -1837,6 +1844,7 @@ export default definePlugin(() => {
       onPowerSettingsLoaded={setConfiguredPowerSettings}
       onPowerSettingsApply={applyConfiguredPowerSettings}
       readSystemPowerSettings={readSystemPowerSettings}
+      onMonitorChanged={() => enqueuePowerOperation(() => synchronizeRuntimeState())}
     />,
     icon: <GiNightSleep />,
     onDismount() {

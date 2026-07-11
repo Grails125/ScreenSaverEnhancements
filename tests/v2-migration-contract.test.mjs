@@ -293,7 +293,7 @@ test("Stage 4.1 performs silent full-state sync before polling and after reconne
   assert.match(source, /const synchronizeRuntimeState = async \(showStateNotification = false\) =>/);
   assert.match(source, /serverApi\.getInhibitStatus\(\)/);
   assert.match(source, /getPowerSyncAction\(/);
-  assert.match(source, /refreshDeckyMusicSetting\(false\)/);
+  assert.match(source, /refreshDeckyMusicSetting\(false, running\)/);
   assert.match(source, /await synchronizeRuntimeState\(\);[\s\S]*void listenForPowerEvents\(\)/);
   assert.match(source, /backendState\.SetState\(running \? 1 : 0\)/);
 });
@@ -328,4 +328,17 @@ test("Stage 4.3 treats critical events as coalesced full-state refresh signals",
   assert.match(source, /if \(hasInhibitStateChange\) \{\s*await synchronizeRuntimeState\(true\);\s*\}/);
   assert.doesNotMatch(source, /startInhibit\(event\.application\)/);
   assert.doesNotMatch(source, /event\.reason/);
+});
+
+test("disabling the monitor also disables DeckyMusic inhibition before reporting success", () => {
+  const source = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /onMonitorChanged: \(\) => Promise<void>/);
+  assert.match(source, /if \(succeeded !== true\) throw new Error\("backend lifecycle RPC failed"\);\s*await onMonitorChanged\(\);\s*notifyMonitorStatus\(checked\)/);
+  assert.match(source, /const refreshDeckyMusicSetting = async \(\s*reconcilePower = true,\s*monitorRunning = backendState\.GetState\(\) === 1,\s*\) =>/);
+  assert.match(source, /deckyMusicEnabled = monitorRunning\s*&& isDeckyMusicEnabled\(normalizeManualApps\(manualApps\)\)/);
+  assert.match(source, /await refreshDeckyMusicSetting\(false, running\)/);
 });
