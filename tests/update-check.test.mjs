@@ -38,12 +38,14 @@ test("update checking has localized status and error copy", () => {
   }
 });
 
-test("update installation persists the target version until the reloaded plugin restarts Decky", () => {
-  assert.match(pluginSource, /UPDATE_RESTART_TARGET_KEY/);
-  assert.match(pluginSource, /localStorage\.setItem\(UPDATE_RESTART_TARGET_KEY, JSON\.stringify\(\{/);
-  assert.match(pluginSource, /version: latestVersion/);
-  assert.match(pluginSource, /version === restartTarget/);
-  assert.match(pluginSource, /localStorage\.removeItem\(UPDATE_RESTART_TARGET_KEY\)/);
+test("checking or loading the current version never restarts Decky", () => {
+  const checkStart = pluginSource.indexOf("const checkUpdate = async () =>");
+  const installStart = pluginSource.indexOf("const installUpdate = async () =>");
+  const loadStart = pluginSource.indexOf("const loadPluginVersion = async () =>");
+  const loadEnd = pluginSource.indexOf("const loadPowerSettings = async () =>", loadStart);
+
+  assert.doesNotMatch(pluginSource.slice(checkStart, installStart), /restartDecky/);
+  assert.doesNotMatch(pluginSource.slice(loadStart, loadEnd), /restartDecky/);
 });
 
 test("update checking is the final section in the plugin panel", () => {

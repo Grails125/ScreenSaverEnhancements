@@ -63,8 +63,6 @@ const POWER_SETTING_KEYS = {
   acSuspend: "ac_suspend_timeout",
 } as const
 const POWER_CONFIG_COLLAPSED_KEY = "screensaver-enhancements-power-config-collapsed"
-const UPDATE_RESTART_TARGET_KEY = "screensaver-enhancements-update-restart-target"
-const UPDATE_RESTART_MAX_AGE_MS = 30 * 60 * 1000
 const UPDATE_INSTALL_POLL_INTERVAL_MS = 1000
 const UPDATE_INSTALL_MAX_POLLS = 120
 
@@ -969,10 +967,6 @@ const Content: FC<{
     if (installingUpdate || !updateAvailable || !updateDownloadUrl || !updateSha256) return;
     setInstallingUpdate(true);
     try {
-      localStorage.setItem(UPDATE_RESTART_TARGET_KEY, JSON.stringify({
-        version: latestVersion,
-        requestedAt: Date.now(),
-      }));
       await serverApi.installPluginUpdate({
         downloadUrl: updateDownloadUrl,
         version: latestVersion,
@@ -982,14 +976,12 @@ const Content: FC<{
         await new Promise(resolve => setTimeout(resolve, UPDATE_INSTALL_POLL_INTERVAL_MS));
         const installedVersion = await serverApi.getInstalledPluginVersion();
         if (installedVersion === latestVersion) {
-          localStorage.removeItem(UPDATE_RESTART_TARGET_KEY);
           await serverApi.restartDecky();
           return;
         }
       }
       throw new Error("Decky installer did not finish before the timeout");
     } catch (error) {
-      localStorage.removeItem(UPDATE_RESTART_TARGET_KEY);
       console.error('[ScreenSaverEnhancements] Update installation failed', error);
       serverApi.toaster.toast({
         title: t('Update Install Failed'),
@@ -1116,19 +1108,6 @@ const Content: FC<{
       try {
         const version = await serverApi.getPluginVersion();
         if (isCurrentRequest(token)) setPluginVersion(version);
-        const pendingRestart = localStorage.getItem(UPDATE_RESTART_TARGET_KEY);
-        if (pendingRestart) {
-          const { version: restartTarget, requestedAt } = JSON.parse(pendingRestart) as {
-            version?: unknown;
-            requestedAt?: unknown;
-          };
-          if (version === restartTarget) {
-            localStorage.removeItem(UPDATE_RESTART_TARGET_KEY);
-            void serverApi.restartDecky().catch(() => undefined);
-          } else if (typeof requestedAt !== 'number' || Date.now() - requestedAt > UPDATE_RESTART_MAX_AGE_MS) {
-            localStorage.removeItem(UPDATE_RESTART_TARGET_KEY);
-          }
-        }
       } catch (error) {
         console.warn('[ScreenSaverEnhancements] Could not load plugin version', error);
       }
