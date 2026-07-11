@@ -220,6 +220,7 @@ async def stop_dbus():
 async def start_dbus():
     global bus
     await stop_dbus()
+    clear_dbus_requests()
     try:
         bus = await MessageBus().connect()
         interface = InhibitInterface()
@@ -233,8 +234,12 @@ async def start_dbus():
         await bus.request_name('org.freedesktop.PowerManagement.Inhibit')
         await bus.request_name('org.freedesktop.ScreenSaver')
         await bus.request_name('org.gnome.SessionManager')
+        return True
     except Exception as e:
-        decky_plugin.logger.info(f"error: {e}")
+        decky_plugin.logger.error(f"Could not start D-Bus services: {e}")
+        await stop_dbus()
+        clear_dbus_requests()
+        return False
 
 import os
 import shlex
@@ -436,7 +441,14 @@ class Plugin:
         decky_plugin.logger.info("Start backend server")
         Plugin._init_runtime_state(self)
         if bus is None:
-            await start_dbus()
+            for attempt, retry_delay in enumerate((0, 1, 3), start=1):
+                if retry_delay:
+                    await asyncio.sleep(retry_delay)
+                if await start_dbus():
+                    break
+                decky_plugin.logger.warning(f"D-Bus start attempt {attempt} failed")
+            if bus is None:
+                raise RuntimeError("Could not register D-Bus inhibit services")
         Plugin._start_manual_watch(self)
 
     async def stop_backend(self):
