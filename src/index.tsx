@@ -930,8 +930,6 @@ const Content: VFC<{
   useEffect(() => {
     if (!quickAccessVisible) return;
     void refreshInhibitStatus();
-    const interval = setInterval(refreshInhibitStatus, 30000);
-    return () => clearInterval(interval);
   }, [quickAccessVisible]);
 
   useEffect(() => {

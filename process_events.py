@@ -64,3 +64,12 @@ class ProcessEventSource:
         except OSError:
             pass
         netlink.close()
+
+
+if __name__ == "__main__":
+    source = ProcessEventSource()
+    try:
+        source.open()
+        print("proc_connector")
+    finally:
+        source.close()
