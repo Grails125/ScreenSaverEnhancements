@@ -33,6 +33,7 @@ import {
   shouldStartInhibit,
   secondsToMinutes,
   shouldApplyPowerSettingsImmediately,
+  shouldSyncSystemPowerSettings,
 } from './powerSettings'
 import {
   areStringArraysEqual,
@@ -542,9 +543,9 @@ const Content: VFC<{
     return panelVisible.current && requestTokenRef.current === token;
   }
 
-  const applySystemPowerSettings = async (token: number) => {
+  const applySystemPowerSettings = async () => {
     const systemSettings = await readSystemPowerSettings();
-    if (!systemSettings || !isCurrentRequest(token)) return;
+    if (!systemSettings) return;
 
     setPowerSettings(systemSettings);
     onPowerSettingsLoaded(systemSettings);
@@ -669,7 +670,7 @@ const Content: VFC<{
       const next = normalizePowerSettings({ batteryDim, acDim, batterySuspend, acSuspend });
       setPowerSettings(next);
       onPowerSettingsLoaded(next);
-      await applySystemPowerSettings(token);
+      await applySystemPowerSettings();
     };
     loadPowerSettings();
 
@@ -698,7 +699,7 @@ const Content: VFC<{
     const becameVisible = quickAccessVisible && !quickAccessWasVisible.current;
     quickAccessWasVisible.current = quickAccessVisible;
     if (becameVisible) {
-      void applySystemPowerSettings(requestTokenRef.current);
+      void applySystemPowerSettings();
     }
   }, [quickAccessVisible]);
 
@@ -1067,13 +1068,15 @@ export default definePlugin((serverApi: ServerAPI) => {
 
   const readSystemPowerSettings = async (): Promise<PowerSettings | null> => {
     const inhibitStatus = await serverApi.callPluginMethod<any, InhibitStatus>("get_inhibit_status", {});
-    if (!inhibitStatus.success || inhibitStatus.result?.is_inhibiting || deckyMusicInhibiting) {
-      return null;
-    }
+    if (!inhibitStatus.success) return null;
 
     try {
       const response = await serverApi.callPluginMethod<any, unknown>("get_system_power_settings", {});
-      return response.success ? parseSteamPowerSettings(response.result) : null;
+      const systemSettings = response.success ? parseSteamPowerSettings(response.result) : null;
+      if (!systemSettings) return null;
+
+      const isInhibiting = Boolean(inhibitStatus.result?.is_inhibiting || deckyMusicInhibiting);
+      return shouldSyncSystemPowerSettings(systemSettings, isInhibiting) ? systemSettings : null;
     } catch (error) {
       console.warn("[ScreenSaverEnhancements] Could not read current power settings", error);
       return null;

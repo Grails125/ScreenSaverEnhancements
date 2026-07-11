@@ -40,8 +40,8 @@ export const parseSteamPowerSettings = (value: unknown): PowerSettings | null =>
     return undefined;
   };
 
-  const batteryDim = readValue("battery_idle", "batteryIdle");
-  const acDim = readValue("ac_idle", "acIdle");
+  const batteryDim = readValue("battery_idle", "batteryIdle", "batteryDim");
+  const acDim = readValue("ac_idle", "acIdle", "acDim");
   const batterySuspend = readValue("battery_suspend", "batterySuspend");
   const acSuspend = readValue("ac_suspend", "acSuspend");
   if ([batteryDim, acDim, batterySuspend, acSuspend].some(item => item === undefined)) {
@@ -50,6 +50,11 @@ export const parseSteamPowerSettings = (value: unknown): PowerSettings | null =>
 
   return normalizePowerSettings({ batteryDim, acDim, batterySuspend, acSuspend });
 };
+
+export const shouldSyncSystemPowerSettings = (
+  settings: PowerSettings,
+  isInhibiting: boolean,
+) => !isInhibiting || Object.values(settings).some(timeout => timeout !== 0);
 
 export const minutesToSeconds = (minutes: unknown) => normalizePowerTimeout(
   Number(minutes) * 60,

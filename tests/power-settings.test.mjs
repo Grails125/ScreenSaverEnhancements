@@ -17,6 +17,7 @@ const {
   normalizePowerTimeout,
   normalizePowerSettings,
   parseSteamPowerSettings,
+  shouldSyncSystemPowerSettings,
   minutesToSeconds,
   secondsToMinutes,
   shouldStartInhibit,
@@ -88,5 +89,38 @@ test("reads the current battery and AC timeouts from Steam system settings", () 
       acSuspend: 900,
     },
   );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(parseSteamPowerSettings({
+      batteryDim: 1800,
+      acDim: 60,
+      batterySuspend: 600,
+      acSuspend: 600,
+    }))),
+    {
+      batteryDim: 1800,
+      acDim: 60,
+      batterySuspend: 600,
+      acSuspend: 600,
+    },
+  );
   assert.equal(parseSteamPowerSettings({ settings: { battery_idle: 120 } }), null);
+});
+
+test("only ignores Steam system settings when an inhibit override set every timeout to zero", () => {
+  const normalSettings = {
+    batteryDim: 900,
+    acDim: 60,
+    batterySuspend: 600,
+    acSuspend: 600,
+  };
+  const overriddenSettings = {
+    batteryDim: 0,
+    acDim: 0,
+    batterySuspend: 0,
+    acSuspend: 0,
+  };
+
+  assert.equal(shouldSyncSystemPowerSettings(normalSettings, true), true);
+  assert.equal(shouldSyncSystemPowerSettings(overriddenSettings, true), false);
+  assert.equal(shouldSyncSystemPowerSettings(overriddenSettings, false), true);
 });

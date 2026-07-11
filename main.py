@@ -526,7 +526,9 @@ class Plugin:
         return settings.getSetting(key, defaults)
 
     async def get_system_power_settings(self):
-        return await asyncio.to_thread(read_steam_power_settings)
+        result = await asyncio.to_thread(read_steam_power_settings)
+        decky_plugin.logger.info(f"System power settings read: {result}")
+        return result
 
     async def set_settings(self, key: str, value):
         decky_plugin.logger.info('[settings] set {}: {}'.format(key, value))
