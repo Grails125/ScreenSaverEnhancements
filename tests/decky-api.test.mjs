@@ -13,10 +13,12 @@ const compiled = ts.transpileModule(source, {
   },
 }).outputText;
 
-const loadDeckyApi = (callable) => {
+const loadDeckyApi = (callable, eventApi = {}) => {
   const module = { exports: {} };
   const deckyApiModule = {
     callable,
+    addEventListener: eventApi.addEventListener ?? ((_event, listener) => listener),
+    removeEventListener: eventApi.removeEventListener ?? (() => {}),
     routerHook: { addGlobalComponent() {}, removeGlobalComponent() {} },
     toaster: { toast() {} },
   };
@@ -73,4 +75,33 @@ test("propagates callable rejections to feature boundaries", async () => {
   const serverApi = createPluginServerApi();
 
   await assert.rejects(serverApi.getDiagnostics(), failure);
+});
+
+test("subscribes to the narrow settings-changed event contract and cleans it up", () => {
+  const registrations = [];
+  const removals = [];
+  const { createPluginServerApi } = loadDeckyApi(
+    () => async () => undefined,
+    {
+      addEventListener(event, listener) {
+        registrations.push({ event, listener });
+        return listener;
+      },
+      removeEventListener(event, listener) {
+        removals.push({ event, listener });
+      },
+    },
+  );
+  const serverApi = createPluginServerApi();
+  const received = [];
+  const unsubscribe = serverApi.subscribeSettingsChanged((key) => received.push(key));
+
+  registrations[0].listener("unknown_setting");
+  registrations[0].listener("manual_apps");
+  unsubscribe();
+
+  assert.equal(registrations[0].event, "settings_changed");
+  assert.deepEqual(received, ["manual_apps"]);
+  assert.equal(removals[0].event, "settings_changed");
+  assert.equal(removals[0].listener, registrations[0].listener);
 });

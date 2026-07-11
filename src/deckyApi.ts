@@ -1,5 +1,7 @@
 import {
+  addEventListener,
   callable,
+  removeEventListener,
   routerHook,
   toaster,
   type RouterHook,
@@ -25,6 +27,8 @@ export type PluginEvent =
   | { type: "SettingsChanged"; key: string }
   | { type: "Inhibit"; application?: string }
   | { type: "UnInhibit"; reason?: "monitor_stopped" };
+export type SettingsChangedKey = "manual_apps";
+export type SettingsChangedListener = (key: SettingsChangedKey) => void;
 
 export interface PluginBackendClient {
   startBackend(): Promise<boolean>;
@@ -46,7 +50,15 @@ export interface PluginBackendClient {
 export interface PluginServerApi extends PluginBackendClient {
   routerHook: RouterHook;
   toaster: Toaster;
+  subscribeSettingsChanged(listener: SettingsChangedListener): () => void;
 }
+
+const subscribeSettingsChanged = (listener: SettingsChangedListener) => {
+  const eventListener = addEventListener<[key: unknown]>("settings_changed", (key) => {
+    if (key === "manual_apps") listener(key);
+  });
+  return () => removeEventListener("settings_changed", eventListener);
+};
 
 export const createPluginServerApi = (
   callableFactory: CallableFactory = callable,
@@ -83,6 +95,7 @@ export const createPluginServerApi = (
     setSettings,
     routerHook,
     toaster,
+    subscribeSettingsChanged,
   };
 };
 
