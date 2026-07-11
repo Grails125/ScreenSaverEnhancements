@@ -3,7 +3,6 @@
     "module": "ESNext",
     "target": "ES2020",
     "jsx": "react-jsx",
-    "declaration": false,
     "moduleResolution": "node",
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -13,9 +12,8 @@
     "noImplicitAny": true,
     "strict": true,
     "allowSyntheticDefaultImports": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true
+    "skipLibCheck": true
   },
-  "include": ["src"],
+  "include": ["src/v2Probe.tsx"],
   "exclude": ["node_modules"]
 }

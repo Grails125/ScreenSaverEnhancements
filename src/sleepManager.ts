@@ -1,4 +1,4 @@
-import { findModuleChild, Module } from "decky-frontend-lib";
+import { findModuleExport } from "@decky/ui";
 
 export type SleepManagerModule = {
   RegisterForNotifyResumeFromSuspend?: (handler: () => void) => unknown;
@@ -18,21 +18,7 @@ export const getSleepManagerModule = (): SleepManagerModule | null => {
   const globalModule = (window as any)?.SleepManager;
   if (isSleepManagerModule(globalModule)) return globalModule;
 
-  const foundModule = findModuleChild((module: Module) => {
-    if (isSleepManagerModule(module)) return module;
-    if (typeof module !== "object" || module === null) return undefined;
-
-    for (const property in module) {
-      try {
-        const candidate = module[property];
-        if (isSleepManagerModule(candidate)) return candidate;
-      } catch {
-        continue;
-      }
-    }
-
-    return undefined;
-  });
+  const foundModule = findModuleExport(isSleepManagerModule);
 
   return isSleepManagerModule(foundModule) ? foundModule : null;
 };

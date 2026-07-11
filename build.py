@@ -38,11 +38,13 @@ def build():
         "main.py",
         "plugin.json",
         "package.json",
-        "decky_plugin.pyi",
+        "decky.pyi",
         "README_ZH.md",
         "README.md",
         "LICENSE",
-        "settings.py"
+        "settings.py",
+        "plugin_contract.py",
+        "process_events.py",
     ]
     
     for f in files_to_copy:

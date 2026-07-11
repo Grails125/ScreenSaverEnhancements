@@ -19,13 +19,44 @@ class SettingsManager:
         return self.settings.get(key, default)
 
     def setSetting(self, key, value):
-        self.settings[key] = value
-        self.save_settings()
-        return True
+        return self.setSettings({key: value})
+
+    def setSettings(self, values):
+        previous = dict(self.settings)
+        self.settings.update(values)
+        if self.save_settings():
+            return True
+        self.settings = previous
+        return False
+
+    def unsetSettings(self, keys):
+        previous = dict(self.settings)
+        changed = False
+        for key in keys:
+            if key in self.settings:
+                del self.settings[key]
+                changed = True
+        if not changed:
+            return True
+        if self.save_settings():
+            return True
+        self.settings = previous
+        return False
 
     def save_settings(self):
+        temp_file = f"{self.settings_file}.tmp"
         try:
-            with open(self.settings_file, "w") as f:
+            os.makedirs(os.path.dirname(self.settings_file), exist_ok=True)
+            with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(self.settings, f, indent=4)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_file, self.settings_file)
+            return True
         except Exception:
-            pass
+            try:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except OSError:
+                pass
+            return False

@@ -1,4 +1,4 @@
-import { findModuleChild } from "decky-frontend-lib";
+import { findModuleExport } from "@decky/ui";
 
 export enum UIComposition {
   Hidden = 0,
@@ -10,22 +10,11 @@ export enum UIComposition {
   OverlayKeyboard1 = 6,
 }
 
-export const useUIComposition: (composition: UIComposition) => void = findModuleChild(
-  (m) => {
-    if (typeof m !== "object") return undefined;
-
-    for (const prop in m) {
-      if (
-        typeof m[prop] === "function" &&
-        m[prop].toString().includes("AddMinimumCompositionStateRequest") &&
-        m[prop].toString().includes("ChangeMinimumCompositionStateRequest") &&
-        m[prop].toString().includes("RemoveMinimumCompositionStateRequest") &&
-        !m[prop].toString().includes("m_mapCompositionStateRequests")
-      ) {
-        return m[prop];
-      }
-    }
-
-    return undefined;
-  }
+export const useUIComposition: (composition: UIComposition) => void = findModuleExport(
+  (candidate) =>
+    typeof candidate === "function" &&
+    candidate.toString().includes("AddMinimumCompositionStateRequest") &&
+    candidate.toString().includes("ChangeMinimumCompositionStateRequest") &&
+    candidate.toString().includes("RemoveMinimumCompositionStateRequest") &&
+    !candidate.toString().includes("m_mapCompositionStateRequests"),
 );

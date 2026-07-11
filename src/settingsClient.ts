@@ -1,4 +1,4 @@
-import { ServerAPI } from "decky-frontend-lib";
+import { PluginBackendClient } from "./deckyApi";
 
 export const clampOpacity = (value: number): number => {
   if (Number.isNaN(value)) return 1;
@@ -7,7 +7,11 @@ export const clampOpacity = (value: number): number => {
 
 export const parseBooleanSetting = (value: unknown, fallback = false): boolean => {
   if (typeof value === "boolean") return value;
-  if (typeof value === "string") return value.trim().toLowerCase() === "true";
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
   return fallback;
 };
 
@@ -19,13 +23,18 @@ export const parseNumberSetting = (value: unknown, fallback: number): number => 
 export const normalizeManualApps = (apps: unknown): string[] => {
   if (!Array.isArray(apps)) return [];
 
-  return Array.from(
-    new Set(
-      apps
-        .map((app) => String(app).trim())
-        .filter(Boolean)
-    )
-  ).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  const seen = new Set<string>();
+  const normalized = apps.reduce<string[]>((result, app) => {
+    const value = String(app).trim();
+    const key = value.toLowerCase();
+    if (value && !seen.has(key)) {
+      seen.add(key);
+      result.push(value);
+    }
+    return result;
+  }, []);
+
+  return normalized.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 };
 
 export const areStringArraysEqual = (left: string[], right: string[]): boolean => {
@@ -34,16 +43,19 @@ export const areStringArraysEqual = (left: string[], right: string[]): boolean =
 };
 
 export const getPluginSetting = async <T,>(
-  serverApi: ServerAPI,
+  serverApi: PluginBackendClient,
   key: string,
   defaults: T
 ): Promise<T> => {
-  const response = await serverApi.callPluginMethod<any, any>("get_settings", { key, defaults });
-  return response.success ? response.result : defaults;
+  try {
+    return await serverApi.getSetting(key, defaults);
+  } catch {
+    return defaults;
+  }
 };
 
 export const getPluginBooleanSetting = async (
-  serverApi: ServerAPI,
+  serverApi: PluginBackendClient,
   key: string,
   defaults = false
 ): Promise<boolean> => {
@@ -52,7 +64,7 @@ export const getPluginBooleanSetting = async (
 };
 
 export const getPluginNumberSetting = async (
-  serverApi: ServerAPI,
+  serverApi: PluginBackendClient,
   key: string,
   defaults: number
 ): Promise<number> => {
@@ -61,9 +73,28 @@ export const getPluginNumberSetting = async (
 };
 
 export const setPluginSetting = async (
-  serverApi: ServerAPI,
+  serverApi: PluginBackendClient,
   key: string,
   value: any
 ) => {
-  return await serverApi.callPluginMethod<any, any>("set_settings", { key, value });
+  try {
+    return await serverApi.setSetting(key, value);
+  } catch {
+    return false;
+  }
+};
+
+export const isPluginSettingSaveSuccessful = (
+  response: unknown,
+): response is true => response === true;
+
+export const setPluginSettings = async (
+  serverApi: PluginBackendClient,
+  values: Record<string, unknown>,
+) => {
+  try {
+    return await serverApi.setSettings(values);
+  } catch {
+    return false;
+  }
 };
