@@ -77,7 +77,11 @@ export const setPluginSetting = async (
   key: string,
   value: any
 ) => {
-  return await serverApi.setSetting(key, value);
+  try {
+    return await serverApi.setSetting(key, value);
+  } catch {
+    return false;
+  }
 };
 
 export const isPluginSettingSaveSuccessful = (
@@ -88,5 +92,9 @@ export const setPluginSettings = async (
   serverApi: PluginBackendClient,
   values: Record<string, unknown>,
 ) => {
-  return await serverApi.setSettings(values);
+  try {
+    return await serverApi.setSettings(values);
+  } catch {
+    return false;
+  }
 };

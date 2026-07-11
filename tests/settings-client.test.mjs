@@ -49,6 +49,20 @@ test("uses direct setting RPC results and preserves read fallbacks", async () =>
   assert.equal(await setPluginSettings(serverApi, { show_notify: true }), false);
 });
 
+test("converts setting write rejections to failed persistence results", async () => {
+  const serverApi = {
+    async setSetting() {
+      throw new Error("backend unavailable");
+    },
+    async setSettings() {
+      throw new Error("backend unavailable");
+    },
+  };
+
+  assert.equal(await setPluginSetting(serverApi, "show_notify", true), false);
+  assert.equal(await setPluginSettings(serverApi, { show_notify: true }), false);
+});
+
 test("normalizes manual app rules without discarding an empty list", () => {
   assert.deepEqual(Array.from(normalizeManualApps([])), []);
   assert.deepEqual(
