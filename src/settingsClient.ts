@@ -76,3 +76,10 @@ export const setPluginSetting = async (
 ) => {
   return await serverApi.callPluginMethod<any, any>("set_settings", { key, value });
 };
+
+export const setPluginSettings = async (
+  serverApi: ServerAPI,
+  values: Record<string, unknown>,
+) => {
+  return await serverApi.callPluginMethod<any, any>("set_settings_batch", { values });
+};

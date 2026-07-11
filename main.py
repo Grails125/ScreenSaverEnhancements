@@ -534,6 +534,14 @@ class Plugin:
         decky_plugin.logger.info('[settings] set {}: {}'.format(key, value))
         return settings.setSetting(key, value)
 
+    async def set_settings_batch(self, values: dict):
+        if not isinstance(values, dict) or len(values) > 32:
+            return False
+        if any(not isinstance(key, str) or len(key) > 128 for key in values):
+            return False
+        decky_plugin.logger.info('[settings] batch set keys: {}'.format(list(values.keys())))
+        return settings.setSettings(values)
+
     async def _main(self):
         decky_plugin.logger.info("Hello World!")
         Plugin._init_runtime_state(self)

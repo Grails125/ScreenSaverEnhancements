@@ -43,6 +43,7 @@ import {
   getPluginSetting,
   normalizeManualApps,
   setPluginSetting,
+  setPluginSettings,
 } from './settingsClient'
 
 let backendRunning = false;
@@ -549,8 +550,10 @@ const Content: VFC<{
 
     setPowerSettings(systemSettings);
     onPowerSettingsLoaded(systemSettings);
-    await Promise.all((Object.keys(POWER_SETTING_KEYS) as Array<keyof PowerSettings>).map(
-      key => setPluginSetting(serverApi, POWER_SETTING_KEYS[key], systemSettings[key]),
+    await setPluginSettings(serverApi, Object.fromEntries(
+      (Object.keys(POWER_SETTING_KEYS) as Array<keyof PowerSettings>).map(
+        key => [POWER_SETTING_KEYS[key], systemSettings[key]],
+      ),
     ));
   }
 
