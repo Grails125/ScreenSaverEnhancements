@@ -233,6 +233,11 @@ test("diagnostics use sleep inhibition terminology without misleading uptime", (
     new URL("../src/index.tsx", import.meta.url),
     "utf8",
   );
+  const diagnosticsSource = readFileSync(
+    new URL("../src/diagnostics.ts", import.meta.url),
+    "utf8",
+  );
+  const backendSource = readFileSync(new URL("../main.py", import.meta.url), "utf8");
 
   assert.equal(zh["Backend Status"], "息屏抑制监控");
   assert.equal(en["Backend Status"], "Sleep Inhibition Monitor");
@@ -241,6 +246,8 @@ test("diagnostics use sleep inhibition terminology without misleading uptime", (
   assert.equal(en.backend_started, "Sleep inhibition monitor started");
   assert.equal(en.backend_stopped, "Sleep inhibition monitor stopped");
   assert.doesNotMatch(source, /t\(['"]Backend Uptime['"]\)/);
+  assert.doesNotMatch(diagnosticsSource, /uptimeSeconds/);
+  assert.doesNotMatch(backendSource, /"uptimeSeconds"/);
   assert.match(source, /formatDiagnosticEventType\(event\.type\)/);
 });
 

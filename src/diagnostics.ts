@@ -9,7 +9,6 @@ export type DiagnosticEvent = {
 export type Diagnostics = {
   timestamp: number;
   backendRunning: boolean;
-  uptimeSeconds: number;
   processMonitorMode: string;
   processScanCount: number;
   lastProcessScanAt: number | null;
@@ -55,7 +54,6 @@ export const parseDiagnostics = (value: unknown): Diagnostics | null => {
   return {
     timestamp: finiteNumber(source.timestamp),
     backendRunning: source.backendRunning === true,
-    uptimeSeconds: finiteNumber(source.uptimeSeconds),
     processMonitorMode: typeof source.processMonitorMode === "string" ? source.processMonitorMode : "unknown",
     processScanCount: finiteNumber(source.processScanCount),
     lastProcessScanAt: nullableTimestamp(source.lastProcessScanAt),

@@ -92,11 +92,6 @@ export const shouldStartInhibit = (
   deckyMusicInhibiting: boolean,
 ) => !backendInhibiting && !deckyMusicInhibiting;
 
-export const shouldStopInhibit = (
-  backendWasInhibiting: boolean,
-  deckyMusicInhibiting: boolean,
-) => backendWasInhibiting && !deckyMusicInhibiting;
-
 export type PowerSyncAction = "start" | "reapply" | "restore" | "none";
 
 export const getPowerSyncAction = (

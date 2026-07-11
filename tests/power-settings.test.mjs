@@ -22,7 +22,6 @@ const {
   minutesToSeconds,
   secondsToMinutes,
   shouldStartInhibit,
-  shouldStopInhibit,
   shouldApplyPowerSettingsImmediately,
   getPowerSyncAction,
 } = module.exports;
@@ -128,10 +127,8 @@ test("only ignores Steam system settings when an inhibit override set every time
   assert.equal(shouldSyncSystemPowerSettings(overriddenSettings, false), true);
 });
 
-test("only stops an inhibit session for a real backend active-to-inactive edge", () => {
-  assert.equal(shouldStopInhibit(true, false), true);
-  assert.equal(shouldStopInhibit(false, false), false);
-  assert.equal(shouldStopInhibit(true, true), false);
+test("removes the obsolete edge-based stop decision", () => {
+  assert.doesNotMatch(source, /shouldStopInhibit/);
 });
 
 test("plans idempotent full-state power synchronization", () => {

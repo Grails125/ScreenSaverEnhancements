@@ -17,6 +17,7 @@ test("validates and bounds backend diagnostic snapshots", () => {
   assert.equal(parseDiagnostics(null), null);
   const parsed = parseDiagnostics({
     backendRunning: true,
+    uptimeSeconds: 999,
     processMonitorMode: "proc_connector",
     recentEvents: [
       { timestamp: 123, type: "backend_started", detail: "ok" },
@@ -24,6 +25,7 @@ test("validates and bounds backend diagnostic snapshots", () => {
     ],
   });
   assert.equal(parsed.backendRunning, true);
+  assert.equal("uptimeSeconds" in parsed, false);
   assert.equal(parsed.processMonitorMode, "proc_connector");
   assert.equal(parsed.recentEvents.length, 1);
   assert.equal(parsed.recentEvents[0].type, "backend_started");

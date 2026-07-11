@@ -385,8 +385,6 @@ class Plugin:
             self.last_process_event_at = None
         if not hasattr(self, 'active_manual_pids'):
             self.active_manual_pids = set()
-        if not hasattr(self, 'runtime_started_at'):
-            self.runtime_started_at = time.monotonic()
         if not hasattr(self, 'long_poll_requests'):
             self.long_poll_requests = 0
         if not hasattr(self, 'long_poll_timeouts'):
@@ -714,7 +712,6 @@ class Plugin:
         return {
             "timestamp": int(time.time()),
             "backendRunning": bus is not None,
-            "uptimeSeconds": max(0, round(time.monotonic() - self.runtime_started_at)),
             "processMonitorMode": self.process_monitor_mode,
             "processScanCount": self.process_scan_count,
             "lastProcessScanAt": self.last_process_scan_at,
