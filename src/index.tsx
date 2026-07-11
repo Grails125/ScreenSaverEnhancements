@@ -33,6 +33,7 @@ import {
   shouldStartInhibit,
   secondsToMinutes,
   shouldApplyPowerSettingsImmediately,
+  shouldRestartSuspendCountdown,
   getForceSuspendWarningDelayMs,
 } from './powerSettings'
 import {
@@ -984,6 +985,7 @@ export default definePlugin((serverApi: ServerAPI) => {
   let forced_suspend:NodeJS.Timeout;
   let forced_suspend_tip:NodeJS.Timeout;
   let input_changed:boolean = true;
+  let lastUserActivityAt = 0;
   let configuredPowerSettings: PowerSettings = { ...DEFAULT_POWER_SETTINGS };
   let capturedPowerSettings: PowerSettings | null = null;
   let backendInhibiting = false;
@@ -999,7 +1001,9 @@ export default definePlugin((serverApi: ServerAPI) => {
   }
 
   function handleUserActivity() {
-    if (input_changed) return;
+    const now = Date.now();
+    if (!shouldRestartSuspendCountdown(!input_changed, lastUserActivityAt, now)) return;
+    lastUserActivityAt = now;
     input_changed = true;
     clearSuspendTimeout();
     if (shouldApplyPowerSettingsImmediately(backendInhibiting, deckyMusicInhibiting)) {
@@ -1007,8 +1011,11 @@ export default definePlugin((serverApi: ServerAPI) => {
     }
   }
 
-  const handlePointerDown = () => handleUserActivity();
-  window.addEventListener("pointerdown", handlePointerDown);
+  const handleTouchActivity = () => handleUserActivity();
+  const touchActivityEvents = ["pointerdown", "touchstart", "touchmove", "mousedown"];
+  touchActivityEvents.forEach((eventName) => {
+    document.addEventListener(eventName, handleTouchActivity, true);
+  });
 
   let SettingDef = {
     battery_idle: {
@@ -1439,7 +1446,9 @@ export default definePlugin((serverApi: ServerAPI) => {
       clearTimeout(timeout)
       eventPollingActive = false
       clearTimeout(eventPollTimeout)
-      window.removeEventListener("pointerdown", handlePointerDown)
+      touchActivityEvents.forEach((eventName) => {
+        document.removeEventListener(eventName, handleTouchActivity, true)
+      })
       releaseSteamHandle(controllerHandle)
       releaseSteamHandle(suspendHandle)
       serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")

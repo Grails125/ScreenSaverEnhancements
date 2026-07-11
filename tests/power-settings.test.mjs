@@ -19,6 +19,7 @@ const {
   minutesToSeconds,
   secondsToMinutes,
   shouldStartInhibit,
+  shouldRestartSuspendCountdown,
   shouldApplyPowerSettingsImmediately,
   getForceSuspendWarningDelayMs,
 } = module.exports;
@@ -64,6 +65,13 @@ test("only starts a new inhibit session when no source is already active", () =>
   assert.equal(shouldStartInhibit(true, false), false);
   assert.equal(shouldStartInhibit(false, true), false);
   assert.equal(shouldStartInhibit(true, true), false);
+});
+
+test("restarts a pending suspend countdown once per touch gesture", () => {
+  assert.equal(shouldRestartSuspendCountdown(false, 0, 1_000), false);
+  assert.equal(shouldRestartSuspendCountdown(true, 0, 1_000), true);
+  assert.equal(shouldRestartSuspendCountdown(true, 1_000, 1_200), false);
+  assert.equal(shouldRestartSuspendCountdown(true, 1_000, 1_600), true);
 });
 
 test("only applies a changed profile immediately while no source is inhibiting sleep", () => {
