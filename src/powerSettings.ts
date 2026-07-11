@@ -91,3 +91,25 @@ export const shouldStartInhibit = (
   backendInhibiting: boolean,
   deckyMusicInhibiting: boolean,
 ) => !backendInhibiting && !deckyMusicInhibiting;
+
+export const shouldStopInhibit = (
+  backendWasInhibiting: boolean,
+  deckyMusicInhibiting: boolean,
+) => backendWasInhibiting && !deckyMusicInhibiting;
+
+export type PowerSyncAction = "start" | "reapply" | "restore" | "none";
+
+export const getPowerSyncAction = (
+  shouldBeInhibiting: boolean,
+  overrideState: PowerOverrideState,
+  systemSettings: PowerSettings | null,
+): PowerSyncAction => {
+  if (!shouldBeInhibiting) {
+    return overrideState.active ? "restore" : "none";
+  }
+  if (!overrideState.active) return "start";
+  if (systemSettings && Object.values(systemSettings).some(timeout => timeout !== 0)) {
+    return "reapply";
+  }
+  return "none";
+};

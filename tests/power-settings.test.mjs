@@ -22,7 +22,9 @@ const {
   minutesToSeconds,
   secondsToMinutes,
   shouldStartInhibit,
+  shouldStopInhibit,
   shouldApplyPowerSettingsImmediately,
+  getPowerSyncAction,
 } = module.exports;
 
 test("normalizes power timeouts to whole seconds within the supported range", () => {
@@ -124,6 +126,36 @@ test("only ignores Steam system settings when an inhibit override set every time
   assert.equal(shouldSyncSystemPowerSettings(normalSettings, true), true);
   assert.equal(shouldSyncSystemPowerSettings(overriddenSettings, true), false);
   assert.equal(shouldSyncSystemPowerSettings(overriddenSettings, false), true);
+});
+
+test("only stops an inhibit session for a real backend active-to-inactive edge", () => {
+  assert.equal(shouldStopInhibit(true, false), true);
+  assert.equal(shouldStopInhibit(false, false), false);
+  assert.equal(shouldStopInhibit(true, true), false);
+});
+
+test("plans idempotent full-state power synchronization", () => {
+  const normalSettings = {
+    batteryDim: 300,
+    acDim: 300,
+    batterySuspend: 600,
+    acSuspend: 600,
+  };
+  const inhibitedSettings = {
+    batteryDim: 0,
+    acDim: 0,
+    batterySuspend: 0,
+    acSuspend: 0,
+  };
+  const activeOverride = { active: true, snapshot: normalSettings };
+  const inactiveOverride = { active: false, snapshot: null };
+
+  assert.equal(getPowerSyncAction(true, inactiveOverride, normalSettings), "start");
+  assert.equal(getPowerSyncAction(true, activeOverride, inhibitedSettings), "none");
+  assert.equal(getPowerSyncAction(true, activeOverride, normalSettings), "reapply");
+  assert.equal(getPowerSyncAction(true, activeOverride, null), "none");
+  assert.equal(getPowerSyncAction(false, activeOverride, inhibitedSettings), "restore");
+  assert.equal(getPowerSyncAction(false, inactiveOverride, normalSettings), "none");
 });
 
 test("only accepts complete power override snapshots for crash recovery", () => {
