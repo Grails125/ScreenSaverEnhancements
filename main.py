@@ -13,6 +13,23 @@ STEAM_POWER_SETTING_KEYS = {
     "batterySuspend": "IdleSuspendBatterySeconds",
     "acSuspend": "IdleSuspendACSeconds",
 }
+POWER_OVERRIDE_ACTIVE = "power_override_active"
+POWER_OVERRIDE_SNAPSHOT = "power_override_snapshot"
+
+
+def normalize_power_settings(value):
+    if not isinstance(value, dict):
+        return None
+    result = {}
+    for key in STEAM_POWER_SETTING_KEYS:
+        timeout = value.get(key)
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+            return None
+        timeout = round(timeout)
+        if timeout < 0 or timeout > 3600:
+            return None
+        result[key] = timeout
+    return result
 
 
 def parse_steam_power_settings(text):
@@ -529,6 +546,23 @@ class Plugin:
         result = await asyncio.to_thread(read_steam_power_settings)
         decky_plugin.logger.info(f"System power settings read: {result}")
         return result
+
+    async def get_power_override_state(self):
+        snapshot = normalize_power_settings(settings.getSetting(POWER_OVERRIDE_SNAPSHOT, None))
+        active = settings.getSetting(POWER_OVERRIDE_ACTIVE, False) is True and snapshot is not None
+        return {"active": active, "snapshot": snapshot if active else None}
+
+    async def begin_power_override(self, snapshot: dict):
+        normalized = normalize_power_settings(snapshot)
+        if normalized is None:
+            return False
+        return settings.setSettings({
+            POWER_OVERRIDE_ACTIVE: True,
+            POWER_OVERRIDE_SNAPSHOT: normalized,
+        })
+
+    async def end_power_override(self):
+        return settings.setSettings({POWER_OVERRIDE_ACTIVE: False})
 
     async def set_settings(self, key: str, value):
         decky_plugin.logger.info('[settings] set {}: {}'.format(key, value))

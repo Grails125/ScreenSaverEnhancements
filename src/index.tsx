@@ -29,7 +29,9 @@ import {
   minutesToSeconds,
   normalizePowerSettings,
   parseSteamPowerSettings,
+  parsePowerOverrideState,
   PowerSettings,
+  PowerOverrideState,
   shouldStartInhibit,
   secondsToMinutes,
   shouldApplyPowerSettingsImmediately,
@@ -1086,6 +1088,38 @@ export default definePlugin((serverApi: ServerAPI) => {
     }
   }
 
+  const getPowerOverrideState = async (): Promise<PowerOverrideState> => {
+    const response = await serverApi.callPluginMethod<any, unknown>("get_power_override_state", {});
+    return response.success
+      ? parsePowerOverrideState(response.result)
+      : { active: false, snapshot: null };
+  }
+
+  const beginPowerOverride = async (snapshot: PowerSettings) => {
+    const response = await serverApi.callPluginMethod<any, boolean>("begin_power_override", { snapshot });
+    return response.success && response.result === true;
+  }
+
+  const endPowerOverride = async () => {
+    const response = await serverApi.callPluginMethod<any, boolean>("end_power_override", {});
+    return response.success && response.result === true;
+  }
+
+  const restorePendingPowerOverride = async () => {
+    const state = await getPowerOverrideState();
+    if (!state.active || !state.snapshot) return false;
+
+    await updateSetting(
+      state.snapshot.batteryDim,
+      state.snapshot.acDim,
+      state.snapshot.batterySuspend,
+      state.snapshot.acSuspend,
+    );
+    setConfiguredPowerSettings(state.snapshot);
+    await endPowerOverride();
+    return true;
+  }
+
   const applyConfiguredPowerSettings = async (settings: PowerSettings) => {
     const isInhibiting = !shouldApplyPowerSettingsImmediately(backendInhibiting, deckyMusicInhibiting);
     if (!isInhibiting) {
@@ -1196,18 +1230,33 @@ export default definePlugin((serverApi: ServerAPI) => {
     const displayName = getAppDisplayName(application);
     const message = displayName ? `${displayName} ${t("Inhibit")}` : t("Inhibit");
     notify(t("ScreenSaver"), message)
-    await updateSetting(0, 0, 0, 0);
+    const snapshot = await readSystemPowerSettings() ?? configuredPowerSettings;
+    if (!await beginPowerOverride(snapshot)) {
+      throw new Error("Could not save the power override recovery snapshot");
+    }
+    setConfiguredPowerSettings(snapshot);
+    try {
+      await updateSetting(0, 0, 0, 0);
+    } catch (error) {
+      await endPowerOverride();
+      throw error;
+    }
   }
 
   const stopInhibit = async () => {
     notify(t("ScreenSaver"), t("UnInhibit"))
-    const restoreSettings = configuredPowerSettings;
+    const state = await getPowerOverrideState();
+    const restoreSettings = state.snapshot ?? configuredPowerSettings;
     await updateSetting(
       restoreSettings.batteryDim,
       restoreSettings.acDim,
       restoreSettings.batterySuspend,
       restoreSettings.acSuspend,
     );
+    setConfiguredPowerSettings(restoreSettings);
+    if (state.active) {
+      await endPowerOverride();
+    }
   }
 
   let deckyMusicEnabled = false;
@@ -1272,8 +1321,6 @@ export default definePlugin((serverApi: ServerAPI) => {
     }
   }
 
-  eventPollTimeout = setTimeout(pollPowerState, ACTIVE_EVENT_POLL_MS);
-
   setTimeout(async () => {
     const blackBackground = await getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_ENABLED, false)
     if (blackBackground) {
@@ -1298,11 +1345,14 @@ export default definePlugin((serverApi: ServerAPI) => {
       acSuspend,
     }))
 
+    await restorePendingPowerOverride()
+
     const run = await getPluginBooleanSetting(serverApi, RUN_ON_LOGIN, true)
     if (run) {
       backendRunning = true
       await startBackend()
     }
+    eventPollTimeout = setTimeout(pollPowerState, ACTIVE_EVENT_POLL_MS);
   }, 0);
 
   serverApi.routerHook.addGlobalComponent(
@@ -1323,6 +1373,7 @@ export default definePlugin((serverApi: ServerAPI) => {
     />,
     icon: <GiNightSleep />,
     onDismount() {
+      void restorePendingPowerOverride()
       deckyMusicState.SetState(0)
       clearTimeout(timeout)
       eventPollingActive = false

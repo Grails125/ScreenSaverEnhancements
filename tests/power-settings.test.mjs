@@ -18,6 +18,7 @@ const {
   normalizePowerSettings,
   parseSteamPowerSettings,
   shouldSyncSystemPowerSettings,
+  parsePowerOverrideState,
   minutesToSeconds,
   secondsToMinutes,
   shouldStartInhibit,
@@ -123,4 +124,31 @@ test("only ignores Steam system settings when an inhibit override set every time
   assert.equal(shouldSyncSystemPowerSettings(normalSettings, true), true);
   assert.equal(shouldSyncSystemPowerSettings(overriddenSettings, true), false);
   assert.equal(shouldSyncSystemPowerSettings(overriddenSettings, false), true);
+});
+
+test("only accepts complete power override snapshots for crash recovery", () => {
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(parsePowerOverrideState({
+      active: true,
+      snapshot: {
+        batteryDim: 300,
+        acDim: 600,
+        batterySuspend: 900,
+        acSuspend: 1200,
+      },
+    }))),
+    {
+      active: true,
+      snapshot: {
+        batteryDim: 300,
+        acDim: 600,
+        batterySuspend: 900,
+        acSuspend: 1200,
+      },
+    },
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(parsePowerOverrideState({ active: true, snapshot: { batteryDim: 300 } }))),
+    { active: false, snapshot: null },
+  );
 });

@@ -5,6 +5,11 @@ export type PowerSettings = {
   acSuspend: number;
 };
 
+export type PowerOverrideState = {
+  active: boolean;
+  snapshot: PowerSettings | null;
+};
+
 export const DEFAULT_POWER_SETTINGS: PowerSettings = {
   batteryDim: 300,
   acDim: 300,
@@ -55,6 +60,18 @@ export const shouldSyncSystemPowerSettings = (
   settings: PowerSettings,
   isInhibiting: boolean,
 ) => !isInhibiting || Object.values(settings).some(timeout => timeout !== 0);
+
+export const parsePowerOverrideState = (value: unknown): PowerOverrideState => {
+  if (typeof value !== "object" || value === null) {
+    return { active: false, snapshot: null };
+  }
+  const state = value as Record<string, unknown>;
+  const snapshot = parseSteamPowerSettings(state.snapshot);
+  if (state.active !== true || !snapshot) {
+    return { active: false, snapshot: null };
+  }
+  return { active: true, snapshot };
+};
 
 export const minutesToSeconds = (minutes: unknown) => normalizePowerTimeout(
   Number(minutes) * 60,
