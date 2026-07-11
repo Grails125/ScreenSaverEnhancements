@@ -77,6 +77,10 @@ export const setPluginSetting = async (
   return await serverApi.callPluginMethod<any, any>("set_settings", { key, value });
 };
 
+export const isPluginSettingSaveSuccessful = (
+  response: { success?: boolean; result?: unknown } | null | undefined,
+): boolean => response?.success === true && response.result === true;
+
 export const setPluginSettings = async (
   serverApi: ServerAPI,
   values: Record<string, unknown>,

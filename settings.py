@@ -29,6 +29,20 @@ class SettingsManager:
         self.settings = previous
         return False
 
+    def unsetSettings(self, keys):
+        previous = dict(self.settings)
+        changed = False
+        for key in keys:
+            if key in self.settings:
+                del self.settings[key]
+                changed = True
+        if not changed:
+            return True
+        if self.save_settings():
+            return True
+        self.settings = previous
+        return False
+
     def save_settings(self):
         temp_file = f"{self.settings_file}.tmp"
         try:

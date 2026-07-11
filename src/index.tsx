@@ -43,6 +43,7 @@ import {
   getPluginBooleanSetting,
   getPluginNumberSetting,
   getPluginSetting,
+  isPluginSettingSaveSuccessful,
   normalizeManualApps,
   setPluginSetting,
   setPluginSettings,
@@ -510,6 +511,10 @@ const Content: VFC<{
     return await serverApi.callPluginMethod<any, any>("stop_backend", {});
   }
 
+  const isBackendRunning = async () => {
+    return await serverApi.callPluginMethod<any, boolean>("is_running", {});
+  }
+
   const saveSetting = async (
     key: string,
     value: any,
@@ -517,7 +522,7 @@ const Content: VFC<{
   ): Promise<boolean> => {
     try {
       const response = await setPluginSetting(serverApi, key, value);
-      if (response.success) return true;
+      if (isPluginSettingSaveSuccessful(response)) return true;
       throw new Error("settings RPC failed");
     } catch {
       rollback();
@@ -647,7 +652,15 @@ const Content: VFC<{
     };
     fetchManualApps();
     refreshInhibitStatus();
-    const interval = setInterval(refreshInhibitStatus, 30000);
+
+    const loadBackendState = async () => {
+      const response = await isBackendRunning();
+      if (!isCurrentRequest(token) || !response.success) return;
+      const isRunning = response.result === true;
+      backendRunning = isRunning;
+      setRunning(isRunning);
+    };
+    loadBackendState();
 
     const loadBlackBackgroundSettings = async () => {
       const [enabled, opacityValue, closeOnAnyKey] = await Promise.all([
@@ -696,12 +709,18 @@ const Content: VFC<{
     return () => {
       panelVisible.current = false;
       requestTokenRef.current += 1;
-      clearInterval(interval);
       overlayState.offStateChanged(onOverlayChanged);
       opacityState.offStateChanged(onOpacityChanged);
       deckyMusicState.offStateChanged(onDeckyMusicChanged);
     };
   }, [overlayState, opacityState, deckyMusicState]);
+
+  useEffect(() => {
+    if (!quickAccessVisible) return;
+    void refreshInhibitStatus();
+    const interval = setInterval(refreshInhibitStatus, 30000);
+    return () => clearInterval(interval);
+  }, [quickAccessVisible]);
 
   useEffect(() => {
     const becameVisible = quickAccessVisible && !quickAccessWasVisible.current;
@@ -773,7 +792,7 @@ const Content: VFC<{
               })) return;
 
               const response = checked ? await startBackend() : await stopBackend();
-              if (!response.success) {
+              if (!isPluginSettingSaveSuccessful(response)) {
                 setRunning(previous)
                 backendRunning = previous
                 await setPluginSetting(serverApi, RUN_ON_LOGIN, previous);
@@ -1143,20 +1162,23 @@ export default definePlugin((serverApi: ServerAPI) => {
     return await serverApi.callPluginMethod<any, any>("get_event", {});
   }
 
-  const startBackend = async () => {
-    return await serverApi.callPluginMethod<any, any>("start_backend", {});
+  const isBackendRunning = async () => {
+    return await serverApi.callPluginMethod<any, boolean>("is_running", {});
   }
 
   const isDeckyMusicEnabled = (apps: string[]) => {
     return apps.some(app => app.toLowerCase() === DECKY_MUSIC_APP.toLowerCase());
   }
 
-  const installAudioTracker = () => {
-    const trackerKey = "__screensaverEnhancementsAudioTracker";
-    const existingTracker = (window as any)[trackerKey];
-    if (existingTracker) {
-      return existingTracker as Set<HTMLMediaElement>;
-    }
+  type AudioTracker = {
+    elements: Set<HTMLMediaElement>;
+    dispose: () => void;
+  };
+
+  const installAudioTracker = (): AudioTracker => {
+    const trackerKey = "__screensaverEnhancementsAudioTrackerV2";
+    const existingTracker = (window as any)[trackerKey] as AudioTracker | undefined;
+    if (existingTracker) return existingTracker;
 
     const tracked = new Set<HTMLMediaElement>();
     const originalPlay = HTMLMediaElement.prototype.play;
@@ -1170,17 +1192,20 @@ export default definePlugin((serverApi: ServerAPI) => {
       tracked.delete(this);
     };
 
-    HTMLMediaElement.prototype.play = function() {
+    const trackedPlay = function(this: HTMLMediaElement) {
       tracked.add(this);
       this.addEventListener("pause", handlePause, { once: true });
       this.addEventListener("ended", handleEnded, { once: true });
       return originalPlay.apply(this);
     };
 
-    HTMLMediaElement.prototype.pause = function() {
+    const trackedPause = function(this: HTMLMediaElement) {
       tracked.delete(this);
       return originalPause.apply(this);
     };
+
+    HTMLMediaElement.prototype.play = trackedPlay;
+    HTMLMediaElement.prototype.pause = trackedPause;
 
     document.querySelectorAll("audio,video").forEach((element) => {
       const mediaElement = element as HTMLMediaElement;
@@ -1191,22 +1216,46 @@ export default definePlugin((serverApi: ServerAPI) => {
       }
     });
 
-    (window as any)[trackerKey] = tracked;
-    return tracked;
+    const tracker: AudioTracker = {
+      elements: tracked,
+      dispose: () => {
+        tracked.forEach((mediaElement) => {
+          mediaElement.removeEventListener("pause", handlePause);
+          mediaElement.removeEventListener("ended", handleEnded);
+        });
+        tracked.clear();
+        if (HTMLMediaElement.prototype.play === trackedPlay) {
+          HTMLMediaElement.prototype.play = originalPlay;
+        }
+        if (HTMLMediaElement.prototype.pause === trackedPause) {
+          HTMLMediaElement.prototype.pause = originalPause;
+        }
+        if ((window as any)[trackerKey] === tracker) {
+          delete (window as any)[trackerKey];
+        }
+      },
+    };
+    (window as any)[trackerKey] = tracker;
+    return tracker;
   }
 
-  let trackedAudioElements: Set<HTMLMediaElement> | null = null;
+  let audioTracker: AudioTracker | null = null;
 
   const ensureAudioTracker = () => {
-    if (!trackedAudioElements) {
-      trackedAudioElements = installAudioTracker();
+    if (!audioTracker) {
+      audioTracker = installAudioTracker();
     }
-    return trackedAudioElements;
+    return audioTracker.elements;
+  }
+
+  const disposeAudioTracker = () => {
+    audioTracker?.dispose();
+    audioTracker = null;
   }
 
   const isAnyAudioPlaying = () => {
-    if (!trackedAudioElements) return false;
-    if (trackedAudioElements.size === 0) return false;
+    const trackedAudioElements = audioTracker?.elements;
+    if (!trackedAudioElements || trackedAudioElements.size === 0) return false;
 
     for (const audio of trackedAudioElements) {
       if (audio.src && !audio.paused && !audio.ended && audio.readyState > HTMLMediaElement.HAVE_NOTHING) {
@@ -1281,6 +1330,8 @@ export default definePlugin((serverApi: ServerAPI) => {
         deckyMusicEnabled = isDeckyMusicEnabled(normalizeManualApps(manualApps));
         if (deckyMusicEnabled) {
           ensureAudioTracker();
+        } else {
+          disposeAudioTracker();
         }
       }
 
@@ -1358,7 +1409,7 @@ export default definePlugin((serverApi: ServerAPI) => {
 
       const run = await getPluginBooleanSetting(serverApi, RUN_ON_LOGIN, true)
       if (run) {
-        const response = await startBackend()
+        const response = await isBackendRunning()
         backendRunning = response.success && response.result === true
       }
     } catch (error) {
@@ -1396,6 +1447,7 @@ export default definePlugin((serverApi: ServerAPI) => {
       clearTimeout(timeout)
       eventPollingActive = false
       clearTimeout(eventPollTimeout)
+      disposeAudioTracker()
       serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")
     },
   };

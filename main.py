@@ -15,6 +15,13 @@ STEAM_POWER_SETTING_KEYS = {
 }
 POWER_OVERRIDE_ACTIVE = "power_override_active"
 POWER_OVERRIDE_SNAPSHOT = "power_override_snapshot"
+LEGACY_SETTING_KEYS = (
+    "custom_power_settings_enabled",
+    "dim_timeout",
+    "force_suspend_enabled",
+    "mute_notifications",
+    "system_power_settings_snapshot",
+)
 
 
 def normalize_power_settings(value):
@@ -450,6 +457,7 @@ class Plugin:
             if bus is None:
                 raise RuntimeError("Could not register D-Bus inhibit services")
         Plugin._start_manual_watch(self)
+        return True
 
     async def stop_backend(self):
         decky_plugin.logger.info("Stop backend server")
@@ -458,6 +466,7 @@ class Plugin:
         clear_dbus_requests()
         clear_event_queue()
         event_queue.put({"type": "UnInhibit"})
+        return True
 
     async def is_running(self):
         global bus
@@ -574,7 +583,7 @@ class Plugin:
         })
 
     async def end_power_override(self):
-        return settings.setSettings({POWER_OVERRIDE_ACTIVE: False})
+        return settings.unsetSettings((POWER_OVERRIDE_ACTIVE, POWER_OVERRIDE_SNAPSHOT))
 
     async def set_settings(self, key: str, value):
         decky_plugin.logger.info('[settings] set {}: {}'.format(key, value))
@@ -591,6 +600,8 @@ class Plugin:
     async def _main(self):
         decky_plugin.logger.info("Hello World!")
         Plugin._init_runtime_state(self)
+        if not settings.unsetSettings(LEGACY_SETTING_KEYS):
+            decky_plugin.logger.warning("Could not remove legacy plugin settings")
         if settings.getSetting("run_on_login", True):
             await Plugin.start_backend(self)
 

@@ -13,7 +13,18 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 const module = { exports: {} };
 vm.runInNewContext(compiled, { module, exports: module.exports });
-const { normalizeManualApps, parseBooleanSetting, parseNumberSetting } = module.exports;
+const {
+  isPluginSettingSaveSuccessful,
+  normalizeManualApps,
+  parseBooleanSetting,
+  parseNumberSetting,
+} = module.exports;
+
+test("only treats an RPC save as successful when persistence returns true", () => {
+  assert.equal(isPluginSettingSaveSuccessful({ success: true, result: true }), true);
+  assert.equal(isPluginSettingSaveSuccessful({ success: true, result: false }), false);
+  assert.equal(isPluginSettingSaveSuccessful({ success: false, result: true }), false);
+});
 
 test("normalizes manual app rules without discarding an empty list", () => {
   assert.deepEqual(Array.from(normalizeManualApps([])), []);
