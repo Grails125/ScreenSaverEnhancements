@@ -7,6 +7,7 @@ from process_events import (
     PROC_CN_MCAST_LISTEN,
     PROC_EVENT_EXEC,
     build_subscription_message,
+    parse_process_event,
     parse_process_event_type,
 )
 
@@ -26,9 +27,11 @@ class ProcessEventTests(unittest.TestCase):
         self.assertEqual(operation, PROC_CN_MCAST_LISTEN)
 
     def test_reads_process_event_type_and_rejects_short_messages(self):
-        message = bytes(36) + struct.pack("=I", PROC_EVENT_EXEC)
+        message = bytes(36) + struct.pack("=I", PROC_EVENT_EXEC) + bytes(12) + struct.pack("=I", 321)
         self.assertEqual(parse_process_event_type(message), PROC_EVENT_EXEC)
+        self.assertEqual(parse_process_event(message), (PROC_EVENT_EXEC, 321))
         self.assertIsNone(parse_process_event_type(bytes(39)))
+        self.assertIsNone(parse_process_event(bytes(39)))
 
 
 if __name__ == "__main__":

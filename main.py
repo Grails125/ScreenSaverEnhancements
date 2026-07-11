@@ -23,7 +23,8 @@ def load_local_module(module_name, file_name):
 
 SettingsManager = load_local_module("settings", "settings.py").SettingsManager
 plugin_contract = load_local_module("contract", "plugin_contract.py")
-ProcessEventSource = load_local_module("process_events", "process_events.py").ProcessEventSource
+process_events = load_local_module("process_events", "process_events.py")
+ProcessEventSource = process_events.ProcessEventSource
 
 STEAM_CONFIG_PATHS = (
     "/home/deck/.local/share/Steam/config/config.vdf",
@@ -377,6 +378,8 @@ class Plugin:
             self.last_process_scan_at = None
         if not hasattr(self, 'last_process_event_at'):
             self.last_process_event_at = None
+        if not hasattr(self, 'active_manual_pids'):
+            self.active_manual_pids = set()
         if not hasattr(self, 'runtime_started_at'):
             self.runtime_started_at = time.monotonic()
         if not hasattr(self, 'long_poll_requests'):
@@ -387,17 +390,17 @@ class Plugin:
     async def _get_all_process_lines(self):
         self.process_scan_count += 1
         self.last_process_scan_at = int(time.time())
-        return await asyncio.to_thread(get_process_lines, ['ps', '-eo', 'comm=,args='])
+        return await asyncio.to_thread(get_process_lines, ['ps', '-eo', 'pid=,comm=,args='])
 
     async def _is_process_running(self, name):
         lines = await Plugin._get_all_process_lines(self)
         target = normalize_process_name(name)
         for line in lines:
-            parts = line.split(None, 1)
-            if not parts:
+            parts = line.split(None, 2)
+            if len(parts) < 2:
                 continue
-            comm = parts[0]
-            args = parts[1] if len(parts) > 1 else ""
+            comm = parts[1]
+            args = parts[2] if len(parts) > 2 else ""
             if target in process_candidates(comm, args):
                 return True
         return False
@@ -410,17 +413,24 @@ class Plugin:
         # Build candidate sets once for all running processes
         proc_candidates_list = []
         for line in lines:
-            parts = line.split(None, 1)
-            if not parts:
+            parts = line.split(None, 2)
+            if len(parts) < 2:
                 continue
-            comm = parts[0]
-            args = parts[1] if len(parts) > 1 else ""
-            proc_candidates_list.append(set(process_candidates(comm, args)))
+            process_id = int(parts[0])
+            comm = parts[1]
+            args = parts[2] if len(parts) > 2 else ""
+            proc_candidates_list.append((process_id, set(process_candidates(comm, args))))
         for app in apps_to_check:
             target = normalize_process_name(app)
-            for proc_set in proc_candidates_list:
-                if target in proc_set:
-                    return app
+            matching_pids = {
+                process_id
+                for process_id, proc_set in proc_candidates_list
+                if target in proc_set
+            }
+            if matching_pids:
+                self.active_manual_pids = matching_pids
+                return app
+        self.active_manual_pids.clear()
         return None
 
     def _start_manual_inhibitor(self, app):
@@ -482,9 +492,21 @@ class Plugin:
         decky_plugin.logger.info("Kernel process event listener started")
         while True:
             try:
-                await self.process_event_source.wait_for_process_change()
+                event_type, process_id = await self.process_event_source.wait_for_process_change()
                 self.last_process_event_at = int(time.time())
-                self.manual_watch_wakeup.set()
+                should_reconcile = event_type == process_events.PROC_EVENT_EXIT and process_id in self.active_manual_pids
+                if event_type == process_events.PROC_EVENT_EXEC:
+                    should_reconcile = await asyncio.to_thread(
+                        Plugin._process_matches_manual_rule,
+                        self,
+                        process_id,
+                    )
+                if should_reconcile:
+                    if event_type == process_events.PROC_EVENT_EXEC:
+                        self.active_manual_pids.add(process_id)
+                    else:
+                        self.active_manual_pids.discard(process_id)
+                    self.manual_watch_wakeup.set()
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -492,6 +514,23 @@ class Plugin:
                 decky_plugin.logger.warning(f"Kernel process event listener stopped: {e}")
                 self.manual_watch_wakeup.set()
                 return
+
+    def _process_matches_manual_rule(self, process_id):
+        try:
+            with open(f"/proc/{process_id}/comm", "r", encoding="utf-8", errors="replace") as comm_file:
+                comm = comm_file.read().strip()
+            with open(f"/proc/{process_id}/cmdline", "rb") as args_file:
+                args = args_file.read().replace(b"\0", b" ").decode("utf-8", errors="replace")
+        except OSError:
+            return False
+
+        candidates = set(process_candidates(comm, args))
+        manual_apps = settings.getSetting("manual_apps", [])
+        return any(
+            normalize_process_name(app) in candidates
+            for app in manual_apps
+            if not is_decky_music_name(app)
+        )
 
     def _start_manual_watch(self):
         Plugin._init_runtime_state(self)
@@ -544,6 +583,7 @@ class Plugin:
         Plugin._stop_manual_inhibitor(self)
         self.manual_active = False
         self.manual_running_app = None
+        self.active_manual_pids.clear()
         self.process_monitor_mode = "stopped"
         manual_inhibiting = False
         sync_inhibit_state()

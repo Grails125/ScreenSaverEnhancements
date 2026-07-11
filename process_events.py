@@ -29,6 +29,15 @@ def parse_process_event_type(message):
     return struct.unpack_from("=I", message, event_offset)[0]
 
 
+def parse_process_event(message):
+    event_type = parse_process_event_type(message)
+    process_data_offset = 16 + 20 + 16
+    if event_type is None or len(message) < process_data_offset + 4:
+        return None
+    process_id = struct.unpack_from("=I", message, process_data_offset)[0]
+    return event_type, process_id
+
+
 class ProcessEventSource:
     def __init__(self):
         self.socket = None
@@ -50,9 +59,9 @@ class ProcessEventSource:
         loop = asyncio.get_running_loop()
         while True:
             message = await loop.sock_recv(self.socket, 4096)
-            event_type = parse_process_event_type(message)
-            if event_type in (PROC_EVENT_EXEC, PROC_EVENT_EXIT):
-                return event_type
+            event = parse_process_event(message)
+            if event is not None and event[0] in (PROC_EVENT_EXEC, PROC_EVENT_EXIT):
+                return event
 
     def close(self):
         netlink = self.socket
