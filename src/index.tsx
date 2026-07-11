@@ -552,11 +552,14 @@ const Content: VFC<{
 
     setPowerSettings(systemSettings);
     onPowerSettingsLoaded(systemSettings);
-    await setPluginSettings(serverApi, Object.fromEntries(
+    const response = await setPluginSettings(serverApi, Object.fromEntries(
       (Object.keys(POWER_SETTING_KEYS) as Array<keyof PowerSettings>).map(
         key => [POWER_SETTING_KEYS[key], systemSettings[key]],
       ),
     ));
+    if (!response.success || response.result !== true) {
+      console.warn("[ScreenSaverEnhancements] Could not persist synchronized power settings");
+    }
   }
 
   const fetchRunningProcesses = async () => {
@@ -1116,8 +1119,11 @@ export default definePlugin((serverApi: ServerAPI) => {
       state.snapshot.acSuspend,
     );
     setConfiguredPowerSettings(state.snapshot);
-    await endPowerOverride();
-    return true;
+    const cleared = await endPowerOverride();
+    if (!cleared) {
+      console.warn("[ScreenSaverEnhancements] Power settings restored, but recovery state could not be cleared");
+    }
+    return cleared;
   }
 
   const applyConfiguredPowerSettings = async (settings: PowerSettings) => {
@@ -1229,7 +1235,6 @@ export default definePlugin((serverApi: ServerAPI) => {
   const startInhibit = async (application?: string) => {
     const displayName = getAppDisplayName(application);
     const message = displayName ? `${displayName} ${t("Inhibit")}` : t("Inhibit");
-    notify(t("ScreenSaver"), message)
     const snapshot = await readSystemPowerSettings() ?? configuredPowerSettings;
     if (!await beginPowerOverride(snapshot)) {
       throw new Error("Could not save the power override recovery snapshot");
@@ -1237,6 +1242,7 @@ export default definePlugin((serverApi: ServerAPI) => {
     setConfiguredPowerSettings(snapshot);
     try {
       await updateSetting(0, 0, 0, 0);
+      notify(t("ScreenSaver"), message)
     } catch (error) {
       await endPowerOverride();
       throw error;
@@ -1244,7 +1250,6 @@ export default definePlugin((serverApi: ServerAPI) => {
   }
 
   const stopInhibit = async () => {
-    notify(t("ScreenSaver"), t("UnInhibit"))
     const state = await getPowerOverrideState();
     const restoreSettings = state.snapshot ?? configuredPowerSettings;
     await updateSetting(
@@ -1257,6 +1262,7 @@ export default definePlugin((serverApi: ServerAPI) => {
     if (state.active) {
       await endPowerOverride();
     }
+    notify(t("ScreenSaver"), t("UnInhibit"))
   }
 
   let deckyMusicEnabled = false;
@@ -1312,6 +1318,8 @@ export default definePlugin((serverApi: ServerAPI) => {
           }
         }
       }
+    } catch (error) {
+      console.error("[ScreenSaverEnhancements] Power state polling failed", error);
     } finally {
       if (!eventPollingActive) return;
       const nextDelay = backendInhibiting || deckyMusicInhibiting
@@ -1321,39 +1329,49 @@ export default definePlugin((serverApi: ServerAPI) => {
     }
   }
 
-  setTimeout(async () => {
-    const blackBackground = await getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_ENABLED, false)
-    if (blackBackground) {
-      overlayState.SetState(1)
+  const initializePlugin = async () => {
+    try {
+      const blackBackground = await getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_ENABLED, false)
+      if (blackBackground) {
+        overlayState.SetState(1)
+      }
+
+      const blackOpacity = await getPluginNumberSetting(serverApi, BLACK_BACKGROUND_OPACITY, 1)
+      opacityState.SetState(clampOpacity(blackOpacity))
+
+      showNotify = await getPluginBooleanSetting(serverApi, SHOW_NOTIFY, false)
+
+      const [batteryDim, acDim, batterySuspend, acSuspend] = await Promise.all([
+        getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batteryDim, DEFAULT_POWER_SETTINGS.batteryDim),
+        getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acDim, DEFAULT_POWER_SETTINGS.acDim),
+        getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batterySuspend, DEFAULT_POWER_SETTINGS.batterySuspend),
+        getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acSuspend, DEFAULT_POWER_SETTINGS.acSuspend),
+      ])
+      setConfiguredPowerSettings(normalizePowerSettings({
+        batteryDim,
+        acDim,
+        batterySuspend,
+        acSuspend,
+      }))
+
+      await restorePendingPowerOverride()
+
+      const run = await getPluginBooleanSetting(serverApi, RUN_ON_LOGIN, true)
+      if (run) {
+        const response = await startBackend()
+        backendRunning = response.success && response.result === true
+      }
+    } catch (error) {
+      backendRunning = false
+      console.error("[ScreenSaverEnhancements] Plugin initialization failed", error)
+    } finally {
+      if (eventPollingActive) {
+        eventPollTimeout = setTimeout(pollPowerState, ACTIVE_EVENT_POLL_MS);
+      }
     }
+  }
 
-    const blackOpacity = await getPluginNumberSetting(serverApi, BLACK_BACKGROUND_OPACITY, 1)
-    opacityState.SetState(clampOpacity(blackOpacity))
-
-    showNotify = await getPluginBooleanSetting(serverApi, SHOW_NOTIFY, false)
-
-    const [batteryDim, acDim, batterySuspend, acSuspend] = await Promise.all([
-      getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batteryDim, DEFAULT_POWER_SETTINGS.batteryDim),
-      getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acDim, DEFAULT_POWER_SETTINGS.acDim),
-      getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batterySuspend, DEFAULT_POWER_SETTINGS.batterySuspend),
-      getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acSuspend, DEFAULT_POWER_SETTINGS.acSuspend),
-    ])
-    setConfiguredPowerSettings(normalizePowerSettings({
-      batteryDim,
-      acDim,
-      batterySuspend,
-      acSuspend,
-    }))
-
-    await restorePendingPowerOverride()
-
-    const run = await getPluginBooleanSetting(serverApi, RUN_ON_LOGIN, true)
-    if (run) {
-      backendRunning = true
-      await startBackend()
-    }
-    eventPollTimeout = setTimeout(pollPowerState, ACTIVE_EVENT_POLL_MS);
-  }, 0);
+  void initializePlugin();
 
   serverApi.routerHook.addGlobalComponent(
     "ScreenSaverEnhancementsBlackOverlay",
