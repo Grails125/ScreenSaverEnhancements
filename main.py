@@ -611,7 +611,7 @@ class Plugin:
         await stop_dbus()
         clear_dbus_requests()
         clear_event_queue()
-        queue_event({"type": "UnInhibit"})
+        queue_event({"type": "UnInhibit", "reason": "monitor_stopped"})
         record_diagnostic_event("backend_stopped")
         return True
 

@@ -12,7 +12,7 @@ import {
 import React, { FC } from "react";
 import { useState, useEffect, useRef } from 'react'
 import { GiNightSleep } from "react-icons/gi";
-import { RiArrowDownSFill, RiArrowUpSFill } from "react-icons/ri";
+import { RiArrowDownSFill, RiArrowUpSFill, RiInformationLine } from "react-icons/ri";
 import i18n from './i18n'
 import {
   BlackOverlay,
@@ -499,6 +499,62 @@ const DiagnosticRow: FC<{ label: string; value: React.ReactNode }> = ({ label, v
   </PanelSectionRow>
 );
 
+const MonitorStatusRow: FC<{ running: boolean; processMonitorMode: string }> = ({
+  running,
+  processMonitorMode,
+}) => {
+  const [detailsVisible, setDetailsVisible] = useState(false);
+
+  return (
+    <PanelSectionRow>
+      <div style={{ ...PANEL_STYLES.processItem, overflow: 'visible', position: 'relative' }}>
+        <span style={PANEL_STYLES.sectionHint}>{t('Backend Status')}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ color: '#f1f1f1', fontSize: '0.82em', textAlign: 'right' }}>
+            {running ? t('Running') : t('Stopped')}
+          </span>
+          <Focusable
+            aria-label={t('Monitor Details')}
+            aria-expanded={detailsVisible}
+            aria-controls="sse-monitor-details"
+            style={{ ...PANEL_STYLES.panelAction, width: '28px', height: '28px' }}
+            onClick={() => setDetailsVisible(!detailsVisible)}
+          >
+            <RiInformationLine aria-hidden="true" />
+          </Focusable>
+        </div>
+        {detailsVisible && (
+          <div
+            id="sse-monitor-details"
+            role="tooltip"
+            style={{
+              position: 'absolute',
+              zIndex: 20,
+              top: 'calc(100% + 6px)',
+              right: 0,
+              width: '260px',
+              padding: '10px',
+              borderRadius: '6px',
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#20242b',
+              color: '#f1f1f1',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.38)',
+              fontSize: '0.76em',
+              lineHeight: 1.45,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '6px' }}>
+              <span style={{ color: '#aeb5bf' }}>{t('Monitoring Method')}</span>
+              <span style={{ textAlign: 'right' }}>{formatProcessMonitorMode(processMonitorMode)}</span>
+            </div>
+            <div style={{ color: '#c7cbd1' }}>{t('monitor_details_tip')}</div>
+          </div>
+        )}
+      </div>
+    </PanelSectionRow>
+  );
+};
+
 type DiagnosticsPageProps = {
   diagnostics: Diagnostics | null;
   loading: boolean;
@@ -545,8 +601,10 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
     ) : (
       <>
         <PanelSection title={t('Runtime Status')}>
-          <DiagnosticRow label={t('Backend Status')} value={diagnostics.backendRunning ? t('Running') : t('Stopped')} />
-          <DiagnosticRow label={t('Process Monitor Mode')} value={formatProcessMonitorMode(diagnostics.processMonitorMode)} />
+          <MonitorStatusRow
+            running={diagnostics.backendRunning}
+            processMonitorMode={diagnostics.processMonitorMode}
+          />
           <DiagnosticRow label={t('Process Scan Count')} value={diagnostics.processScanCount} />
           <DiagnosticRow label={t('Last Process Scan')} value={formatDiagnosticTime(diagnostics.lastProcessScanAt)} />
           <DiagnosticRow label={t('Last Process Event')} value={formatDiagnosticTime(diagnostics.lastProcessEventAt)} />
@@ -697,6 +755,17 @@ const Content: FC<{
       console.warn("[ScreenSaverEnhancements] Could not synchronize system power settings", error);
     }
   }
+
+  const notifyMonitorStatus = (enabled: boolean) => {
+    if (!notify) return;
+    serverApi.toaster.toast({
+      title: t("Background Monitor"),
+      body: enabled ? t("Monitor Enabled Body") : t("Monitor Disabled Body"),
+      icon: <GiNightSleep />,
+      sound: 1,
+      duration: 3000,
+    });
+  };
 
   const persistPendingOpacity = async () => {
     const opacity = pendingOpacityRef.current;
@@ -1022,6 +1091,7 @@ const Content: FC<{
               try {
                 const succeeded = checked ? await startBackend() : await stopBackend();
                 if (succeeded !== true) throw new Error("backend lifecycle RPC failed");
+                notifyMonitorStatus(checked);
               } catch {
                 setRunning(previous)
                 backendRunning = previous
@@ -1555,7 +1625,7 @@ export default definePlugin(() => {
     }
   }
 
-  const stopInhibit = async () => {
+  const stopInhibit = async (showRestoreNotification = true) => {
     const state = await getPowerOverrideState();
     const restoreSettings = state.snapshot ?? configuredPowerSettings;
     await updateSetting(
@@ -1568,7 +1638,9 @@ export default definePlugin(() => {
     if (state.active) {
       await endPowerOverride();
     }
-    notify(t("ScreenSaver"), t("UnInhibit"))
+    if (showRestoreNotification) {
+      notify(t("ScreenSaver"), t("UnInhibit"))
+    }
   }
 
   let deckyMusicEnabled = false;
@@ -1627,7 +1699,7 @@ export default definePlugin(() => {
       } else if (event.type === "UnInhibit") {
         backendInhibiting = false;
         if (!deckyMusicInhibiting) {
-          await stopInhibit();
+          await stopInhibit(event.reason !== "monitor_stopped");
         }
       }
     }

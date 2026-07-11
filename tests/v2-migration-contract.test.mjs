@@ -222,3 +222,44 @@ test("diagnostics use sleep inhibition terminology without misleading uptime", (
   assert.doesNotMatch(source, /t\(['"]Backend Uptime['"]\)/);
   assert.match(source, /formatDiagnosticEventType\(event\.type\)/);
 });
+
+test("monitor switching uses dedicated notifications instead of restore-sleep copy", () => {
+  const zh = JSON.parse(
+    readFileSync(new URL("../src/i18n/zh-cn.json", import.meta.url), "utf8"),
+  );
+  const en = JSON.parse(
+    readFileSync(new URL("../src/i18n/en.json", import.meta.url), "utf8"),
+  );
+  const frontend = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+  const backend = readFileSync(new URL("../main.py", import.meta.url), "utf8");
+
+  assert.equal(zh["Monitor Enabled Body"], "已开始检测禁用息屏列表并接管系统息屏");
+  assert.equal(zh["Monitor Disabled Body"], "已停止检测禁用息屏列表，系统息屏已交还系统管理");
+  assert.equal(zh.notify_tip, "监控开关或息屏状态变化时显示通知");
+  assert.equal(en["Monitor Enabled Body"], "Monitoring the sleep-inhibition list and managing system sleep");
+  assert.equal(en["Monitor Disabled Body"], "Monitoring stopped; system sleep is managed by SteamOS again");
+  assert.equal(en.notify_tip, "Show notifications when monitoring or sleep-inhibition status changes");
+  assert.match(frontend, /notifyMonitorStatus\(checked\)/);
+  assert.match(frontend, /event\.reason !== "monitor_stopped"/);
+  assert.match(backend, /"type": "UnInhibit", "reason": "monitor_stopped"/);
+});
+
+test("diagnostics merge monitor state and process mode behind an accessible detail button", () => {
+  const zh = JSON.parse(
+    readFileSync(new URL("../src/i18n/zh-cn.json", import.meta.url), "utf8"),
+  );
+  const source = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(zh["Monitor Details"], "查看息屏抑制监控详情");
+  assert.equal(zh["Monitoring Method"], "监听方式");
+  assert.equal(zh.monitor_details_tip, "开启后优先使用内核进程事件监听；不可用时自动切换为低频扫描。关闭监控后，进程监听也会停止。");
+  assert.doesNotMatch(source, /<DiagnosticRow label=\{t\('Process Monitor Mode'\)\}/);
+  assert.match(source, /<MonitorStatusRow/);
+  assert.match(source, /aria-expanded=\{detailsVisible\}/);
+});

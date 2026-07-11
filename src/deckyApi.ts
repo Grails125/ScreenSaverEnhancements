@@ -24,7 +24,7 @@ export type InhibitStatus = {
 export type PluginEvent =
   | { type: "SettingsChanged"; key: string }
   | { type: "Inhibit"; application?: string }
-  | { type: "UnInhibit" };
+  | { type: "UnInhibit"; reason?: "monitor_stopped" };
 
 export interface PluginBackendClient {
   startBackend(): Promise<boolean>;
