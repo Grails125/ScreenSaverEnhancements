@@ -13,7 +13,7 @@ const compiled = ts.transpileModule(source, {
   },
 }).outputText;
 
-const loadDeckyApi = (callable, eventApi = {}) => {
+const loadDeckyApi = (callable, eventApi = {}, loaderCall) => {
   const module = { exports: {} };
   const deckyApiModule = {
     callable,
@@ -30,6 +30,11 @@ const loadDeckyApi = (callable, eventApi = {}) => {
       if (id === "@decky/api") return deckyApiModule;
       throw new Error(`Unexpected import: ${id}`);
     },
+    window: {
+      DeckyBackend: {
+        call: loaderCall ?? (async () => undefined),
+      },
+    },
   });
 
   return module.exports;
@@ -37,10 +42,15 @@ const loadDeckyApi = (callable, eventApi = {}) => {
 
 test("exposes typed RPC methods with positional callable arguments", async () => {
   const calls = [];
+  const loaderCalls = [];
   const { createPluginServerApi } = loadDeckyApi(
     (route) => async (...args) => {
       calls.push({ route, args });
       return { active: true };
+    },
+    {},
+    async (route, ...args) => {
+      loaderCalls.push({ route, args });
     },
   );
   const serverApi = createPluginServerApi();
@@ -71,6 +81,8 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
     },
     { route: "get_plugin_version", args: [] },
     { route: "check_update", args: [] },
+  ]);
+  assert.deepEqual(loaderCalls, [
     {
       route: "utilities/install_plugin",
       args: [

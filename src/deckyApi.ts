@@ -13,6 +13,16 @@ export type CallableFactory = <Args extends any[] = [], Return = void>(
   route: string,
 ) => (...args: Args) => Promise<Return>;
 
+type LoaderBackend = {
+  call<Args extends any[] = [], Return = void>(route: string, ...args: Args): Promise<Return>;
+};
+
+const loaderCallable: CallableFactory = (route) => async (...args) => {
+  const loader = (window as unknown as { DeckyBackend?: LoaderBackend }).DeckyBackend;
+  if (!loader?.call) throw new Error("Decky Loader API is unavailable");
+  return loader.call(route, ...args);
+};
+
 export type RunningProcess = { name: string; type: string };
 export type InhibitRequest = { cookie: number; application: string; reason: string };
 export type InhibitStatus = {
@@ -82,6 +92,7 @@ const subscribeInhibitStateChanged = (listener: InhibitStateChangedListener) => 
 
 export const createPluginServerApi = (
   callableFactory: CallableFactory = callable,
+  loaderCallableFactory: CallableFactory = loaderCallable,
 ): PluginServerApi => {
   const startBackend = callableFactory<[], boolean>("start_backend");
   const stopBackend = callableFactory<[], boolean>("stop_backend");
@@ -91,11 +102,11 @@ export const createPluginServerApi = (
   const getDiagnostics = callableFactory<[], unknown>("get_diagnostics");
   const getPluginVersion = callableFactory<[], string>("get_plugin_version");
   const checkUpdate = callableFactory<[], UpdateCheckResult>("check_update");
-  const installPlugin = callableFactory<
+  const installPlugin = loaderCallableFactory<
     [artifact: string, name: string, version: string, hash: string, installType: number],
     void
   >("utilities/install_plugin");
-  const restartDecky = callableFactory<[], void>("updater/do_restart");
+  const restartDecky = loaderCallableFactory<[], void>("updater/do_restart");
   const getSystemPowerSettings = callableFactory<[], unknown>("get_system_power_settings");
   const getPowerOverrideState = callableFactory<[], unknown>("get_power_override_state");
   const beginPowerOverride = callableFactory<[snapshot: PowerSettings], boolean>("begin_power_override");
