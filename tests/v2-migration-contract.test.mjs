@@ -186,3 +186,17 @@ test("event polling uses direct results and the legacy RPC adapter is removed", 
   assert.doesNotMatch(pluginSource, /callPluginMethod|response\.success|response\.result/);
   assert.doesNotMatch(apiSource, /callPluginMethod|PluginMethodResponse|getPluginMethodArguments|PLUGIN_METHOD_ARGUMENT_KEYS/);
 });
+
+test("the monitoring toggle describes sleep inhibition behavior", () => {
+  const zh = JSON.parse(
+    readFileSync(new URL("../src/i18n/zh-cn.json", import.meta.url), "utf8"),
+  );
+  const en = JSON.parse(
+    readFileSync(new URL("../src/i18n/en.json", import.meta.url), "utf8"),
+  );
+
+  assert.equal(zh["Background Monitor"], "息屏抑制监控");
+  assert.equal(zh.plugin_switch_tip, "检测禁用息屏列表，接管系统息屏");
+  assert.equal(zh["Background Monitor Failed"], "息屏抑制监控切换失败");
+  assert.equal(en["Background Monitor"], "Sleep Inhibition Monitor");
+});
