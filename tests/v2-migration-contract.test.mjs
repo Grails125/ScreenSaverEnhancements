@@ -15,6 +15,8 @@ test("pins the Decky 3.2.6 compatible modern frontend toolchain", () => {
   assert.equal(packageJson.devDependencies["@decky/ui"], "4.11.6");
   assert.equal(packageJson.devDependencies["@decky/rollup"], "1.0.2");
   assert.match(packageJson.scripts["build:v2-probe"], /rollup\.v2-probe\.config\.js/);
+  assert.equal(packageJson.scripts.build, "rollup -c");
+  assert.equal(packageJson.dependencies["decky-frontend-lib"], undefined);
   assert.equal(pluginJson.api_version, 1);
 });
 
@@ -43,14 +45,14 @@ test("the V2 probe build delegates to the official Decky Rollup preset", () => {
   assert.match(source, /entryFileNames:\s*["']index\.js["']/);
 });
 
-test("shared TypeScript options do not pin Rollup to the legacy output directory", () => {
+test("shared TypeScript options do not pin Rollup to an output directory", () => {
   const tsconfig = JSON.parse(
     readFileSync(new URL("../tsconfig.json", import.meta.url), "utf8"),
   );
 
   assert.equal(tsconfig.compilerOptions.outDir, undefined);
   assert.equal(tsconfig.compilerOptions.suppressImplicitAnyIndexErrors, undefined);
-  assert.match(packageJson.scripts.build, /tsc --outDir dist/);
+  assert.match(packageJson.scripts.test, /tsc --noEmit/);
 });
 
 test("the V2 probe type-check is isolated from the legacy frontend", () => {
@@ -67,14 +69,14 @@ test("the V2 probe type-check is isolated from the legacy frontend", () => {
   assert.equal(probeTsconfig.compilerOptions.jsx, "react-jsx");
 });
 
-test("the legacy Rollup config remains valid after switching the package to ESM", () => {
+test("the production build uses the official Decky ESM Rollup preset", () => {
   const source = readFileSync(
     new URL("../rollup.config.js", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /readFileSync/);
-  assert.doesNotMatch(source, /import\s+\{\s*name\s*\}\s+from\s+["']\.\/plugin\.json["']/);
+  assert.match(source, /from ["']@decky\/rollup["']/);
+  assert.doesNotMatch(source, /format:\s*["']iife["']|decky-frontend-lib/);
 });
 
 test("shared frontend modules no longer depend on decky-frontend-lib", () => {
@@ -89,4 +91,16 @@ test("shared frontend modules no longer depend on decky-frontend-lib", () => {
     const source = readFileSync(new URL(modulePath, import.meta.url), "utf8");
     assert.doesNotMatch(source, /decky-frontend-lib|ServerAPI/);
   }
+});
+
+test("the full plugin entry uses the modern Decky UI shell", () => {
+  const source = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /from ["']@decky\/ui["']/);
+  assert.match(source, /from ["']@decky\/api["']/);
+  assert.match(source, /definePlugin\(\(\) =>/);
+  assert.doesNotMatch(source, /decky-frontend-lib|ServerAPI/);
 });

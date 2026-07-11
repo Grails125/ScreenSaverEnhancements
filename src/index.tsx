@@ -1,16 +1,14 @@
+import { definePlugin, useQuickAccessVisible } from "@decky/api";
 import {
-  definePlugin,
   ToggleField,
   SliderField,
   PanelSection,
   PanelSectionRow,
   ButtonItem,
   Navigation,
-  ServerAPI,
   staticClasses,
   Focusable,
-  useQuickAccessVisible,
-} from "decky-frontend-lib";
+} from "@decky/ui";
 import React, { FC } from "react";
 import { useState, useEffect, useRef } from 'react'
 import { GiNightSleep } from "react-icons/gi";
@@ -25,6 +23,7 @@ import {
 import { QUICK_ACCESS_MENU } from './ButtonIcons'
 import { copyTextToClipboard } from './clipboard'
 import { Diagnostics, parseDiagnostics } from './diagnostics'
+import { PluginServerApi, serverApi } from './deckyApi'
 import { StateNumber } from './state'
 import {
   DEFAULT_POWER_SETTINGS,
@@ -51,11 +50,6 @@ import {
   setPluginSetting,
   setPluginSettings,
 } from './settingsClient'
-
-// decky-frontend-lib 3.x renders children but omits them from ButtonItemProps.
-const ButtonItemWithChildren = ButtonItem as FC<
-  React.ComponentProps<typeof ButtonItem> & { children?: React.ReactNode }
->;
 
 let backendRunning = false;
 let showNotify     = false;
@@ -599,7 +593,7 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
 
         <PanelSection>
           <PanelSectionRow>
-            <ButtonItemWithChildren layout="below" onClick={onExport}>{exportStatus || t('Copy Diagnostic Report')}</ButtonItemWithChildren>
+            <ButtonItem layout="below" onClick={onExport}>{exportStatus || t('Copy Diagnostic Report')}</ButtonItem>
           </PanelSectionRow>
         </PanelSection>
       </>
@@ -608,7 +602,7 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
 );
 
 const Content: FC<{
-  serverApi: ServerAPI;
+  serverApi: PluginServerApi;
   overlayState: StateNumber;
   opacityState: StateNumber;
   deckyMusicState: StateNumber;
@@ -1083,7 +1077,7 @@ const Content: FC<{
         </PanelSectionRow>
         <PanelSectionRow>
           <div className="ScreenSaverEnhancements_PowerConfigCollapse" style={{ marginTop: '-2px', marginBottom: '4px' }}>
-            <ButtonItemWithChildren
+            <ButtonItem
               layout="below"
               bottomSeparator={powerConfigCollapsed ? "standard" : "none"}
               onClick={() => setPowerConfigCollapsed(!powerConfigCollapsed)}
@@ -1091,7 +1085,7 @@ const Content: FC<{
               {powerConfigCollapsed
                 ? <RiArrowDownSFill style={{ transform: 'translate(0, -13px)', fontSize: '1.5em' }} />
                 : <RiArrowUpSFill style={{ transform: 'translate(0, -12px)', fontSize: '1.5em' }} />}
-            </ButtonItemWithChildren>
+            </ButtonItem>
           </div>
         </PanelSectionRow>
         {!powerConfigCollapsed && <>
@@ -1248,7 +1242,7 @@ const Content: FC<{
 };
 
 
-export default definePlugin((serverApi: ServerAPI) => {
+export default definePlugin(() => {
   const overlayState = new StateNumber(0);
   const opacityState = new StateNumber(1);
   const deckyMusicState = new StateNumber(0);
@@ -1707,7 +1701,8 @@ export default definePlugin((serverApi: ServerAPI) => {
   );
 
   return {
-    title: <div className={staticClasses.Title}>Suspend Manager</div>,
+    name: "屏幕保护增强",
+    titleView: <div className={staticClasses.Title}>Suspend Manager</div>,
     content: <Content
       serverApi={serverApi}
       overlayState={overlayState}
