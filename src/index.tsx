@@ -23,6 +23,7 @@ import {
   BLACK_BACKGROUND_OPACITY,
 } from './blackOverlay'
 import { QUICK_ACCESS_MENU } from './ButtonIcons'
+import { copyTextToClipboard } from './clipboard'
 import { Diagnostics, parseDiagnostics } from './diagnostics'
 import { StateNumber } from './state'
 import {
@@ -802,11 +803,11 @@ const Content: VFC<{
 
   const exportDiagnostics = async () => {
     if (!diagnostics) return;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+    const copied = await copyTextToClipboard(JSON.stringify(diagnostics, null, 2));
+    if (copied) {
       setDiagnosticsExportStatus(t('Diagnostic Report Copied'));
-    } catch (error) {
-      console.warn("[ScreenSaverEnhancements] Could not copy diagnostics", error);
+    } else {
+      console.warn("[ScreenSaverEnhancements] No clipboard method succeeded");
       setDiagnosticsExportStatus(t('Diagnostic Export Failed'));
     }
     setTimeout(() => setDiagnosticsExportStatus(''), 2000);
