@@ -2,6 +2,7 @@
   "name": "屏幕保护增强",
   "author": "grails",
   "flags": [],
+  "api_version": 1,
   "publish": {
     "tags": [
       "dbus",

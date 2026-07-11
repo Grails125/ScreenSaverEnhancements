@@ -5,6 +5,9 @@ import test from "node:test";
 const packageJson = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 );
+const pluginJson = JSON.parse(
+  readFileSync(new URL("../plugin.json", import.meta.url), "utf8"),
+);
 
 test("pins the Decky 3.2.6 compatible modern frontend toolchain", () => {
   assert.equal(packageJson.type, "module");
@@ -12,6 +15,7 @@ test("pins the Decky 3.2.6 compatible modern frontend toolchain", () => {
   assert.equal(packageJson.devDependencies["@decky/ui"], "4.11.6");
   assert.equal(packageJson.devDependencies["@decky/rollup"], "1.0.2");
   assert.match(packageJson.scripts["build:v2-probe"], /rollup\.v2-probe\.config\.js/);
+  assert.equal(pluginJson.api_version, 1);
 });
 
 test("the V2 probe uses typed callable RPC and reversible modern APIs", () => {
