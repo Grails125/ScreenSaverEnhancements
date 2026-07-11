@@ -255,8 +255,6 @@ test("monitor switching uses dedicated notifications instead of restore-sleep co
     new URL("../src/index.tsx", import.meta.url),
     "utf8",
   );
-  const backend = readFileSync(new URL("../main.py", import.meta.url), "utf8");
-
   assert.equal(zh["Monitor Enabled Body"], "已开始检测禁用息屏列表并接管系统息屏");
   assert.equal(zh["Monitor Disabled Body"], "已停止检测禁用息屏列表，系统息屏已交还系统管理");
   assert.equal(zh.notify_tip, "监控开关或息屏状态变化时显示通知");
@@ -264,8 +262,9 @@ test("monitor switching uses dedicated notifications instead of restore-sleep co
   assert.equal(en["Monitor Disabled Body"], "Monitoring stopped; system sleep is managed by SteamOS again");
   assert.equal(en.notify_tip, "Show notifications when monitoring or sleep-inhibition status changes");
   assert.match(frontend, /notifyMonitorStatus\(checked\)/);
-  assert.match(frontend, /event\.reason !== "monitor_stopped"/);
-  assert.match(backend, /"type": "UnInhibit", "reason": "monitor_stopped"/);
+  assert.match(frontend, /const notifyStateChange = showStateNotification && running/);
+  assert.match(frontend, /await stopInhibit\(notifyStateChange, overrideState\)/);
+  assert.doesNotMatch(frontend, /event\.reason/);
 });
 
 test("diagnostics merge monitor state and process mode behind an accessible detail button", () => {
@@ -291,12 +290,11 @@ test("Stage 4.1 performs silent full-state sync before polling and after reconne
     "utf8",
   );
 
-  assert.match(source, /const synchronizeRuntimeState = async \(\) =>/);
+  assert.match(source, /const synchronizeRuntimeState = async \(showStateNotification = false\) =>/);
   assert.match(source, /serverApi\.getInhibitStatus\(\)/);
   assert.match(source, /getPowerSyncAction\(/);
   assert.match(source, /refreshDeckyMusicSetting\(false\)/);
   assert.match(source, /await synchronizeRuntimeState\(\);[\s\S]*void listenForPowerEvents\(\)/);
-  assert.match(source, /shouldStopInhibit\(backendWasInhibiting, deckyMusicInhibiting\)/);
   assert.match(source, /backendState\.SetState\(running \? 1 : 0\)/);
 });
 
@@ -310,6 +308,24 @@ test("Stage 4.2 pushes settings changes while critical power edges stay long-pol
   assert.match(source, /enqueuePowerOperation\(\(\) => refreshDeckyMusicSetting\(\)\)/);
   assert.match(source, /unsubscribeSettingsChanged\?\.\(\)/);
   assert.doesNotMatch(source, /event\.type === "SettingsChanged"/);
-  assert.match(source, /event\.type === "Inhibit"/);
-  assert.match(source, /event\.type === "UnInhibit"/);
+  assert.match(source, /waitForEvents\(\)/);
+  assert.match(source, /event\.type === "InhibitStateChanged"/);
+});
+
+test("Stage 4.3 treats critical events as coalesced full-state refresh signals", () => {
+  const source = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+  const apiSource = readFileSync(
+    new URL("../src/deckyApi.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(apiSource, /type PluginEvent = \{ type: "InhibitStateChanged" \}/);
+  assert.match(source, /events\.some\(\(event\) => event\.type === "InhibitStateChanged"\)/);
+  assert.match(source, /const synchronizeRuntimeState = async \(showStateNotification = false\) =>/);
+  assert.match(source, /if \(hasInhibitStateChange\) \{\s*await synchronizeRuntimeState\(true\);\s*\}/);
+  assert.doesNotMatch(source, /startInhibit\(event\.application\)/);
+  assert.doesNotMatch(source, /event\.reason/);
 });

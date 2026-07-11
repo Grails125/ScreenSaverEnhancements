@@ -139,16 +139,13 @@ async def emit_manual_apps_changed():
         decky.logger.warning(f"Could not emit settings_changed: {e}")
 
 
-def sync_inhibit_state(application=None):
+def sync_inhibit_state():
     global inhibit_active
     active = manual_inhibiting or len(BaseInterface.request_map) > 0
     if active == inhibit_active:
         return
     inhibit_active = active
-    event = {"type": "Inhibit" if active else "UnInhibit"}
-    if active and application:
-        event["application"] = application
-    queue_event(event)
+    queue_event({"type": "InhibitStateChanged"})
 
 class AppRequest:
     def __init__(self, sender, cookie, application, reason):
@@ -191,7 +188,7 @@ class BaseInterface(ServiceInterface):
         sender = ServiceInterface.last_msg.sender
         BaseInterface.cookie += 1
         BaseInterface.request_map[BaseInterface.cookie] = AppRequest(sender, BaseInterface.cookie, application, reason)
-        sync_inhibit_state(application)
+        sync_inhibit_state()
         return BaseInterface.cookie
 
     async def _un_inhibit_impl(self, cookie):
@@ -467,7 +464,7 @@ class Plugin:
         self.manual_running_app = running_app
         manual_inhibiting = manual_active
         if emit_events:
-            sync_inhibit_state(running_app)
+            sync_inhibit_state()
 
     async def _manual_watch_loop(self):
         decky.logger.info("Manual process watcher started")
@@ -619,7 +616,7 @@ class Plugin:
         await stop_dbus()
         clear_dbus_requests()
         clear_event_queue()
-        queue_event({"type": "UnInhibit", "reason": "monitor_stopped"})
+        queue_event({"type": "InhibitStateChanged"})
         record_diagnostic_event("backend_stopped")
         return True
 
@@ -684,14 +681,13 @@ class Plugin:
                     clear = True
 
         dbus_active = len(BaseInterface.request_map) > 0
-        if clear and not dbus_active:
-            inhibit_active = manual_active
-            res.append({"type": "UnInhibit"})
+        if clear:
+            active = manual_active or dbus_active
+            if active != inhibit_active:
+                inhibit_active = active
+                res.append({"type": "InhibitStateChanged"})
 
         if len(res) > 0:
-            # filter UnInhibit if anything is still active
-            if manual_active or dbus_active:
-                res = [e for e in res if e['type'] != 'UnInhibit']
             decky.logger.info(f"get_event returning events: {res}")
             return res
 

@@ -54,6 +54,11 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn('await decky.emit("settings_changed", "manual_apps")', self.main_source)
         self.assertNotIn('queue_event({"type": "SettingsChanged"', self.main_source)
 
+    def test_critical_events_are_payload_free_state_change_signals(self):
+        self.assertIn('queue_event({"type": "InhibitStateChanged"})', self.main_source)
+        self.assertNotIn('event = {"type": "Inhibit" if active else "UnInhibit"}', self.main_source)
+        self.assertNotIn('queue_event({"type": "UnInhibit", "reason": "monitor_stopped"})', self.main_source)
+
 
 if __name__ == "__main__":
     unittest.main()

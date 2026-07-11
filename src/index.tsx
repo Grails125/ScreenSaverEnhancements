@@ -35,7 +35,6 @@ import {
   PowerSettings,
   PowerOverrideState,
   shouldStartInhibit,
-  shouldStopInhibit,
   secondsToMinutes,
   shouldApplyPowerSettingsImmediately,
   shouldSyncSystemPowerSettings,
@@ -1709,7 +1708,7 @@ export default definePlugin(() => {
     }
   }
 
-  const synchronizeRuntimeState = async () => {
+  const synchronizeRuntimeState = async (showStateNotification = false) => {
     const [running, inhibitStatus, rawOverrideState, rawSystemSettings] = await Promise.all([
       serverApi.isRunning(),
       serverApi.getInhibitStatus(),
@@ -1718,6 +1717,9 @@ export default definePlugin(() => {
     ]);
     const overrideState = parsePowerOverrideState(rawOverrideState);
     const systemSettings = parseSteamPowerSettings(rawSystemSettings);
+    const activeApplication = inhibitStatus.manual_active_app
+      ?? inhibitStatus.dbus_requests[0]?.application;
+    const notifyStateChange = showStateNotification && running;
 
     backendState.SetState(running ? 1 : 0);
     backendInhibiting = running && inhibitStatus.is_inhibiting;
@@ -1732,29 +1734,18 @@ export default definePlugin(() => {
       const snapshot = systemSettings && shouldSyncSystemPowerSettings(systemSettings, true)
         ? systemSettings
         : configuredPowerSettings;
-      await activateInhibit(snapshot, undefined, false);
+      await activateInhibit(snapshot, activeApplication, notifyStateChange);
     } else if (action === "reapply") {
       await updateSetting(0, 0, 0, 0);
     } else if (action === "restore") {
-      await stopInhibit(false, overrideState);
+      await stopInhibit(notifyStateChange, overrideState);
     }
   }
 
   const processBackendEvents = async (events: PluginEvent[]) => {
-    for (const event of events) {
-      if (event.type === "Inhibit") {
-        const shouldStart = shouldStartInhibit(backendInhibiting, deckyMusicInhibiting);
-        backendInhibiting = true;
-        if (shouldStart) {
-          await startInhibit(event.application);
-        }
-      } else if (event.type === "UnInhibit") {
-        const backendWasInhibiting = backendInhibiting;
-        backendInhibiting = false;
-        if (shouldStopInhibit(backendWasInhibiting, deckyMusicInhibiting)) {
-          await stopInhibit(event.reason !== "monitor_stopped");
-        }
-      }
+    const hasInhibitStateChange = events.some((event) => event.type === "InhibitStateChanged");
+    if (hasInhibitStateChange) {
+      await synchronizeRuntimeState(true);
     }
   }
 

@@ -23,9 +23,7 @@ export type InhibitStatus = {
   dbus_active: boolean;
   is_inhibiting: boolean;
 };
-export type PluginEvent =
-  | { type: "Inhibit"; application?: string }
-  | { type: "UnInhibit"; reason?: "monitor_stopped" };
+export type PluginEvent = { type: "InhibitStateChanged" };
 export type SettingsChangedKey = "manual_apps";
 export type SettingsChangedListener = (key: SettingsChangedKey) => void;
 
