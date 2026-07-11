@@ -688,6 +688,14 @@ class Plugin:
     async def get_plugin_version(self):
         return decky.DECKY_PLUGIN_VERSION
 
+    async def get_installed_plugin_version(self):
+        try:
+            package_path = os.path.join(decky.DECKY_PLUGIN_DIR, "package.json")
+            return await asyncio.to_thread(update_checker.read_package_version, package_path)
+        except Exception as error:
+            decky.logger.warning(f"Could not read installed plugin version: {error}")
+            return ""
+
     async def check_update(self):
         result = {
             "has_update": False,

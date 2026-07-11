@@ -59,6 +59,7 @@ export interface PluginBackendClient {
   getInhibitStatus(): Promise<InhibitStatus>;
   getDiagnostics(): Promise<unknown>;
   getPluginVersion(): Promise<string>;
+  getInstalledPluginVersion(): Promise<string>;
   checkUpdate(): Promise<UpdateCheckResult>;
   installPluginUpdate(request: UpdateInstallRequest): Promise<void>;
   restartDecky(): Promise<void>;
@@ -101,6 +102,7 @@ export const createPluginServerApi = (
   const getInhibitStatus = callableFactory<[], InhibitStatus>("get_inhibit_status");
   const getDiagnostics = callableFactory<[], unknown>("get_diagnostics");
   const getPluginVersion = callableFactory<[], string>("get_plugin_version");
+  const getInstalledPluginVersion = callableFactory<[], string>("get_installed_plugin_version");
   const checkUpdate = callableFactory<[], UpdateCheckResult>("check_update");
   const installPlugin = loaderCallableFactory<
     [artifact: string, name: string, version: string, hash: string, installType: number],
@@ -123,6 +125,7 @@ export const createPluginServerApi = (
     getInhibitStatus,
     getDiagnostics,
     getPluginVersion,
+    getInstalledPluginVersion,
     checkUpdate,
     installPluginUpdate: ({ downloadUrl, version, sha256 }: UpdateInstallRequest) =>
       installPlugin(downloadUrl, "screensaver-enhancements", version, sha256, 2),

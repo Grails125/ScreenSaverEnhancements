@@ -65,6 +65,7 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
   });
   await serverApi.getPluginVersion();
   await serverApi.checkUpdate();
+  await serverApi.getInstalledPluginVersion();
   await serverApi.installPluginUpdate({
     downloadUrl: "https://github.com/Grails125/ScreenSaverEnhancements/releases/download/v1.5.0/ScreenSaverEnhancements.zip",
     version: "1.5.0",
@@ -81,6 +82,7 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
     },
     { route: "get_plugin_version", args: [] },
     { route: "check_update", args: [] },
+    { route: "get_installed_plugin_version", args: [] },
   ]);
   assert.deepEqual(loaderCalls, [
     {

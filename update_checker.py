@@ -31,6 +31,14 @@ def normalize_version(value):
     return ".".join(str(int(part)) for part in match.groups())
 
 
+def read_package_version(package_path):
+    with open(package_path, "r", encoding="utf-8") as package_file:
+        package = json.load(package_file)
+    if not isinstance(package, dict):
+        raise ValueError("invalid package metadata")
+    return normalize_version(package.get("version"))
+
+
 def is_newer_version(latest, current):
     latest_parts = tuple(int(part) for part in normalize_version(latest).split("."))
     current_parts = tuple(int(part) for part in normalize_version(current).split("."))

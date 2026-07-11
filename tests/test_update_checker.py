@@ -1,9 +1,19 @@
 import unittest
+import json
+import tempfile
+from pathlib import Path
 
 import update_checker
 
 
 class UpdateCheckerTests(unittest.TestCase):
+    def test_reads_and_normalizes_the_version_written_by_decky_installer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package_path = Path(directory) / "package.json"
+            package_path.write_text(json.dumps({"version": "v2.1.0"}), encoding="utf-8")
+
+            self.assertEqual(update_checker.read_package_version(package_path), "2.1.0")
+
     def test_only_reports_strictly_newer_semantic_versions(self):
         self.assertTrue(update_checker.is_newer_version("v1.5.0", "1.4.0"))
         self.assertFalse(update_checker.is_newer_version("1.4.0", "1.4.0"))

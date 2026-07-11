@@ -16,7 +16,14 @@ test("update checking uses the V2 typed RPC contract", () => {
   assert.match(apiSource, /restartDecky\(\): Promise<void>/);
   assert.match(pluginSource, /serverApi\.installPluginUpdate\(/);
   assert.match(pluginSource, /serverApi\.restartDecky\(\)/);
+  assert.match(pluginSource, /serverApi\.getInstalledPluginVersion\(\)/);
   assert.doesNotMatch(pluginSource, /callPluginMethod/);
+});
+
+test("installation restarts Decky after the target package version reaches disk", () => {
+  assert.match(pluginSource, /installedVersion === latestVersion/);
+  assert.match(pluginSource, /UPDATE_INSTALL_POLL_INTERVAL_MS/);
+  assert.match(pluginSource, /await serverApi\.restartDecky\(\)/);
 });
 
 test("update checking has localized status and error copy", () => {

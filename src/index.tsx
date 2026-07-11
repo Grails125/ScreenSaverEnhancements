@@ -65,6 +65,8 @@ const POWER_SETTING_KEYS = {
 const POWER_CONFIG_COLLAPSED_KEY = "screensaver-enhancements-power-config-collapsed"
 const UPDATE_RESTART_TARGET_KEY = "screensaver-enhancements-update-restart-target"
 const UPDATE_RESTART_MAX_AGE_MS = 30 * 60 * 1000
+const UPDATE_INSTALL_POLL_INTERVAL_MS = 1000
+const UPDATE_INSTALL_MAX_POLLS = 120
 
 const renderBlackBackgroundTip = () => React.createElement(
   'span',
@@ -976,6 +978,16 @@ const Content: FC<{
         version: latestVersion,
         sha256: updateSha256,
       });
+      for (let attempt = 0; attempt < UPDATE_INSTALL_MAX_POLLS; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, UPDATE_INSTALL_POLL_INTERVAL_MS));
+        const installedVersion = await serverApi.getInstalledPluginVersion();
+        if (installedVersion === latestVersion) {
+          localStorage.removeItem(UPDATE_RESTART_TARGET_KEY);
+          await serverApi.restartDecky();
+          return;
+        }
+      }
+      throw new Error("Decky installer did not finish before the timeout");
     } catch (error) {
       localStorage.removeItem(UPDATE_RESTART_TARGET_KEY);
       console.error('[ScreenSaverEnhancements] Update installation failed', error);
