@@ -46,7 +46,6 @@
     "Battery Suspend Timeout": "Battery Suspend Timeout",
     "AC Suspend Timeout": "AC Suspend Timeout",
     "Custom Power Configuration": "Custom Power Configuration",
-    "Custom Power Configuration Description": "Override Steam's power timeouts. Your current Steam settings are restored when this is turned off.",
     "Sleep Warning": "Sleep Warning",
     "Sleep Warning Description": "Play a five-second warning before sleep. Requires Custom Power Configuration; controller input or touching the screen cancels and restarts the countdown.",
     "Zero Disables Timeout": "0 disables this timeout.",

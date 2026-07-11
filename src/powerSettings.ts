@@ -4,7 +4,6 @@ export type PowerSettings = {
   batterySuspend: number;
   acSuspend: number;
   forceSuspend: boolean;
-  customPowerSettings: boolean;
 };
 
 export const DEFAULT_POWER_SETTINGS: PowerSettings = {
@@ -13,7 +12,6 @@ export const DEFAULT_POWER_SETTINGS: PowerSettings = {
   batterySuspend: 600,
   acSuspend: 600,
   forceSuspend: false,
-  customPowerSettings: false,
 };
 
 export const normalizePowerTimeout = (value: unknown, fallback: number): number => {
@@ -28,7 +26,6 @@ export const normalizePowerSettings = (value: Record<string, unknown>): PowerSet
   batterySuspend: normalizePowerTimeout(value.batterySuspend, DEFAULT_POWER_SETTINGS.batterySuspend),
   acSuspend: normalizePowerTimeout(value.acSuspend, DEFAULT_POWER_SETTINGS.acSuspend),
   forceSuspend: value.forceSuspend === true || value.forceSuspend === "true",
-  customPowerSettings: value.customPowerSettings === true || value.customPowerSettings === "true",
 });
 
 export const minutesToSeconds = (minutes: unknown) => normalizePowerTimeout(
@@ -39,11 +36,6 @@ export const minutesToSeconds = (minutes: unknown) => normalizePowerTimeout(
 export const secondsToMinutes = (seconds: unknown) => Math.round(
   normalizePowerTimeout(seconds, 0) / 60,
 );
-
-export const selectSystemPowerSettingsSnapshot = (
-  currentSettings: PowerSettings | null,
-  savedProfile: PowerSettings,
-) => currentSettings ?? savedProfile;
 
 export const shouldApplyPowerSettingsImmediately = (
   backendInhibiting: boolean,

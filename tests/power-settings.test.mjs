@@ -18,7 +18,6 @@ const {
   normalizePowerSettings,
   minutesToSeconds,
   secondsToMinutes,
-  selectSystemPowerSettingsSnapshot,
   shouldStartInhibit,
   shouldApplyPowerSettingsImmediately,
   getForceSuspendWarningDelayMs,
@@ -32,7 +31,7 @@ test("normalizes power timeouts to whole seconds within the supported range", ()
   assert.equal(normalizePowerTimeout("invalid", 300), 300);
 });
 
-test("normalizes every power profile field and preserves the force-suspend choice", () => {
+test("normalizes power profile values without coupling them to panel visibility", () => {
   assert.deepEqual(
     JSON.parse(JSON.stringify(normalizePowerSettings({
       batteryDim: 60,
@@ -40,7 +39,6 @@ test("normalizes every power profile field and preserves the force-suspend choic
       batterySuspend: 300,
       acSuspend: 600,
       forceSuspend: true,
-      customPowerSettings: false,
     }))),
     {
       batteryDim: 60,
@@ -48,26 +46,17 @@ test("normalizes every power profile field and preserves the force-suspend choic
       batterySuspend: 300,
       acSuspend: 600,
       forceSuspend: true,
-      customPowerSettings: false,
     },
   );
 });
 
-test("defaults to the system power configuration and converts displayed minutes", () => {
+test("uses persisted power values and converts displayed minutes", () => {
   const settings = JSON.parse(JSON.stringify(normalizePowerSettings({})));
-  assert.equal(settings.customPowerSettings, false);
+  assert.deepEqual(Object.keys(settings).sort(), ["acDim", "acSuspend", "batteryDim", "batterySuspend", "forceSuspend"]);
   assert.equal(minutesToSeconds(1), 60);
   assert.equal(minutesToSeconds(60), 3600);
   assert.equal(secondsToMinutes(60), 1);
   assert.equal(secondsToMinutes(300), 5);
-});
-
-test("uses the saved profile only when Steam cannot expose the current power settings", () => {
-  const savedProfile = normalizePowerSettings({ batterySuspend: 360, acSuspend: 600 });
-  const liveProfile = normalizePowerSettings({ batterySuspend: 60, acSuspend: 120 });
-
-  assert.equal(selectSystemPowerSettingsSnapshot(liveProfile, savedProfile).batterySuspend, 60);
-  assert.equal(selectSystemPowerSettingsSnapshot(null, savedProfile).batterySuspend, 360);
 });
 
 test("only starts a new inhibit session when no source is already active", () => {

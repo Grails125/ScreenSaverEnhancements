@@ -4,6 +4,7 @@ import {
   SliderField,
   PanelSection,
   PanelSectionRow,
+  ButtonItem,
   Navigation,
   ServerAPI,
   findModuleChild,
@@ -14,6 +15,7 @@ import {
 import React, { VFC } from "react";
 import { useState, useEffect, useRef } from 'react'
 import { GiNightSleep } from "react-icons/gi";
+import { RiArrowDownSFill, RiArrowUpSFill } from "react-icons/ri";
 import i18n from './i18n'
 import {
   BlackOverlay,
@@ -28,7 +30,6 @@ import {
   minutesToSeconds,
   normalizePowerSettings,
   PowerSettings,
-  selectSystemPowerSettingsSnapshot,
   shouldStartInhibit,
   secondsToMinutes,
   shouldApplyPowerSettingsImmediately,
@@ -54,9 +55,8 @@ const POWER_SETTING_KEYS = {
   batterySuspend: "battery_suspend_timeout",
   acSuspend: "ac_suspend_timeout",
   forceSuspend: "force_suspend_enabled",
-  customPowerSettings: "custom_power_settings_enabled",
 } as const
-const SYSTEM_POWER_SETTINGS_SNAPSHOT = "system_power_settings_snapshot"
+const POWER_CONFIG_COLLAPSED_KEY = "screensaver-enhancements-power-config-collapsed"
 
 const renderBlackBackgroundTip = () => React.createElement(
   'span',
@@ -501,6 +501,14 @@ const Content: VFC<{
   const [closeOnAnyKeyLoaded, setCloseOnAnyKeyLoaded] = useState<boolean>(false);
   const [powerSettings, setPowerSettings] = useState<PowerSettings>(DEFAULT_POWER_SETTINGS);
   const [deckyMusicActive, setDeckyMusicActive] = useState<boolean>(deckyMusicState.GetState() === 1);
+  const [powerConfigCollapsed, setPowerConfigCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(POWER_CONFIG_COLLAPSED_KEY);
+      return saved !== null ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
 
   const startBackend = async () => {
     return await serverApi.callPluginMethod<any, any>("start_backend", {});
@@ -650,16 +658,15 @@ const Content: VFC<{
     loadBlackBackgroundSettings();
 
     const loadPowerSettings = async () => {
-      const [batteryDim, acDim, batterySuspend, acSuspend, forceSuspend, customPowerSettings] = await Promise.all([
+      const [batteryDim, acDim, batterySuspend, acSuspend, forceSuspend] = await Promise.all([
         getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batteryDim, DEFAULT_POWER_SETTINGS.batteryDim),
         getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acDim, DEFAULT_POWER_SETTINGS.acDim),
         getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batterySuspend, DEFAULT_POWER_SETTINGS.batterySuspend),
         getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acSuspend, DEFAULT_POWER_SETTINGS.acSuspend),
         getPluginBooleanSetting(serverApi, POWER_SETTING_KEYS.forceSuspend, DEFAULT_POWER_SETTINGS.forceSuspend),
-        getPluginBooleanSetting(serverApi, POWER_SETTING_KEYS.customPowerSettings, DEFAULT_POWER_SETTINGS.customPowerSettings),
       ]);
       if (!isCurrentRequest(token)) return;
-      const next = normalizePowerSettings({ batteryDim, acDim, batterySuspend, acSuspend, forceSuspend, customPowerSettings });
+      const next = normalizePowerSettings({ batteryDim, acDim, batterySuspend, acSuspend, forceSuspend });
       setPowerSettings(next);
       onPowerSettingsLoaded(next);
     };
@@ -685,6 +692,14 @@ const Content: VFC<{
       deckyMusicState.offStateChanged(onDeckyMusicChanged);
     };
   }, [overlayState, opacityState, deckyMusicState]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(POWER_CONFIG_COLLAPSED_KEY, JSON.stringify(powerConfigCollapsed));
+    } catch (error) {
+      console.warn("[ScreenSaverEnhancements] Could not save power configuration display state", error);
+    }
+  }, [powerConfigCollapsed]);
 
   const addApp = async (appName: string) => {
     const newList = normalizeManualApps([...manualApps, appName]);
@@ -784,14 +799,30 @@ const Content: VFC<{
 
       <PanelSection title={t('Power Profiles')}>
         <PanelSectionRow>
-          <ToggleField
-            label={t('Custom Power Configuration')}
-            description={t('Custom Power Configuration Description')}
-            onChange={(checked) => void updatePowerSetting('customPowerSettings', checked)}
-            checked={powerSettings.customPowerSettings}
-          />
+          <div style={{
+            fontSize: '14px',
+            fontWeight: 'bold',
+            marginTop: '8px',
+            marginBottom: '6px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+            paddingBottom: '3px',
+            color: 'white',
+          }}>
+            {t('Custom Power Configuration')}
+          </div>
         </PanelSectionRow>
-        {powerSettings.customPowerSettings && <>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            bottomSeparator={powerConfigCollapsed ? "standard" : "none"}
+            onClick={() => setPowerConfigCollapsed(!powerConfigCollapsed)}
+          >
+            {powerConfigCollapsed
+              ? <RiArrowDownSFill style={{ fontSize: '1.5em' }} />
+              : <RiArrowUpSFill style={{ fontSize: '1.5em' }} />}
+          </ButtonItem>
+        </PanelSectionRow>
+        {!powerConfigCollapsed && <>
           <PanelSectionRow>
             <SliderField
               value={secondsToMinutes(powerSettings.batteryDim)}
@@ -939,7 +970,6 @@ export default definePlugin((serverApi: ServerAPI) => {
   let input_changed:boolean = true;
   let configuredPowerSettings: PowerSettings = { ...DEFAULT_POWER_SETTINGS };
   let capturedPowerSettings: PowerSettings | null = null;
-  let systemPowerSettingsSnapshot: PowerSettings | null = null;
   let backendInhibiting = false;
   let deckyMusicInhibiting = false;
 
@@ -956,8 +986,7 @@ export default definePlugin((serverApi: ServerAPI) => {
     if (input_changed) return;
     input_changed = true;
     clearSuspendTimeout();
-    if (configuredPowerSettings.customPowerSettings &&
-        shouldApplyPowerSettingsImmediately(backendInhibiting, deckyMusicInhibiting)) {
+    if (shouldApplyPowerSettingsImmediately(backendInhibiting, deckyMusicInhibiting)) {
       scheduleForceSuspend();
     }
   }
@@ -1094,48 +1123,9 @@ export default definePlugin((serverApi: ServerAPI) => {
     await updateSuspendSetting(_battery_suspend+_ac_suspend);
   }
 
-  const getSystemPowerSettingsSnapshot = async (): Promise<PowerSettings | null> => {
-    if (systemPowerSettingsSnapshot) return systemPowerSettingsSnapshot;
-    const saved = await getPluginSetting(serverApi, SYSTEM_POWER_SETTINGS_SNAPSHOT, null);
-    if (!saved || typeof saved !== "object") return null;
-
-    systemPowerSettingsSnapshot = normalizePowerSettings(saved as Record<string, unknown>);
-    return systemPowerSettingsSnapshot;
-  }
-
-  const saveSystemPowerSettingsSnapshot = async (settings: PowerSettings) => {
-    const snapshot = { ...settings, customPowerSettings: false };
-    const response = await setPluginSetting(serverApi, SYSTEM_POWER_SETTINGS_SNAPSHOT, snapshot);
-    if (!response.success) throw new Error("could not save system power settings snapshot");
-    systemPowerSettingsSnapshot = snapshot;
-  }
-
-  const captureSystemPowerSettings = async () => {
-    const currentSettings = selectSystemPowerSettingsSnapshot(
-      capturedPowerSettings ?? await readCurrentPowerSettings(),
-      configuredPowerSettings,
-    );
-    await saveSystemPowerSettingsSnapshot(currentSettings);
-  }
-
   const applyConfiguredPowerSettings = async (settings: PowerSettings) => {
     const isInhibiting = !shouldApplyPowerSettingsImmediately(backendInhibiting, deckyMusicInhibiting);
-    const customModeChanged = settings.customPowerSettings !== configuredPowerSettings.customPowerSettings;
-
-    if (settings.customPowerSettings && customModeChanged) {
-      await captureSystemPowerSettings();
-    }
-
-    if (!settings.customPowerSettings && customModeChanged && !isInhibiting) {
-      const systemSettings = await getSystemPowerSettingsSnapshot();
-      if (!systemSettings) throw new Error("could not restore system power settings");
-      await updateSetting(
-        systemSettings.batteryDim,
-        systemSettings.acDim,
-        systemSettings.batterySuspend,
-        systemSettings.acSuspend,
-      );
-    } else if (settings.customPowerSettings && !isInhibiting) {
+    if (!isInhibiting) {
       await updateSetting(
         settings.batteryDim,
         settings.acDim,
@@ -1144,9 +1134,7 @@ export default definePlugin((serverApi: ServerAPI) => {
       );
     }
     setConfiguredPowerSettings(settings);
-    if (!settings.customPowerSettings) {
-      clearSuspendTimeout();
-    } else if (!isInhibiting) {
+    if (!isInhibiting) {
       scheduleForceSuspend();
     }
   }
@@ -1183,7 +1171,6 @@ export default definePlugin((serverApi: ServerAPI) => {
         batterySuspend,
         acSuspend,
         forceSuspend: configuredPowerSettings.forceSuspend,
-        customPowerSettings: false,
       });
     } catch (error) {
       console.warn("[ScreenSaverEnhancements] Could not read current power settings", error);
@@ -1298,9 +1285,7 @@ export default definePlugin((serverApi: ServerAPI) => {
 
   const stopInhibit = async () => {
     notify(t("ScreenSaver"), t("UnInhibit"))
-    const restoreSettings = configuredPowerSettings.customPowerSettings
-      ? configuredPowerSettings
-      : capturedPowerSettings ?? await getSystemPowerSettingsSnapshot() ?? configuredPowerSettings;
+    const restoreSettings = configuredPowerSettings;
     await updateSetting(
       restoreSettings.batteryDim,
       restoreSettings.acDim,
@@ -1313,7 +1298,7 @@ export default definePlugin((serverApi: ServerAPI) => {
 
   function scheduleForceSuspend() {
     clearSuspendTimeout()
-    if (!configuredPowerSettings.customPowerSettings || !configuredPowerSettings.forceSuspend) return;
+    if (!configuredPowerSettings.forceSuspend) return;
     const warningDelay = getForceSuspendWarningDelayMs(configuredPowerSettings);
     if (warningDelay === null) return;
 

@@ -46,7 +46,6 @@
     "Battery Suspend Timeout": "电池休眠超时",
     "AC Suspend Timeout": "接电休眠超时",
     "Custom Power Configuration": "自定义电源配置",
-    "Custom Power Configuration Description": "覆盖 Steam 的电源超时设置；关闭后会恢复开启前的系统设置。",
     "Sleep Warning": "休眠前通知",
     "Sleep Warning Description": "休眠前播放五秒提示音；需开启自定义电源配置，手柄输入或触摸屏幕会取消并重新开始倒计时。",
     "Zero Disables Timeout": "设为 0 可关闭该超时。",
