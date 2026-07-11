@@ -23,6 +23,7 @@ import {
   BLACK_BACKGROUND_OPACITY,
 } from './blackOverlay'
 import { QUICK_ACCESS_MENU } from './ButtonIcons'
+import { Diagnostics, parseDiagnostics } from './diagnostics'
 import { StateNumber } from './state'
 import {
   DEFAULT_POWER_SETTINGS,
@@ -477,6 +478,128 @@ const InhibitAppsPage: VFC<InhibitAppsPageProps> = ({
   </PanelLayout>
 );
 
+const formatDiagnosticTime = (timestamp: number | null) => timestamp
+  ? new Date(timestamp * 1000).toLocaleString()
+  : t('Not Available');
+
+const formatProcessMonitorMode = (mode: string) => {
+  switch (mode) {
+    case 'proc_connector': return t('proc_connector');
+    case 'fallback_scan': return t('fallback_scan');
+    case 'stopped': return t('stopped');
+    case 'not_started': return t('not_started');
+    default: return t('unknown');
+  }
+};
+
+const DiagnosticRow: VFC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
+  <PanelSectionRow>
+    <div style={PANEL_STYLES.processItem}>
+      <span style={PANEL_STYLES.sectionHint}>{label}</span>
+      <span style={{ color: '#f1f1f1', fontSize: '0.82em', textAlign: 'right' }}>{value}</span>
+    </div>
+  </PanelSectionRow>
+);
+
+type DiagnosticsPageProps = {
+  diagnostics: Diagnostics | null;
+  loading: boolean;
+  exportStatus: string;
+  onBack: () => void;
+  onRefresh: () => void;
+  onExport: () => void;
+};
+
+const DiagnosticsPage: VFC<DiagnosticsPageProps> = ({
+  diagnostics,
+  loading,
+  exportStatus,
+  onBack,
+  onRefresh,
+  onExport,
+}) => (
+  <PanelLayout>
+    <PanelSection>
+      <PanelSectionRow>
+        <div style={PANEL_STYLES.pageHeader}>
+          <div style={PANEL_STYLES.pageHeaderMain}>
+            <Focusable style={PANEL_STYLES.backButton} onClick={onBack}>
+              ←
+            </Focusable>
+            <div style={PANEL_STYLES.menuText}>
+              <span style={PANEL_STYLES.menuTitle}>{t('Diagnostics')}</span>
+              <span style={PANEL_STYLES.menuDescription}>{t('diagnostics_tip')}</span>
+            </div>
+          </div>
+          <Focusable style={PANEL_STYLES.panelAction} onClick={onRefresh}>
+            {loading ? '...' : '↻'}
+          </Focusable>
+        </div>
+      </PanelSectionRow>
+    </PanelSection>
+
+    {!diagnostics ? (
+      <PanelSection>
+        <PanelSectionRow>
+          <div style={PANEL_STYLES.emptyState}>{loading ? t('Loading') : t('Diagnostics Unavailable')}</div>
+        </PanelSectionRow>
+      </PanelSection>
+    ) : (
+      <>
+        <PanelSection title={t('Runtime Status')}>
+          <DiagnosticRow label={t('Backend Status')} value={diagnostics.backendRunning ? t('Running') : t('Stopped')} />
+          <DiagnosticRow label={t('Backend Uptime')} value={`${diagnostics.uptimeSeconds}${t('Seconds')}`} />
+          <DiagnosticRow label={t('Process Monitor Mode')} value={formatProcessMonitorMode(diagnostics.processMonitorMode)} />
+          <DiagnosticRow label={t('Process Scan Count')} value={diagnostics.processScanCount} />
+          <DiagnosticRow label={t('Last Process Scan')} value={formatDiagnosticTime(diagnostics.lastProcessScanAt)} />
+          <DiagnosticRow label={t('Last Process Event')} value={formatDiagnosticTime(diagnostics.lastProcessEventAt)} />
+          <DiagnosticRow label={t('Manual Rule Count')} value={diagnostics.manualRuleCount} />
+          <DiagnosticRow label={t('Active Application')} value={diagnostics.manualActiveApp || t('None')} />
+          <DiagnosticRow label={t('D-Bus Request Count')} value={diagnostics.dbusRequestCount} />
+          <DiagnosticRow label={t('Power Recovery Active')} value={diagnostics.powerOverrideActive ? t('Yes') : t('No')} />
+        </PanelSection>
+
+        {diagnostics.systemPowerSettings && (
+          <PanelSection title={t('System Power Settings')}>
+            <DiagnosticRow label={t('Battery Dim Timeout')} value={`${diagnostics.systemPowerSettings.batteryDim}${t('Seconds')}`} />
+            <DiagnosticRow label={t('AC Dim Timeout')} value={`${diagnostics.systemPowerSettings.acDim}${t('Seconds')}`} />
+            <DiagnosticRow label={t('Battery Suspend Timeout')} value={`${diagnostics.systemPowerSettings.batterySuspend}${t('Seconds')}`} />
+            <DiagnosticRow label={t('AC Suspend Timeout')} value={`${diagnostics.systemPowerSettings.acSuspend}${t('Seconds')}`} />
+          </PanelSection>
+        )}
+
+        <PanelSection title={t('Event Channel')}>
+          <DiagnosticRow label={t('Long Poll Requests')} value={diagnostics.longPollRequests} />
+          <DiagnosticRow label={t('Long Poll Timeouts')} value={diagnostics.longPollTimeouts} />
+          <DiagnosticRow label={t('Queued Events')} value={diagnostics.eventQueueSize} />
+        </PanelSection>
+
+        <PanelSection title={t('Recent Plugin Events')}>
+          {diagnostics.recentEvents.length === 0 ? (
+            <PanelSectionRow><div style={PANEL_STYLES.emptyState}>{t('No Recent Events')}</div></PanelSectionRow>
+          ) : diagnostics.recentEvents.slice().reverse().map((event, index) => (
+            <PanelSectionRow key={`${event.timestamp}-${event.type}-${index}`}>
+              <div style={PANEL_STYLES.processItem}>
+                <div style={PANEL_STYLES.menuText}>
+                  <span style={PANEL_STYLES.processName}>{event.type}</span>
+                  <span style={PANEL_STYLES.sectionHint}>{event.detail || formatDiagnosticTime(event.timestamp)}</span>
+                </div>
+                <span style={PANEL_STYLES.sectionHint}>{new Date(event.timestamp * 1000).toLocaleTimeString()}</span>
+              </div>
+            </PanelSectionRow>
+          ))}
+        </PanelSection>
+
+        <PanelSection>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={onExport}>{exportStatus || t('Copy Diagnostic Report')}</ButtonItem>
+          </PanelSectionRow>
+        </PanelSection>
+      </>
+    )}
+  </PanelLayout>
+);
+
 const Content: VFC<{
   serverApi: ServerAPI;
   overlayState: StateNumber;
@@ -542,6 +665,10 @@ const Content: VFC<{
   const [runningProcesses, setRunningProcesses] = useState<RunningProcess[]>([]);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [showAppMenu, setShowAppMenu] = useState<boolean>(false);
+  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
+  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState<boolean>(false);
+  const [diagnosticsExportStatus, setDiagnosticsExportStatus] = useState<string>('');
   const quickAccessVisible = useQuickAccessVisible();
   const quickAccessWasVisible = useRef(quickAccessVisible);
   const panelVisible = useRef(true);
@@ -658,6 +785,31 @@ const Content: VFC<{
       fetchRunningProcesses(),
       fetchInhibitStatus(),
     ]);
+  }
+
+  const refreshDiagnostics = async () => {
+    setDiagnosticsLoading(true);
+    try {
+      const response = await serverApi.callPluginMethod<any, unknown>("get_diagnostics", {});
+      setDiagnostics(response.success ? parseDiagnostics(response.result) : null);
+    } catch (error) {
+      console.warn("[ScreenSaverEnhancements] Could not load diagnostics", error);
+      setDiagnostics(null);
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  }
+
+  const exportDiagnostics = async () => {
+    if (!diagnostics) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+      setDiagnosticsExportStatus(t('Diagnostic Report Copied'));
+    } catch (error) {
+      console.warn("[ScreenSaverEnhancements] Could not copy diagnostics", error);
+      setDiagnosticsExportStatus(t('Diagnostic Export Failed'));
+    }
+    setTimeout(() => setDiagnosticsExportStatus(''), 2000);
   }
 
   const updatePowerSetting = async (
@@ -817,6 +969,11 @@ const Content: VFC<{
     refreshAppMenuData();
   }
 
+  const openDiagnostics = () => {
+    setShowDiagnostics(true);
+    void refreshDiagnostics();
+  }
+
   const inhibitAppCount = manualApps.length;
 
   if (showAppMenu) {
@@ -831,6 +988,19 @@ const Content: VFC<{
         onRefresh={refreshAppMenuData}
         onAddApp={addApp}
         onRemoveApp={removeApp}
+      />
+    );
+  }
+
+  if (showDiagnostics) {
+    return (
+      <DiagnosticsPage
+        diagnostics={diagnostics}
+        loading={diagnosticsLoading}
+        exportStatus={diagnosticsExportStatus}
+        onBack={() => setShowDiagnostics(false)}
+        onRefresh={refreshDiagnostics}
+        onExport={exportDiagnostics}
       />
     );
   }
@@ -1050,6 +1220,21 @@ const Content: VFC<{
               )}
               <span style={PANEL_STYLES.chevron}>›</span>
             </div>
+          </Focusable>
+        </PanelSectionRow>
+      </PanelSection>
+
+      <PanelSection title={t('Diagnostics Section')}>
+        <PanelSectionRow>
+          <Focusable style={PANEL_STYLES.menuItem} onClick={openDiagnostics}>
+            <div style={PANEL_STYLES.menuMain}>
+              <span style={PANEL_STYLES.menuIcon}>i</span>
+              <div style={PANEL_STYLES.menuText}>
+                <span style={PANEL_STYLES.menuTitle}>{t('Diagnostics')}</span>
+                <span style={PANEL_STYLES.menuDescription}>{t('diagnostics_tip')}</span>
+              </div>
+            </div>
+            <span style={PANEL_STYLES.chevron}>›</span>
           </Focusable>
         </PanelSectionRow>
       </PanelSection>

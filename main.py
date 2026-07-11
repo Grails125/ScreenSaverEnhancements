@@ -5,6 +5,7 @@ from pathlib import Path
 import queue
 import re
 import time
+from collections import deque
 
 
 def load_local_module(module_name, file_name):
@@ -105,6 +106,7 @@ if settings.getSetting("manual_apps", None) is None:
     settings.setSetting("manual_apps", ["chrome", "mpv", "wiliwili"])
 event_queue = queue.Queue()
 event_signal = asyncio.Event()
+recent_diagnostic_events = deque(maxlen=40)
 manual_inhibiting = False
 inhibit_active = False
 decky_plugin.logger.info(f"Settings directory: {settings_dir}")
@@ -115,9 +117,17 @@ from dbus_next.service import ServiceInterface, method, dbus_property, signal
 bus = None
 
 
+def record_diagnostic_event(event_type, detail=None):
+    entry = {"timestamp": int(time.time()), "type": str(event_type)[:64]}
+    if detail:
+        entry["detail"] = str(detail)[:256]
+    recent_diagnostic_events.append(entry)
+
+
 def queue_event(event):
     event_queue.put(event)
     event_signal.set()
+    record_diagnostic_event(event.get("type", "event"), event.get("application") or event.get("key"))
 
 
 def sync_inhibit_state(application=None):
@@ -367,6 +377,12 @@ class Plugin:
             self.last_process_scan_at = None
         if not hasattr(self, 'last_process_event_at'):
             self.last_process_event_at = None
+        if not hasattr(self, 'runtime_started_at'):
+            self.runtime_started_at = time.monotonic()
+        if not hasattr(self, 'long_poll_requests'):
+            self.long_poll_requests = 0
+        if not hasattr(self, 'long_poll_timeouts'):
+            self.long_poll_timeouts = 0
 
     async def _get_all_process_lines(self):
         self.process_scan_count += 1
@@ -487,11 +503,13 @@ class Plugin:
                 source.open()
                 self.process_event_source = source
                 self.process_monitor_mode = "proc_connector"
+                record_diagnostic_event("process_monitor", "proc_connector")
                 self.process_event_task = asyncio.create_task(Plugin._process_event_loop(self))
             except Exception as e:
                 source.close()
                 self.process_event_source = None
                 self.process_monitor_mode = "fallback_scan"
+                record_diagnostic_event("process_monitor", "fallback_scan")
                 decky_plugin.logger.warning(f"Process events unavailable; using low-frequency scan: {e}")
             self.manual_watch_task = asyncio.create_task(Plugin._manual_watch_loop(self))
         except Exception as e:
@@ -544,6 +562,7 @@ class Plugin:
             if bus is None:
                 raise RuntimeError("Could not register D-Bus inhibit services")
         Plugin._start_manual_watch(self)
+        record_diagnostic_event("backend_started")
         return True
 
     async def stop_backend(self):
@@ -553,6 +572,7 @@ class Plugin:
         clear_dbus_requests()
         clear_event_queue()
         queue_event({"type": "UnInhibit"})
+        record_diagnostic_event("backend_stopped")
         return True
 
     async def is_running(self):
@@ -631,6 +651,7 @@ class Plugin:
 
     async def wait_for_events(self, timeout_seconds: int = 25):
         timeout = max(5, min(int(timeout_seconds), 30))
+        self.long_poll_requests += 1
         event_signal.clear()
         events = await Plugin.get_event(self)
         if events:
@@ -638,8 +659,32 @@ class Plugin:
         try:
             await asyncio.wait_for(event_signal.wait(), timeout=timeout)
         except asyncio.TimeoutError:
+            self.long_poll_timeouts += 1
             return []
         return await Plugin.get_event(self)
+
+    async def get_diagnostics(self):
+        Plugin._init_runtime_state(self)
+        system_power_settings = await asyncio.to_thread(read_steam_power_settings)
+        override_state = await Plugin.get_power_override_state(self)
+        return {
+            "timestamp": int(time.time()),
+            "backendRunning": bus is not None,
+            "uptimeSeconds": max(0, round(time.monotonic() - self.runtime_started_at)),
+            "processMonitorMode": self.process_monitor_mode,
+            "processScanCount": self.process_scan_count,
+            "lastProcessScanAt": self.last_process_scan_at,
+            "lastProcessEventAt": self.last_process_event_at,
+            "manualRuleCount": len(settings.getSetting("manual_apps", [])),
+            "manualActiveApp": self.manual_running_app,
+            "dbusRequestCount": len(BaseInterface.request_map),
+            "eventQueueSize": event_queue.qsize(),
+            "longPollRequests": self.long_poll_requests,
+            "longPollTimeouts": self.long_poll_timeouts,
+            "powerOverrideActive": override_state["active"],
+            "systemPowerSettings": system_power_settings,
+            "recentEvents": list(recent_diagnostic_events),
+        }
 
     async def get_inhibit_status(self):
         Plugin._init_runtime_state(self)
