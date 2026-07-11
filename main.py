@@ -1,4 +1,4 @@
-import decky_plugin
+import decky
 import asyncio
 import importlib.util
 from pathlib import Path
@@ -87,7 +87,7 @@ def import_third_party_lib():
     import sys
     from pathlib import Path
     plugin_dir = Path(__file__).parent.resolve()
-    decky_plugin.logger.info(f'plugin dir: {plugin_dir}')
+    decky.logger.info(f'plugin dir: {plugin_dir}')
     sys.path.insert(0, str(plugin_dir))
     sys.path.insert(0, str(plugin_dir.joinpath("lib")))
 
@@ -99,9 +99,9 @@ def setup_environ_vars():
 
 import_third_party_lib()
 setup_environ_vars()
-decky_plugin.logger.info("Main.py Loading...")
-decky_plugin.logger.info("Environment setup complete")
-settings_dir = decky_plugin.DECKY_PLUGIN_SETTINGS_DIR
+decky.logger.info("Main.py Loading...")
+decky.logger.info("Environment setup complete")
+settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
 settings = SettingsManager(name="settings", settings_directory=settings_dir)
 if settings.getSetting("manual_apps", None) is None:
     settings.setSetting("manual_apps", ["chrome", "mpv", "wiliwili"])
@@ -110,7 +110,7 @@ event_signal = asyncio.Event()
 recent_diagnostic_events = deque(maxlen=40)
 manual_inhibiting = False
 inhibit_active = False
-decky_plugin.logger.info(f"Settings directory: {settings_dir}")
+decky.logger.info(f"Settings directory: {settings_dir}")
 
 from dbus_next.aio import MessageBus
 from dbus_next import Message, MessageType
@@ -179,7 +179,7 @@ class BaseInterface(ServiceInterface):
 
     async def _inhibit_impl(self, application, reason):
         if application in BaseInterface.ignore_application: return 0
-        decky_plugin.logger.info(f'called Inhibit with application={application} and reason={reason}')
+        decky.logger.info(f'called Inhibit with application={application} and reason={reason}')
         sender = ServiceInterface.last_msg.sender
         BaseInterface.cookie += 1
         BaseInterface.request_map[BaseInterface.cookie] = AppRequest(sender, BaseInterface.cookie, application, reason)
@@ -188,9 +188,9 @@ class BaseInterface(ServiceInterface):
 
     async def _un_inhibit_impl(self, cookie):
         if cookie == 0: return
-        decky_plugin.logger.info(f'called UnInhibit with cookie={cookie}')
+        decky.logger.info(f'called UnInhibit with cookie={cookie}')
         if BaseInterface.request_map.pop(cookie, None) is None:
-            decky_plugin.logger.info(f'cannot find cookie={cookie}')
+            decky.logger.info(f'cannot find cookie={cookie}')
         sync_inhibit_state()
 
 class InhibitInterface(BaseInterface):
@@ -248,7 +248,7 @@ async def is_dbus_request_connected(request):
     try:
         return await asyncio.wait_for(request.is_connected(), timeout=2)
     except Exception as e:
-        decky_plugin.logger.debug(f"D-Bus connection check failed: {e}")
+        decky.logger.debug(f"D-Bus connection check failed: {e}")
         return False
 
 
@@ -259,7 +259,7 @@ async def stop_dbus():
             bus.disconnect()
         bus = None
     except Exception as e:
-        decky_plugin.logger.info(f"error: {e}")
+        decky.logger.info(f"error: {e}")
 
 async def start_dbus():
     global bus
@@ -280,7 +280,7 @@ async def start_dbus():
         await bus.request_name('org.gnome.SessionManager')
         return True
     except Exception as e:
-        decky_plugin.logger.error(f"Could not start D-Bus services: {e}")
+        decky.logger.error(f"Could not start D-Bus services: {e}")
         await stop_dbus()
         clear_dbus_requests()
         return False
@@ -350,7 +350,7 @@ def get_process_lines(command):
         result = subprocess.run(command, capture_output=True, text=True, timeout=5)
         return result.stdout.splitlines() if result.returncode == 0 else []
     except Exception as e:
-        decky_plugin.logger.error(f"Error getting process list: {e}")
+        decky.logger.error(f"Error getting process list: {e}")
         return []
 
 
@@ -451,9 +451,9 @@ class Plugin:
 
         if changed:
             if manual_active:
-                decky_plugin.logger.info(f"Manual Inhibit triggered by process: {running_app}")
+                decky.logger.info(f"Manual Inhibit triggered by process: {running_app}")
             else:
-                decky_plugin.logger.info("Manual UnInhibit: no monitored processes running")
+                decky.logger.info("Manual UnInhibit: no monitored processes running")
 
         self.manual_active = manual_active
         self.manual_running_app = running_app
@@ -462,7 +462,7 @@ class Plugin:
             sync_inhibit_state(running_app)
 
     async def _manual_watch_loop(self):
-        decky_plugin.logger.info("Manual process watcher started")
+        decky.logger.info("Manual process watcher started")
         while True:
             self.manual_watch_wakeup.clear()
             has_manual_process_rules = False
@@ -477,7 +477,7 @@ class Plugin:
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                decky_plugin.logger.error(f"Error in manual process watcher: {e}")
+                decky.logger.error(f"Error in manual process watcher: {e}")
             fallback_interval = 300 if not has_manual_process_rules else 120
             try:
                 await asyncio.wait_for(
@@ -489,7 +489,7 @@ class Plugin:
                 pass
 
     async def _process_event_loop(self):
-        decky_plugin.logger.info("Kernel process event listener started")
+        decky.logger.info("Kernel process event listener started")
         while True:
             try:
                 event_type, process_id = await self.process_event_source.wait_for_process_change()
@@ -511,7 +511,7 @@ class Plugin:
                 raise
             except Exception as e:
                 self.process_monitor_mode = "fallback_scan"
-                decky_plugin.logger.warning(f"Kernel process event listener stopped: {e}")
+                decky.logger.warning(f"Kernel process event listener stopped: {e}")
                 self.manual_watch_wakeup.set()
                 return
 
@@ -549,10 +549,10 @@ class Plugin:
                 self.process_event_source = None
                 self.process_monitor_mode = "fallback_scan"
                 record_diagnostic_event("process_monitor", "fallback_scan")
-                decky_plugin.logger.warning(f"Process events unavailable; using low-frequency scan: {e}")
+                decky.logger.warning(f"Process events unavailable; using low-frequency scan: {e}")
             self.manual_watch_task = asyncio.create_task(Plugin._manual_watch_loop(self))
         except Exception as e:
-            decky_plugin.logger.error(f"Error starting manual process watcher: {e}")
+            decky.logger.error(f"Error starting manual process watcher: {e}")
 
     async def _stop_manual_watch(self):
         global manual_inhibiting
@@ -571,7 +571,7 @@ class Plugin:
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                decky_plugin.logger.error(f"Error stopping process event listener: {e}")
+                decky.logger.error(f"Error stopping process event listener: {e}")
         if task and not task.done():
             task.cancel()
             try:
@@ -579,7 +579,7 @@ class Plugin:
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                decky_plugin.logger.error(f"Error stopping manual process watcher: {e}")
+                decky.logger.error(f"Error stopping manual process watcher: {e}")
         Plugin._stop_manual_inhibitor(self)
         self.manual_active = False
         self.manual_running_app = None
@@ -590,7 +590,7 @@ class Plugin:
 
     async def start_backend(self):
         global bus
-        decky_plugin.logger.info("Start backend server")
+        decky.logger.info("Start backend server")
         Plugin._init_runtime_state(self)
         if bus is None:
             for attempt, retry_delay in enumerate((0, 1, 3), start=1):
@@ -598,7 +598,7 @@ class Plugin:
                     await asyncio.sleep(retry_delay)
                 if await start_dbus():
                     break
-                decky_plugin.logger.warning(f"D-Bus start attempt {attempt} failed")
+                decky.logger.warning(f"D-Bus start attempt {attempt} failed")
             if bus is None:
                 raise RuntimeError("Could not register D-Bus inhibit services")
         Plugin._start_manual_watch(self)
@@ -606,7 +606,7 @@ class Plugin:
         return True
 
     async def stop_backend(self):
-        decky_plugin.logger.info("Stop backend server")
+        decky.logger.info("Stop backend server")
         await Plugin._stop_manual_watch(self)
         await stop_dbus()
         clear_dbus_requests()
@@ -684,7 +684,7 @@ class Plugin:
             # filter UnInhibit if anything is still active
             if manual_active or dbus_active:
                 res = [e for e in res if e['type'] != 'UnInhibit']
-            decky_plugin.logger.info(f"get_event returning events: {res}")
+            decky.logger.info(f"get_event returning events: {res}")
             return res
 
         return []
@@ -744,12 +744,12 @@ class Plugin:
 
     async def get_settings(self, key: str, defaults):
         if key != "manual_apps":
-            decky_plugin.logger.info('[settings] get {}'.format(key))
+            decky.logger.info('[settings] get {}'.format(key))
         return settings.getSetting(key, defaults)
 
     async def get_system_power_settings(self):
         result = await asyncio.to_thread(read_steam_power_settings)
-        decky_plugin.logger.info(f"System power settings read: {result}")
+        decky.logger.info(f"System power settings read: {result}")
         return result
 
     async def get_power_override_state(self):
@@ -771,9 +771,9 @@ class Plugin:
 
     async def set_settings(self, key: str, value):
         if not plugin_contract.validate_setting_key(key):
-            decky_plugin.logger.warning(f"Rejected unknown setting key: {key!r}")
+            decky.logger.warning(f"Rejected unknown setting key: {key!r}")
             return False
-        decky_plugin.logger.info('[settings] set {}: {}'.format(key, value))
+        decky.logger.info('[settings] set {}: {}'.format(key, value))
         saved = settings.setSetting(key, value)
         if saved and key == "manual_apps":
             queue_event({"type": "SettingsChanged", "key": key})
@@ -782,9 +782,9 @@ class Plugin:
 
     async def set_settings_batch(self, values: dict):
         if not plugin_contract.validate_settings_batch(values):
-            decky_plugin.logger.warning("Rejected invalid settings batch")
+            decky.logger.warning("Rejected invalid settings batch")
             return False
-        decky_plugin.logger.info('[settings] batch set keys: {}'.format(list(values.keys())))
+        decky.logger.info('[settings] batch set keys: {}'.format(list(values.keys())))
         saved = settings.setSettings(values)
         if saved and "manual_apps" in values:
             queue_event({"type": "SettingsChanged", "key": "manual_apps"})
@@ -792,15 +792,15 @@ class Plugin:
         return saved
 
     async def _main(self):
-        decky_plugin.logger.info("Hello World!")
+        decky.logger.info("Hello World!")
         Plugin._init_runtime_state(self)
         if not settings.unsetSettings(LEGACY_SETTING_KEYS):
-            decky_plugin.logger.warning("Could not remove legacy plugin settings")
+            decky.logger.warning("Could not remove legacy plugin settings")
         if settings.getSetting("run_on_login", True):
             await Plugin.start_backend(self)
 
     async def _unload(self):
-        decky_plugin.logger.info("Goodnight World!")
+        decky.logger.info("Goodnight World!")
         await Plugin.stop_backend(self)
 
     async def _uninstall(self):

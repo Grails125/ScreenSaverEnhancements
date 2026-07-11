@@ -38,7 +38,7 @@ def build():
         "main.py",
         "plugin.json",
         "package.json",
-        "decky_plugin.pyi",
+        "decky.pyi",
         "README_ZH.md",
         "README.md",
         "LICENSE",
