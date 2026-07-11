@@ -53,11 +53,14 @@ export type PluginMethodResponse<Result> = {
   result: Result;
 };
 
-export interface PluginServerApi {
+export interface PluginBackendClient {
   callPluginMethod<Args, Result>(
     method: PluginMethod,
     args: Args,
-  ): Promise<PluginMethodResponse<Result>>;
+  ): Promise<PluginMethodResponse<Result | any>>;
+}
+
+export interface PluginServerApi extends PluginBackendClient {
   routerHook: RouterHook;
   toaster: Toaster;
 }

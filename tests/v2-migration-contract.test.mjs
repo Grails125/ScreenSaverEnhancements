@@ -76,3 +76,17 @@ test("the legacy Rollup config remains valid after switching the package to ESM"
   assert.match(source, /readFileSync/);
   assert.doesNotMatch(source, /import\s+\{\s*name\s*\}\s+from\s+["']\.\/plugin\.json["']/);
 });
+
+test("shared frontend modules no longer depend on decky-frontend-lib", () => {
+  const sharedModules = [
+    "../src/blackOverlay.tsx",
+    "../src/settingsClient.ts",
+    "../src/sleepManager.ts",
+    "../src/uiComposition.ts",
+  ];
+
+  for (const modulePath of sharedModules) {
+    const source = readFileSync(new URL(modulePath, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /decky-frontend-lib|ServerAPI/);
+  }
+});

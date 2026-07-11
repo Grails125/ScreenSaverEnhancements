@@ -1,4 +1,4 @@
-import { findModuleChild } from "decky-frontend-lib";
+import { findModuleChild } from "@decky/ui";
 
 export enum UIComposition {
   Hidden = 0,

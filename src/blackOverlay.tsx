@@ -1,5 +1,5 @@
 import { FC, useCallback, useEffect, useRef, useState } from "react";
-import { ServerAPI } from "decky-frontend-lib";
+import { PluginBackendClient } from "./deckyApi";
 import { StateNumber } from "./state";
 import { useCatchAllGamepad } from "./useCatchAllGamepad";
 import { useResumeFromSuspendNotification } from "./useResumeFromSuspendNotification";
@@ -31,7 +31,7 @@ const BlackBackground: FC<{ opacity: number }> = ({ opacity }) => {
 };
 
 export const BlackOverlay: FC<{
-  serverApi: ServerAPI;
+  serverApi: PluginBackendClient;
   overlayState: StateNumber;
   opacityState: StateNumber;
 }> = ({ serverApi, overlayState, opacityState }) => {

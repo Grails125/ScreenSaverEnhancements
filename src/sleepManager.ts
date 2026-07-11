@@ -1,4 +1,4 @@
-import { findModuleChild, Module } from "decky-frontend-lib";
+import { findModuleChild, Module } from "@decky/ui";
 
 export type SleepManagerModule = {
   RegisterForNotifyResumeFromSuspend?: (handler: () => void) => unknown;

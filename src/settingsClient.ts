@@ -1,4 +1,4 @@
-import { ServerAPI } from "decky-frontend-lib";
+import { PluginBackendClient } from "./deckyApi";
 
 export const clampOpacity = (value: number): number => {
   if (Number.isNaN(value)) return 1;
@@ -43,7 +43,7 @@ export const areStringArraysEqual = (left: string[], right: string[]): boolean =
 };
 
 export const getPluginSetting = async <T,>(
-  serverApi: ServerAPI,
+  serverApi: PluginBackendClient,
   key: string,
   defaults: T
 ): Promise<T> => {
@@ -52,7 +52,7 @@ export const getPluginSetting = async <T,>(
 };
 
 export const getPluginBooleanSetting = async (
-  serverApi: ServerAPI,
+  serverApi: PluginBackendClient,
   key: string,
   defaults = false
 ): Promise<boolean> => {
@@ -61,7 +61,7 @@ export const getPluginBooleanSetting = async (
 };
 
 export const getPluginNumberSetting = async (
-  serverApi: ServerAPI,
+  serverApi: PluginBackendClient,
   key: string,
   defaults: number
 ): Promise<number> => {
@@ -70,7 +70,7 @@ export const getPluginNumberSetting = async (
 };
 
 export const setPluginSetting = async (
-  serverApi: ServerAPI,
+  serverApi: PluginBackendClient,
   key: string,
   value: any
 ) => {
@@ -82,7 +82,7 @@ export const isPluginSettingSaveSuccessful = (
 ): boolean => response?.success === true && response.result === true;
 
 export const setPluginSettings = async (
-  serverApi: ServerAPI,
+  serverApi: PluginBackendClient,
   values: Record<string, unknown>,
 ) => {
   return await serverApi.callPluginMethod<any, any>("set_settings_batch", { values });
