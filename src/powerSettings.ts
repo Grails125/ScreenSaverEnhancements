@@ -47,12 +47,6 @@ export const shouldStartInhibit = (
   deckyMusicInhibiting: boolean,
 ) => !backendInhibiting && !deckyMusicInhibiting;
 
-export const shouldRestartSuspendCountdown = (
-  countdownActive: boolean,
-  lastActivityAt: number,
-  now: number,
-) => countdownActive && now - lastActivityAt >= 500;
-
 const FORCE_SUSPEND_WARNING_MS = 5_000;
 
 export const getForceSuspendWarningDelayMs = (settings: PowerSettings) => {
