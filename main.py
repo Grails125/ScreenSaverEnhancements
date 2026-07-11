@@ -1,6 +1,40 @@
 import decky_plugin
 import queue
+import re
 from settings import SettingsManager
+
+STEAM_CONFIG_PATHS = (
+    "/home/deck/.local/share/Steam/config/config.vdf",
+    "/home/deck/.steam/steam/config/config.vdf",
+)
+STEAM_POWER_SETTING_KEYS = {
+    "batteryDim": "IdleBacklightDimBatterySeconds",
+    "acDim": "IdleBacklightDimACSeconds",
+    "batterySuspend": "IdleSuspendBatterySeconds",
+    "acSuspend": "IdleSuspendACSeconds",
+}
+
+
+def parse_steam_power_settings(text):
+    result = {}
+    for output_key, steam_key in STEAM_POWER_SETTING_KEYS.items():
+        match = re.search(r'"{}"\s+"(\d+)"'.format(re.escape(steam_key)), text)
+        if match is None:
+            return None
+        result[output_key] = int(match.group(1))
+    return result
+
+
+def read_steam_power_settings():
+    for path in STEAM_CONFIG_PATHS:
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as config_file:
+                parsed = parse_steam_power_settings(config_file.read())
+            if parsed is not None:
+                return parsed
+        except OSError:
+            continue
+    return None
 
 def import_third_party_lib():
     import sys
@@ -442,6 +476,8 @@ class Plugin:
                 res.append(event_queue.get_nowait())
             except queue.Empty:
                 break
+        # Read manual state before reconciling disconnected D-Bus requests.
+        manual_active = self.manual_active
         # check closed dbus connection (only when there are active cookies)
         requests = list(BaseInterface.request_map.items())
         clear = False
@@ -458,9 +494,6 @@ class Plugin:
         if clear and not dbus_active:
             inhibit_active = manual_active
             res.append({"type": "UnInhibit"})
-
-        # manual apps state is managed by _manual_watch_loop, just read current state
-        manual_active = self.manual_active
 
         if len(res) > 0:
             # filter UnInhibit if anything is still active
@@ -491,6 +524,9 @@ class Plugin:
         if key != "manual_apps":
             decky_plugin.logger.info('[settings] get {}'.format(key))
         return settings.getSetting(key, defaults)
+
+    async def get_system_power_settings(self):
+        return await asyncio.to_thread(read_steam_power_settings)
 
     async def set_settings(self, key: str, value):
         decky_plugin.logger.info('[settings] set {}: {}'.format(key, value))

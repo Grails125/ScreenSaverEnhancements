@@ -9,6 +9,7 @@ import {
   ServerAPI,
   staticClasses,
   Focusable,
+  useQuickAccessVisible,
 } from "decky-frontend-lib";
 import React, { VFC } from "react";
 import { useState, useEffect, useRef } from 'react'
@@ -27,6 +28,7 @@ import {
   DEFAULT_POWER_SETTINGS,
   minutesToSeconds,
   normalizePowerSettings,
+  parseSteamPowerSettings,
   PowerSettings,
   shouldStartInhibit,
   secondsToMinutes,
@@ -477,7 +479,8 @@ const Content: VFC<{
   deckyMusicState: StateNumber;
   onPowerSettingsLoaded: (settings: PowerSettings) => void;
   onPowerSettingsApply: (settings: PowerSettings) => Promise<void>;
-}> = ({serverApi, overlayState, opacityState, deckyMusicState, onPowerSettingsLoaded, onPowerSettingsApply}) => {
+  readSystemPowerSettings: () => Promise<PowerSettings | null>;
+}> = ({serverApi, overlayState, opacityState, deckyMusicState, onPowerSettingsLoaded, onPowerSettingsApply, readSystemPowerSettings}) => {
   const [running, setRunning] = useState<boolean>(backendRunning);
   const [notify, setNotify] = useState<boolean>(showNotify);
   const [blackBackground, setBlackBackground] = useState<boolean>(overlayState.GetState() === 1);
@@ -530,11 +533,24 @@ const Content: VFC<{
   const [runningProcesses, setRunningProcesses] = useState<RunningProcess[]>([]);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [showAppMenu, setShowAppMenu] = useState<boolean>(false);
+  const quickAccessVisible = useQuickAccessVisible();
+  const quickAccessWasVisible = useRef(quickAccessVisible);
   const panelVisible = useRef(true);
   const requestTokenRef = useRef(0);
 
   const isCurrentRequest = (token: number) => {
     return panelVisible.current && requestTokenRef.current === token;
+  }
+
+  const applySystemPowerSettings = async (token: number) => {
+    const systemSettings = await readSystemPowerSettings();
+    if (!systemSettings || !isCurrentRequest(token)) return;
+
+    setPowerSettings(systemSettings);
+    onPowerSettingsLoaded(systemSettings);
+    await Promise.all((Object.keys(POWER_SETTING_KEYS) as Array<keyof PowerSettings>).map(
+      key => setPluginSetting(serverApi, POWER_SETTING_KEYS[key], systemSettings[key]),
+    ));
   }
 
   const fetchRunningProcesses = async () => {
@@ -653,6 +669,7 @@ const Content: VFC<{
       const next = normalizePowerSettings({ batteryDim, acDim, batterySuspend, acSuspend });
       setPowerSettings(next);
       onPowerSettingsLoaded(next);
+      await applySystemPowerSettings(token);
     };
     loadPowerSettings();
 
@@ -676,6 +693,14 @@ const Content: VFC<{
       deckyMusicState.offStateChanged(onDeckyMusicChanged);
     };
   }, [overlayState, opacityState, deckyMusicState]);
+
+  useEffect(() => {
+    const becameVisible = quickAccessVisible && !quickAccessWasVisible.current;
+    quickAccessWasVisible.current = quickAccessVisible;
+    if (becameVisible) {
+      void applySystemPowerSettings(requestTokenRef.current);
+    }
+  }, [quickAccessVisible]);
 
   useEffect(() => {
     try {
@@ -1040,6 +1065,21 @@ export default definePlugin((serverApi: ServerAPI) => {
     await updateSuspendSetting(_battery_suspend+_ac_suspend);
   }
 
+  const readSystemPowerSettings = async (): Promise<PowerSettings | null> => {
+    const inhibitStatus = await serverApi.callPluginMethod<any, InhibitStatus>("get_inhibit_status", {});
+    if (!inhibitStatus.success || inhibitStatus.result?.is_inhibiting || deckyMusicInhibiting) {
+      return null;
+    }
+
+    try {
+      const response = await serverApi.callPluginMethod<any, unknown>("get_system_power_settings", {});
+      return response.success ? parseSteamPowerSettings(response.result) : null;
+    } catch (error) {
+      console.warn("[ScreenSaverEnhancements] Could not read current power settings", error);
+      return null;
+    }
+  }
+
   const applyConfiguredPowerSettings = async (settings: PowerSettings) => {
     const isInhibiting = !shouldApplyPowerSettingsImmediately(backendInhibiting, deckyMusicInhibiting);
     if (!isInhibiting) {
@@ -1273,6 +1313,7 @@ export default definePlugin((serverApi: ServerAPI) => {
       deckyMusicState={deckyMusicState}
       onPowerSettingsLoaded={setConfiguredPowerSettings}
       onPowerSettingsApply={applyConfiguredPowerSettings}
+      readSystemPowerSettings={readSystemPowerSettings}
     />,
     icon: <GiNightSleep />,
     onDismount() {

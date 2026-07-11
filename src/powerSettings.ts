@@ -25,6 +25,32 @@ export const normalizePowerSettings = (value: Record<string, unknown>): PowerSet
   acSuspend: normalizePowerTimeout(value.acSuspend, DEFAULT_POWER_SETTINGS.acSuspend),
 });
 
+export const parseSteamPowerSettings = (value: unknown): PowerSettings | null => {
+  if (typeof value !== "object" || value === null) return null;
+  const result = value as Record<string, unknown>;
+  const settings = typeof result.settings === "object" && result.settings !== null
+    ? result.settings as Record<string, unknown>
+    : result;
+
+  const readValue = (...keys: string[]) => {
+    for (const key of keys) {
+      const parsed = Number(settings[key]);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return undefined;
+  };
+
+  const batteryDim = readValue("battery_idle", "batteryIdle");
+  const acDim = readValue("ac_idle", "acIdle");
+  const batterySuspend = readValue("battery_suspend", "batterySuspend");
+  const acSuspend = readValue("ac_suspend", "acSuspend");
+  if ([batteryDim, acDim, batterySuspend, acSuspend].some(item => item === undefined)) {
+    return null;
+  }
+
+  return normalizePowerSettings({ batteryDim, acDim, batterySuspend, acSuspend });
+};
+
 export const minutesToSeconds = (minutes: unknown) => normalizePowerTimeout(
   Number(minutes) * 60,
   0,

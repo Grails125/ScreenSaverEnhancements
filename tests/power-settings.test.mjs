@@ -16,6 +16,7 @@ vm.runInNewContext(compiled, { module, exports: module.exports });
 const {
   normalizePowerTimeout,
   normalizePowerSettings,
+  parseSteamPowerSettings,
   minutesToSeconds,
   secondsToMinutes,
   shouldStartInhibit,
@@ -68,4 +69,24 @@ test("only applies a changed profile immediately while no source is inhibiting s
   assert.equal(shouldApplyPowerSettingsImmediately(true, false), false);
   assert.equal(shouldApplyPowerSettingsImmediately(false, true), false);
   assert.equal(shouldApplyPowerSettingsImmediately(true, true), false);
+});
+
+test("reads the current battery and AC timeouts from Steam system settings", () => {
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(parseSteamPowerSettings({
+      settings: {
+        battery_idle: 120,
+        acIdle: 240,
+        battery_suspend: 600,
+        acSuspend: 900,
+      },
+    }))),
+    {
+      batteryDim: 120,
+      acDim: 240,
+      batterySuspend: 600,
+      acSuspend: 900,
+    },
+  );
+  assert.equal(parseSteamPowerSettings({ settings: { battery_idle: 120 } }), null);
 });
