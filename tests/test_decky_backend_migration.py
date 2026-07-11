@@ -43,6 +43,13 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn('"decky.pyi"', build_source)
         self.assertNotIn("decky_plugin.pyi", build_source)
 
+    def test_build_packages_every_local_backend_module(self):
+        build_source = (ROOT / "build.py").read_text(encoding="utf-8")
+
+        self.assertIn('"settings.py"', build_source)
+        self.assertIn('"plugin_contract.py"', build_source)
+        self.assertIn('"process_events.py"', build_source)
+
 
 if __name__ == "__main__":
     unittest.main()
