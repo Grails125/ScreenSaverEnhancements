@@ -8,6 +8,9 @@ const packageJson = JSON.parse(
 const pluginJson = JSON.parse(
   readFileSync(new URL("../plugin.json", import.meta.url), "utf8"),
 );
+const packageLock = JSON.parse(
+  readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"),
+);
 
 test("pins the Decky 3.2.6 compatible modern frontend toolchain", () => {
   assert.equal(packageJson.type, "module");
@@ -18,6 +21,24 @@ test("pins the Decky 3.2.6 compatible modern frontend toolchain", () => {
   assert.equal(packageJson.scripts.build, "rollup -c");
   assert.equal(packageJson.dependencies["decky-frontend-lib"], undefined);
   assert.equal(pluginJson.api_version, 1);
+});
+
+test("Stage 4 release metadata advances from the installed 1.3.0 baseline", () => {
+  const pnpmLock = readFileSync(
+    new URL("../pnpm-lock.yaml", import.meta.url),
+    "utf8",
+  );
+  const deckyStub = readFileSync(
+    new URL("../decky.pyi", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(packageJson.version, "1.4.0");
+  assert.equal(packageLock.version, "1.4.0");
+  assert.equal(packageLock.packages[""].version, "1.4.0");
+  assert.match(pnpmLock, /'@decky\/api':/);
+  assert.doesNotMatch(pnpmLock, /decky-frontend-lib:/);
+  assert.match(deckyStub, /async def emit\(event: str, \*args: Any\) -> None:/);
 });
 
 test("the V2 probe uses typed callable RPC and reversible modern APIs", () => {

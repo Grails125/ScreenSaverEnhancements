@@ -15,6 +15,7 @@ A logging facility `logger` is available which writes to the recommended locatio
 __version__ = '1.0.0'
 
 import logging
+from typing import Any
 
 """
 Constants
@@ -172,3 +173,11 @@ Logging
 
 logger: logging.Logger
 """The main plugin logger writing to `DECKY_PLUGIN_LOG`."""
+
+
+"""
+Event handling
+"""
+
+async def emit(event: str, *args: Any) -> None:
+    """Send an event to the plugin frontend."""
