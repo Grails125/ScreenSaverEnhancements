@@ -33,20 +33,6 @@ const loadDeckyApi = (callable) => {
   return module.exports;
 };
 
-test("maps legacy argument objects to modern positional RPC arguments", () => {
-  const { getPluginMethodArguments } = loadDeckyApi(() => async () => undefined);
-
-  assert.deepEqual(
-    Array.from(getPluginMethodArguments("get_settings", { key: "manual_apps", defaults: [] })),
-    ["manual_apps", []],
-  );
-  assert.deepEqual(
-    Array.from(getPluginMethodArguments("begin_power_override", { snapshot: { batteryDim: 60 } })),
-    [{ batteryDim: 60 }],
-  );
-  assert.deepEqual(Array.from(getPluginMethodArguments("is_running", {})), []);
-});
-
 test("exposes typed RPC methods with positional callable arguments", async () => {
   const calls = [];
   const { createPluginServerApi } = loadDeckyApi(
@@ -59,12 +45,20 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
 
   const response = await serverApi.getPowerOverrideState();
   await serverApi.getSetting("manual_apps", []);
-  await serverApi.beginPowerOverride({ batteryDim: 60 });
+  await serverApi.beginPowerOverride({
+    batteryDim: 60,
+    acDim: 120,
+    batterySuspend: 300,
+    acSuspend: 600,
+  });
 
   assert.deepEqual(calls, [
     { route: "get_power_override_state", args: [] },
     { route: "get_settings", args: ["manual_apps", []] },
-    { route: "begin_power_override", args: [{ batteryDim: 60 }] },
+    {
+      route: "begin_power_override",
+      args: [{ batteryDim: 60, acDim: 120, batterySuspend: 300, acSuspend: 600 }],
+    },
   ]);
   assert.equal(response.active, true);
 });

@@ -23,7 +23,7 @@ import {
 import { QUICK_ACCESS_MENU } from './ButtonIcons'
 import { copyTextToClipboard } from './clipboard'
 import { Diagnostics, parseDiagnostics } from './diagnostics'
-import { InhibitStatus, PluginServerApi, RunningProcess, serverApi } from './deckyApi'
+import { InhibitStatus, PluginEvent, PluginServerApi, RunningProcess, serverApi } from './deckyApi'
 import { StateNumber } from './state'
 import {
   DEFAULT_POWER_SETTINGS,
@@ -1405,7 +1405,7 @@ export default definePlugin(() => {
   }
   
   const waitForEvents = async () => {
-    return await serverApi.callPluginMethod<any, any>("wait_for_events", { timeout_seconds: 25 });
+    return await serverApi.waitForEvents(25);
   }
 
   const isBackendRunning = async () => {
@@ -1607,7 +1607,7 @@ export default definePlugin(() => {
     await reconcileDeckyMusicState();
   }
 
-  const processBackendEvents = async (events: any[]) => {
+  const processBackendEvents = async (events: PluginEvent[]) => {
     for (const event of events) {
       if (event.type === "SettingsChanged" && event.key === "manual_apps") {
         await refreshDeckyMusicSetting();
@@ -1629,13 +1629,8 @@ export default definePlugin(() => {
   const listenForPowerEvents = async () => {
     try {
       while (eventListenerActive) {
-        const response = await waitForEvents();
+        const events = await waitForEvents();
         if (!eventListenerActive) return;
-        if (!response.success) {
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          continue;
-        }
-        const events = Array.isArray(response.result) ? response.result : [];
         if (events.length > 0) {
           enqueuePowerOperation(() => processBackendEvents(events));
         }

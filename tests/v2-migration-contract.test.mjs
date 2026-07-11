@@ -171,3 +171,18 @@ test("power settings and recovery use direct typed RPC results", () => {
   assert.match(source, /serverApi\.endPowerOverride\(\)/);
   assert.doesNotMatch(source, /callPluginMethod[^\n]*(get_system_power_settings|get_power_override_state|begin_power_override|end_power_override)/);
 });
+
+test("event polling uses direct results and the legacy RPC adapter is removed", () => {
+  const pluginSource = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+  const apiSource = readFileSync(
+    new URL("../src/deckyApi.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(pluginSource, /serverApi\.waitForEvents\(25\)/);
+  assert.doesNotMatch(pluginSource, /callPluginMethod|response\.success|response\.result/);
+  assert.doesNotMatch(apiSource, /callPluginMethod|PluginMethodResponse|getPluginMethodArguments|PLUGIN_METHOD_ARGUMENT_KEYS/);
+});
