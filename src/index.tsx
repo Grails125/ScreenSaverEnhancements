@@ -628,15 +628,15 @@ const Content: FC<{
   });
 
   const startBackend = async () => {
-    return await serverApi.callPluginMethod<any, any>("start_backend", {});
+    return await serverApi.startBackend();
   }
 
   const stopBackend = async () => {
-    return await serverApi.callPluginMethod<any, any>("stop_backend", {});
+    return await serverApi.stopBackend();
   }
 
   const isBackendRunning = async () => {
-    return await serverApi.callPluginMethod<any, boolean>("is_running", {});
+    return await serverApi.isRunning();
   }
 
   const saveSetting = async (
@@ -859,11 +859,14 @@ const Content: FC<{
     refreshInhibitStatus();
 
     const loadBackendState = async () => {
-      const response = await isBackendRunning();
-      if (!isCurrentRequest(token) || !response.success) return;
-      const isRunning = response.result === true;
-      backendRunning = isRunning;
-      setRunning(isRunning);
+      try {
+        const isRunning = await isBackendRunning();
+        if (!isCurrentRequest(token)) return;
+        backendRunning = isRunning;
+        setRunning(isRunning);
+      } catch (error) {
+        console.warn("[ScreenSaverEnhancements] Could not read backend state", error);
+      }
     };
     loadBackendState();
 
@@ -1020,8 +1023,10 @@ const Content: FC<{
                 backendRunning = previous
               })) return;
 
-              const response = checked ? await startBackend() : await stopBackend();
-              if (!isPluginSettingSaveSuccessful(response)) {
+              try {
+                const succeeded = checked ? await startBackend() : await stopBackend();
+                if (succeeded !== true) throw new Error("backend lifecycle RPC failed");
+              } catch {
                 setRunning(previous)
                 backendRunning = previous
                 await setPluginSetting(serverApi, RUN_ON_LOGIN, previous);
@@ -1407,7 +1412,7 @@ export default definePlugin(() => {
   }
 
   const isBackendRunning = async () => {
-    return await serverApi.callPluginMethod<any, boolean>("is_running", {});
+    return await serverApi.isRunning();
   }
 
   const isDeckyMusicEnabled = (apps: string[]) => {
@@ -1675,8 +1680,7 @@ export default definePlugin(() => {
 
       const run = await getPluginBooleanSetting(serverApi, RUN_ON_LOGIN, true)
       if (run) {
-        const response = await isBackendRunning()
-        backendRunning = response.success && response.result === true
+        backendRunning = await isBackendRunning()
       }
     } catch (error) {
       backendRunning = false
