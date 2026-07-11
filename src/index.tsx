@@ -546,25 +546,71 @@ const Content: VFC<{
   const quickAccessWasVisible = useRef(quickAccessVisible);
   const panelVisible = useRef(true);
   const requestTokenRef = useRef(0);
+  const opacitySaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingOpacityRef = useRef<number | null>(null);
+  const persistedOpacityRef = useRef(opacityState.GetState());
 
   const isCurrentRequest = (token: number) => {
     return panelVisible.current && requestTokenRef.current === token;
   }
 
   const applySystemPowerSettings = async () => {
-    const systemSettings = await readSystemPowerSettings();
-    if (!systemSettings) return;
+    try {
+      const systemSettings = await readSystemPowerSettings();
+      if (!systemSettings) return;
 
-    setPowerSettings(systemSettings);
-    onPowerSettingsLoaded(systemSettings);
-    const response = await setPluginSettings(serverApi, Object.fromEntries(
-      (Object.keys(POWER_SETTING_KEYS) as Array<keyof PowerSettings>).map(
-        key => [POWER_SETTING_KEYS[key], systemSettings[key]],
-      ),
-    ));
-    if (!response.success || response.result !== true) {
-      console.warn("[ScreenSaverEnhancements] Could not persist synchronized power settings");
+      setPowerSettings(systemSettings);
+      onPowerSettingsLoaded(systemSettings);
+      const response = await setPluginSettings(serverApi, Object.fromEntries(
+        (Object.keys(POWER_SETTING_KEYS) as Array<keyof PowerSettings>).map(
+          key => [POWER_SETTING_KEYS[key], systemSettings[key]],
+        ),
+      ));
+      if (!isPluginSettingSaveSuccessful(response)) {
+        console.warn("[ScreenSaverEnhancements] Could not persist synchronized power settings");
+      }
+    } catch (error) {
+      console.warn("[ScreenSaverEnhancements] Could not synchronize system power settings", error);
     }
+  }
+
+  const persistPendingOpacity = async () => {
+    const opacity = pendingOpacityRef.current;
+    pendingOpacityRef.current = null;
+    opacitySaveTimeoutRef.current = null;
+    if (opacity === null) return;
+
+    try {
+      const response = await setPluginSetting(serverApi, BLACK_BACKGROUND_OPACITY, opacity);
+      if (isPluginSettingSaveSuccessful(response)) {
+        persistedOpacityRef.current = opacity;
+        return;
+      }
+    } catch (error) {
+      console.warn("[ScreenSaverEnhancements] Could not save black background opacity", error);
+    }
+
+    if (pendingOpacityRef.current !== null) return;
+    const previous = persistedOpacityRef.current;
+    setBlackBackgroundOpacity(previous);
+    opacityState.SetState(previous);
+    serverApi.toaster.toast({
+      title: t("Settings Save Failed"),
+      body: t("Settings Save Failed Body"),
+      icon: <GiNightSleep />,
+      critical: true,
+      duration: 4000,
+    });
+  }
+
+  const scheduleOpacitySave = (opacity: number) => {
+    pendingOpacityRef.current = opacity;
+    if (opacitySaveTimeoutRef.current !== null) {
+      clearTimeout(opacitySaveTimeoutRef.current);
+    }
+    opacitySaveTimeoutRef.current = setTimeout(() => {
+      void persistPendingOpacity();
+    }, 300);
   }
 
   const fetchRunningProcesses = async () => {
@@ -576,6 +622,8 @@ const Content: VFC<{
       if (isCurrentRequest(token) && res.success) {
         setRunningProcesses(res.result);
       }
+    } catch (error) {
+      console.warn("[ScreenSaverEnhancements] Could not load running processes", error);
     } finally {
       if (isCurrentRequest(token)) {
         setRefreshing(false);
@@ -586,14 +634,18 @@ const Content: VFC<{
   const fetchInhibitStatus = async () => {
     if (!panelVisible.current) return;
     const token = requestTokenRef.current;
-    const res = await serverApi.callPluginMethod<any, InhibitStatus>("get_inhibit_status", {});
-    if (isCurrentRequest(token) && res.success && res.result) {
-      setInhibitStatus({
-        ...EMPTY_INHIBIT_STATUS,
-        ...res.result,
-        manual_apps: normalizeManualApps(res.result.manual_apps),
-        dbus_requests: Array.isArray(res.result.dbus_requests) ? res.result.dbus_requests : [],
-      });
+    try {
+      const res = await serverApi.callPluginMethod<any, InhibitStatus>("get_inhibit_status", {});
+      if (isCurrentRequest(token) && res.success && res.result) {
+        setInhibitStatus({
+          ...EMPTY_INHIBIT_STATUS,
+          ...res.result,
+          manual_apps: normalizeManualApps(res.result.manual_apps),
+          dbus_requests: Array.isArray(res.result.dbus_requests) ? res.result.dbus_requests : [],
+        });
+      }
+    } catch (error) {
+      console.warn("[ScreenSaverEnhancements] Could not load inhibit status", error);
     }
   }
 
@@ -671,6 +723,7 @@ const Content: VFC<{
       if (!isCurrentRequest(token)) return;
 
       const opacity = clampOpacity(opacityValue);
+      persistedOpacityRef.current = opacity;
       setBlackBackground(enabled);
       overlayState.SetState(enabled ? 1 : 0);
       setBlackBackgroundOpacity(opacity);
@@ -709,6 +762,13 @@ const Content: VFC<{
     return () => {
       panelVisible.current = false;
       requestTokenRef.current += 1;
+      if (opacitySaveTimeoutRef.current !== null) {
+        clearTimeout(opacitySaveTimeoutRef.current);
+      }
+      if (pendingOpacityRef.current !== null) {
+        void setPluginSetting(serverApi, BLACK_BACKGROUND_OPACITY, pendingOpacityRef.current);
+        pendingOpacityRef.current = null;
+      }
       overlayState.offStateChanged(onOverlayChanged);
       opacityState.offStateChanged(onOpacityChanged);
       deckyMusicState.offStateChanged(onDeckyMusicChanged);
@@ -949,7 +1009,7 @@ const Content: VFC<{
               const normalizedOpacity = Math.min(1, Math.max(0, value / 100));
               setBlackBackgroundOpacity(normalizedOpacity);
               opacityState.SetState(normalizedOpacity);
-              void setPluginSetting(serverApi, BLACK_BACKGROUND_OPACITY, normalizedOpacity);
+              scheduleOpacitySave(normalizedOpacity);
             }}
           />
         </PanelSectionRow>
