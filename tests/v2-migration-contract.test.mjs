@@ -200,3 +200,25 @@ test("the monitoring toggle describes sleep inhibition behavior", () => {
   assert.equal(zh["Background Monitor Failed"], "息屏抑制监控切换失败");
   assert.equal(en["Background Monitor"], "Sleep Inhibition Monitor");
 });
+
+test("diagnostics use sleep inhibition terminology without misleading uptime", () => {
+  const zh = JSON.parse(
+    readFileSync(new URL("../src/i18n/zh-cn.json", import.meta.url), "utf8"),
+  );
+  const en = JSON.parse(
+    readFileSync(new URL("../src/i18n/en.json", import.meta.url), "utf8"),
+  );
+  const source = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(zh["Backend Status"], "息屏抑制监控");
+  assert.equal(en["Backend Status"], "Sleep Inhibition Monitor");
+  assert.equal(zh.backend_started, "息屏抑制监控已启动");
+  assert.equal(zh.backend_stopped, "息屏抑制监控已停止");
+  assert.equal(en.backend_started, "Sleep inhibition monitor started");
+  assert.equal(en.backend_stopped, "Sleep inhibition monitor stopped");
+  assert.doesNotMatch(source, /t\(['"]Backend Uptime['"]\)/);
+  assert.match(source, /formatDiagnosticEventType\(event\.type\)/);
+});

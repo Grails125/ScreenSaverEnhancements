@@ -482,6 +482,14 @@ const formatProcessMonitorMode = (mode: string) => {
   }
 };
 
+const formatDiagnosticEventType = (type: string) => {
+  switch (type) {
+    case 'backend_started': return t('backend_started');
+    case 'backend_stopped': return t('backend_stopped');
+    default: return type;
+  }
+};
+
 const DiagnosticRow: FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <PanelSectionRow>
     <div style={PANEL_STYLES.processItem}>
@@ -538,7 +546,6 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
       <>
         <PanelSection title={t('Runtime Status')}>
           <DiagnosticRow label={t('Backend Status')} value={diagnostics.backendRunning ? t('Running') : t('Stopped')} />
-          <DiagnosticRow label={t('Backend Uptime')} value={`${diagnostics.uptimeSeconds}${t('Seconds')}`} />
           <DiagnosticRow label={t('Process Monitor Mode')} value={formatProcessMonitorMode(diagnostics.processMonitorMode)} />
           <DiagnosticRow label={t('Process Scan Count')} value={diagnostics.processScanCount} />
           <DiagnosticRow label={t('Last Process Scan')} value={formatDiagnosticTime(diagnostics.lastProcessScanAt)} />
@@ -571,7 +578,7 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
             <PanelSectionRow key={`${event.timestamp}-${event.type}-${index}`}>
               <div style={PANEL_STYLES.processItem}>
                 <div style={PANEL_STYLES.menuText}>
-                  <span style={PANEL_STYLES.processName}>{event.type}</span>
+                  <span style={PANEL_STYLES.processName}>{formatDiagnosticEventType(event.type)}</span>
                   <span style={PANEL_STYLES.sectionHint}>{event.detail || formatDiagnosticTime(event.timestamp)}</span>
                 </div>
                 <span style={PANEL_STYLES.sectionHint}>{new Date(event.timestamp * 1000).toLocaleTimeString()}</span>
