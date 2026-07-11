@@ -158,3 +158,16 @@ test("process and inhibit status use direct typed RPC results", () => {
   assert.match(source, /serverApi\.getInhibitStatus\(\)/);
   assert.doesNotMatch(source, /callPluginMethod[^\n]*(get_running_processes|get_inhibit_status)/);
 });
+
+test("power settings and recovery use direct typed RPC results", () => {
+  const source = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /serverApi\.getSystemPowerSettings\(\)/);
+  assert.match(source, /serverApi\.getPowerOverrideState\(\)/);
+  assert.match(source, /serverApi\.beginPowerOverride\(snapshot\)/);
+  assert.match(source, /serverApi\.endPowerOverride\(\)/);
+  assert.doesNotMatch(source, /callPluginMethod[^\n]*(get_system_power_settings|get_power_override_state|begin_power_override|end_power_override)/);
+});

@@ -5,6 +5,7 @@ import {
   type RouterHook,
   type Toaster,
 } from "@decky/api";
+import type { PowerSettings } from "./powerSettings";
 
 export type PluginMethod =
   | "start_backend"
@@ -73,7 +74,7 @@ export interface PluginBackendClient {
   getDiagnostics(): Promise<unknown>;
   getSystemPowerSettings(): Promise<unknown>;
   getPowerOverrideState(): Promise<unknown>;
-  beginPowerOverride(snapshot: Record<string, unknown>): Promise<boolean>;
+  beginPowerOverride(snapshot: PowerSettings): Promise<boolean>;
   endPowerOverride(): Promise<boolean>;
   waitForEvents(timeoutSeconds: number): Promise<unknown[]>;
   getSetting<T>(key: string, defaults: T): Promise<T>;
@@ -103,7 +104,7 @@ export const createPluginServerApi = (
   const getDiagnostics = callableFactory<[], unknown>("get_diagnostics");
   const getSystemPowerSettings = callableFactory<[], unknown>("get_system_power_settings");
   const getPowerOverrideState = callableFactory<[], unknown>("get_power_override_state");
-  const beginPowerOverride = callableFactory<[snapshot: Record<string, unknown>], boolean>("begin_power_override");
+  const beginPowerOverride = callableFactory<[snapshot: PowerSettings], boolean>("begin_power_override");
   const endPowerOverride = callableFactory<[], boolean>("end_power_override");
   const waitForEvents = callableFactory<[timeoutSeconds: number], unknown[]>("wait_for_events");
   const getSetting = callableFactory<[key: string, defaults: unknown], unknown>("get_settings");

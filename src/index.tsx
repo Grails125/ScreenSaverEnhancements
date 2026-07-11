@@ -1334,8 +1334,8 @@ export default definePlugin(() => {
   const readSystemPowerSettings = async (): Promise<PowerSettings | null> => {
     try {
       const inhibitStatus = await serverApi.getInhibitStatus();
-      const response = await serverApi.callPluginMethod<any, unknown>("get_system_power_settings", {});
-      const systemSettings = response.success ? parseSteamPowerSettings(response.result) : null;
+      const result = await serverApi.getSystemPowerSettings();
+      const systemSettings = parseSteamPowerSettings(result);
       if (!systemSettings) return null;
 
       const isInhibiting = Boolean(inhibitStatus.is_inhibiting || deckyMusicInhibiting);
@@ -1347,20 +1347,30 @@ export default definePlugin(() => {
   }
 
   const getPowerOverrideState = async (): Promise<PowerOverrideState> => {
-    const response = await serverApi.callPluginMethod<any, unknown>("get_power_override_state", {});
-    return response.success
-      ? parsePowerOverrideState(response.result)
-      : { active: false, snapshot: null };
+    try {
+      return parsePowerOverrideState(await serverApi.getPowerOverrideState());
+    } catch (error) {
+      console.warn("[ScreenSaverEnhancements] Could not read power recovery state", error);
+      return { active: false, snapshot: null };
+    }
   }
 
   const beginPowerOverride = async (snapshot: PowerSettings) => {
-    const response = await serverApi.callPluginMethod<any, boolean>("begin_power_override", { snapshot });
-    return response.success && response.result === true;
+    try {
+      return await serverApi.beginPowerOverride(snapshot) === true;
+    } catch (error) {
+      console.warn("[ScreenSaverEnhancements] Could not save power recovery state", error);
+      return false;
+    }
   }
 
   const endPowerOverride = async () => {
-    const response = await serverApi.callPluginMethod<any, boolean>("end_power_override", {});
-    return response.success && response.result === true;
+    try {
+      return await serverApi.endPowerOverride() === true;
+    } catch (error) {
+      console.warn("[ScreenSaverEnhancements] Could not clear power recovery state", error);
+      return false;
+    }
   }
 
   const restorePendingPowerOverride = async () => {
