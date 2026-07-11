@@ -993,6 +993,9 @@ export default definePlugin((serverApi: ServerAPI) => {
 
   const setConfiguredPowerSettings = (settings: PowerSettings) => {
     configuredPowerSettings = { ...settings };
+    if (shouldApplyPowerSettingsImmediately(backendInhibiting, deckyMusicInhibiting)) {
+      scheduleForceSuspend();
+    }
   }
 
   const clearSuspendTimeout = () => {
@@ -1417,6 +1420,22 @@ export default definePlugin((serverApi: ServerAPI) => {
     opacityState.SetState(clampOpacity(blackOpacity))
 
     showNotify = await getPluginBooleanSetting(serverApi, SHOW_NOTIFY, false)
+
+    const [batteryDim, acDim, batterySuspend, acSuspend, forceSuspend] = await Promise.all([
+      getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batteryDim, DEFAULT_POWER_SETTINGS.batteryDim),
+      getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acDim, DEFAULT_POWER_SETTINGS.acDim),
+      getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batterySuspend, DEFAULT_POWER_SETTINGS.batterySuspend),
+      getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acSuspend, DEFAULT_POWER_SETTINGS.acSuspend),
+      getPluginBooleanSetting(serverApi, POWER_SETTING_KEYS.forceSuspend, DEFAULT_POWER_SETTINGS.forceSuspend),
+    ])
+    setConfiguredPowerSettings(normalizePowerSettings({
+      batteryDim,
+      acDim,
+      batterySuspend,
+      acSuspend,
+      forceSuspend,
+    }))
+
     const run = await getPluginBooleanSetting(serverApi, RUN_ON_LOGIN, true)
     if (run) {
       backendRunning = true
