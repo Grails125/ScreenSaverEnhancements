@@ -47,7 +47,7 @@ test("maps legacy argument objects to modern positional RPC arguments", () => {
   assert.deepEqual(Array.from(getPluginMethodArguments("is_running", {})), []);
 });
 
-test("preserves the legacy success envelope over modern callable results", async () => {
+test("exposes typed RPC methods with positional callable arguments", async () => {
   const calls = [];
   const { createPluginServerApi } = loadDeckyApi(
     (route) => async (...args) => {
@@ -57,17 +57,19 @@ test("preserves the legacy success envelope over modern callable results", async
   );
   const serverApi = createPluginServerApi();
 
-  const response = await serverApi.callPluginMethod(
-    "get_power_override_state",
-    {},
-  );
+  const response = await serverApi.getPowerOverrideState();
+  await serverApi.getSetting("manual_apps", []);
+  await serverApi.beginPowerOverride({ batteryDim: 60 });
 
-  assert.deepEqual(calls, [{ route: "get_power_override_state", args: [] }]);
-  assert.equal(response.success, true);
-  assert.equal(response.result.active, true);
+  assert.deepEqual(calls, [
+    { route: "get_power_override_state", args: [] },
+    { route: "get_settings", args: ["manual_apps", []] },
+    { route: "begin_power_override", args: [{ batteryDim: 60 }] },
+  ]);
+  assert.equal(response.active, true);
 });
 
-test("converts modern callable rejections to the legacy failure envelope", async () => {
+test("propagates callable rejections to feature boundaries", async () => {
   const failure = new Error("backend unavailable");
   const { createPluginServerApi } = loadDeckyApi(
     () => async () => {
@@ -76,8 +78,5 @@ test("converts modern callable rejections to the legacy failure envelope", async
   );
   const serverApi = createPluginServerApi();
 
-  const response = await serverApi.callPluginMethod("get_diagnostics", {});
-
-  assert.equal(response.success, false);
-  assert.equal(response.result, failure);
+  await assert.rejects(serverApi.getDiagnostics(), failure);
 });
