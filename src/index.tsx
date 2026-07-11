@@ -1218,8 +1218,8 @@ export default definePlugin((serverApi: ServerAPI) => {
     setConfiguredPowerSettings(settings);
   }
   
-  const getEvent = async () => {
-    return await serverApi.callPluginMethod<any, any>("get_event", {});
+  const waitForEvents = async () => {
+    return await serverApi.callPluginMethod<any, any>("wait_for_events", { timeout_seconds: 25 });
   }
 
   const isBackendRunning = async () => {
@@ -1235,7 +1235,7 @@ export default definePlugin((serverApi: ServerAPI) => {
     dispose: () => void;
   };
 
-  const installAudioTracker = (): AudioTracker => {
+  const installAudioTracker = (onStateChanged: () => void): AudioTracker => {
     const trackerKey = "__screensaverEnhancementsAudioTrackerV2";
     const existingTracker = (window as any)[trackerKey] as AudioTracker | undefined;
     if (existingTracker) return existingTracker;
@@ -1246,21 +1246,25 @@ export default definePlugin((serverApi: ServerAPI) => {
 
     const handlePause = function(this: HTMLMediaElement) {
       tracked.delete(this);
+      onStateChanged();
     };
 
     const handleEnded = function(this: HTMLMediaElement) {
       tracked.delete(this);
+      onStateChanged();
     };
 
     const trackedPlay = function(this: HTMLMediaElement) {
       tracked.add(this);
       this.addEventListener("pause", handlePause, { once: true });
       this.addEventListener("ended", handleEnded, { once: true });
+      onStateChanged();
       return originalPlay.apply(this);
     };
 
     const trackedPause = function(this: HTMLMediaElement) {
       tracked.delete(this);
+      onStateChanged();
       return originalPause.apply(this);
     };
 
@@ -1301,9 +1305,9 @@ export default definePlugin((serverApi: ServerAPI) => {
 
   let audioTracker: AudioTracker | null = null;
 
-  const ensureAudioTracker = () => {
+  const ensureAudioTracker = (onStateChanged: () => void) => {
     if (!audioTracker) {
-      audioTracker = installAudioTracker();
+      audioTracker = installAudioTracker(onStateChanged);
     }
     return audioTracker.elements;
   }
@@ -1375,68 +1379,86 @@ export default definePlugin((serverApi: ServerAPI) => {
   }
 
   let deckyMusicEnabled = false;
-  let deckyMusicSettingsLastChecked = 0;
-  let eventPollTimeout: NodeJS.Timeout;
-  let eventPollingActive = true;
-  const ACTIVE_EVENT_POLL_MS = 3000;
-  const IDLE_EVENT_POLL_MS = 12000;
+  let eventListenerActive = true;
+  let powerOperation = Promise.resolve();
 
-  const pollPowerState = async () => {
-    try {
-      const now = Date.now();
-      if (now - deckyMusicSettingsLastChecked > 30000) {
-        deckyMusicSettingsLastChecked = now;
-        const manualApps = await getPluginSetting(serverApi, "manual_apps", []);
-        deckyMusicEnabled = isDeckyMusicEnabled(normalizeManualApps(manualApps));
-        if (deckyMusicEnabled) {
-          ensureAudioTracker();
-        } else {
-          disposeAudioTracker();
-        }
+  const enqueuePowerOperation = (operation: () => Promise<void>) => {
+    powerOperation = powerOperation
+      .then(operation)
+      .catch((error) => console.error("[ScreenSaverEnhancements] Power state update failed", error));
+  }
+
+  const reconcileDeckyMusicState = async () => {
+    const deckyMusicPlaying = deckyMusicEnabled && isAnyAudioPlaying();
+    if (deckyMusicPlaying && !deckyMusicInhibiting) {
+      const shouldStart = shouldStartInhibit(backendInhibiting, deckyMusicInhibiting);
+      deckyMusicInhibiting = true;
+      deckyMusicState.SetState(1);
+      if (shouldStart) {
+        await startInhibit(DECKY_MUSIC_APP);
       }
+    } else if (!deckyMusicPlaying && deckyMusicInhibiting) {
+      deckyMusicInhibiting = false;
+      deckyMusicState.SetState(0);
+      if (!backendInhibiting) {
+        await stopInhibit();
+      }
+    }
+  }
 
-      const deckyMusicPlaying = deckyMusicEnabled && isAnyAudioPlaying();
-      if (deckyMusicPlaying && !deckyMusicInhibiting) {
+  const scheduleDeckyMusicReconciliation = () => {
+    enqueuePowerOperation(reconcileDeckyMusicState);
+  }
+
+  const refreshDeckyMusicSetting = async () => {
+    const manualApps = await getPluginSetting(serverApi, "manual_apps", []);
+    deckyMusicEnabled = isDeckyMusicEnabled(normalizeManualApps(manualApps));
+    if (deckyMusicEnabled) {
+      ensureAudioTracker(scheduleDeckyMusicReconciliation);
+    } else {
+      disposeAudioTracker();
+    }
+    await reconcileDeckyMusicState();
+  }
+
+  const processBackendEvents = async (events: any[]) => {
+    for (const event of events) {
+      if (event.type === "SettingsChanged" && event.key === "manual_apps") {
+        await refreshDeckyMusicSetting();
+      } else if (event.type === "Inhibit") {
         const shouldStart = shouldStartInhibit(backendInhibiting, deckyMusicInhibiting);
-        deckyMusicInhibiting = true;
-        deckyMusicState.SetState(1);
+        backendInhibiting = true;
         if (shouldStart) {
-          await startInhibit(DECKY_MUSIC_APP);
+          await startInhibit(event.application);
         }
-      } else if (!deckyMusicPlaying && deckyMusicInhibiting) {
-        deckyMusicInhibiting = false;
-        deckyMusicState.SetState(0);
-        if (!backendInhibiting) {
+      } else if (event.type === "UnInhibit") {
+        backendInhibiting = false;
+        if (!deckyMusicInhibiting) {
           await stopInhibit();
         }
       }
+    }
+  }
 
-      let data = await getEvent();
-      if (data.success) {
-        let event = data.result;
-        for (let e of event) {
-          if (e.type == 'Inhibit') {
-            const shouldStart = shouldStartInhibit(backendInhibiting, deckyMusicInhibiting);
-            backendInhibiting = true;
-            if (shouldStart) {
-              await startInhibit(e.application);
-            }
-          } else if (e.type == 'UnInhibit') {
-            backendInhibiting = false;
-            if (!deckyMusicInhibiting) {
-              await stopInhibit();
-            }
-          }
+  const listenForPowerEvents = async () => {
+    try {
+      while (eventListenerActive) {
+        const response = await waitForEvents();
+        if (!eventListenerActive) return;
+        if (!response.success) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          continue;
+        }
+        const events = Array.isArray(response.result) ? response.result : [];
+        if (events.length > 0) {
+          enqueuePowerOperation(() => processBackendEvents(events));
         }
       }
     } catch (error) {
-      console.error("[ScreenSaverEnhancements] Power state polling failed", error);
-    } finally {
-      if (!eventPollingActive) return;
-      const nextDelay = backendInhibiting || deckyMusicInhibiting
-        ? ACTIVE_EVENT_POLL_MS
-        : IDLE_EVENT_POLL_MS;
-      eventPollTimeout = setTimeout(pollPowerState, nextDelay);
+      console.error("[ScreenSaverEnhancements] Event listener failed", error);
+      if (eventListenerActive) {
+        setTimeout(() => void listenForPowerEvents(), 3000);
+      }
     }
   }
 
@@ -1476,8 +1498,13 @@ export default definePlugin((serverApi: ServerAPI) => {
       backendRunning = false
       console.error("[ScreenSaverEnhancements] Plugin initialization failed", error)
     } finally {
-      if (eventPollingActive) {
-        eventPollTimeout = setTimeout(pollPowerState, ACTIVE_EVENT_POLL_MS);
+      if (eventListenerActive) {
+        try {
+          await refreshDeckyMusicSetting()
+        } catch (error) {
+          console.error("[ScreenSaverEnhancements] Could not initialize DeckyMusic tracking", error)
+        }
+        void listenForPowerEvents()
       }
     }
   }
@@ -1505,8 +1532,7 @@ export default definePlugin((serverApi: ServerAPI) => {
       void restorePendingPowerOverride()
       deckyMusicState.SetState(0)
       clearTimeout(timeout)
-      eventPollingActive = false
-      clearTimeout(eventPollTimeout)
+      eventListenerActive = false
       disposeAudioTracker()
       serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")
     },

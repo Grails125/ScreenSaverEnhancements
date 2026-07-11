@@ -1,8 +1,10 @@
 import decky_plugin
+import asyncio
 import importlib.util
 from pathlib import Path
 import queue
 import re
+import time
 
 
 def load_local_module(module_name, file_name):
@@ -20,6 +22,7 @@ def load_local_module(module_name, file_name):
 
 SettingsManager = load_local_module("settings", "settings.py").SettingsManager
 plugin_contract = load_local_module("contract", "plugin_contract.py")
+ProcessEventSource = load_local_module("process_events", "process_events.py").ProcessEventSource
 
 STEAM_CONFIG_PATHS = (
     "/home/deck/.local/share/Steam/config/config.vdf",
@@ -101,15 +104,20 @@ settings = SettingsManager(name="settings", settings_directory=settings_dir)
 if settings.getSetting("manual_apps", None) is None:
     settings.setSetting("manual_apps", ["chrome", "mpv", "wiliwili"])
 event_queue = queue.Queue()
+event_signal = asyncio.Event()
 manual_inhibiting = False
 inhibit_active = False
 decky_plugin.logger.info(f"Settings directory: {settings_dir}")
 
-import asyncio
 from dbus_next.aio import MessageBus
 from dbus_next import Message, MessageType
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
 bus = None
+
+
+def queue_event(event):
+    event_queue.put(event)
+    event_signal.set()
 
 
 def sync_inhibit_state(application=None):
@@ -121,7 +129,7 @@ def sync_inhibit_state(application=None):
     event = {"type": "Inhibit" if active else "UnInhibit"}
     if active and application:
         event["application"] = application
-    event_queue.put(event)
+    queue_event(event)
 
 class AppRequest:
     def __init__(self, sender, cookie, application, reason):
@@ -345,8 +353,24 @@ class Plugin:
             self.manual_watch_task = None
         if not hasattr(self, 'manual_inhibit_process'):
             self.manual_inhibit_process = None
+        if not hasattr(self, 'manual_watch_wakeup'):
+            self.manual_watch_wakeup = asyncio.Event()
+        if not hasattr(self, 'process_event_source'):
+            self.process_event_source = None
+        if not hasattr(self, 'process_event_task'):
+            self.process_event_task = None
+        if not hasattr(self, 'process_monitor_mode'):
+            self.process_monitor_mode = "not_started"
+        if not hasattr(self, 'process_scan_count'):
+            self.process_scan_count = 0
+        if not hasattr(self, 'last_process_scan_at'):
+            self.last_process_scan_at = None
+        if not hasattr(self, 'last_process_event_at'):
+            self.last_process_event_at = None
 
     async def _get_all_process_lines(self):
+        self.process_scan_count += 1
+        self.last_process_scan_at = int(time.time())
         return await asyncio.to_thread(get_process_lines, ['ps', '-eo', 'comm=,args='])
 
     async def _is_process_running(self, name):
@@ -414,6 +438,7 @@ class Plugin:
     async def _manual_watch_loop(self):
         decky_plugin.logger.info("Manual process watcher started")
         while True:
+            self.manual_watch_wakeup.clear()
             has_manual_process_rules = False
             try:
                 manual_apps = settings.getSetting("manual_apps", [])
@@ -427,17 +452,47 @@ class Plugin:
                 raise
             except Exception as e:
                 decky_plugin.logger.error(f"Error in manual process watcher: {e}")
-            if not has_manual_process_rules:
-                sleep_interval = 60
-            else:
-                sleep_interval = 15 if self.manual_active else 30
-            await asyncio.sleep(sleep_interval)
+            fallback_interval = 300 if not has_manual_process_rules else 120
+            try:
+                await asyncio.wait_for(
+                    self.manual_watch_wakeup.wait(),
+                    timeout=fallback_interval,
+                )
+                await asyncio.sleep(0.35)
+            except asyncio.TimeoutError:
+                pass
+
+    async def _process_event_loop(self):
+        decky_plugin.logger.info("Kernel process event listener started")
+        while True:
+            try:
+                await self.process_event_source.wait_for_process_change()
+                self.last_process_event_at = int(time.time())
+                self.manual_watch_wakeup.set()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                self.process_monitor_mode = "fallback_scan"
+                decky_plugin.logger.warning(f"Kernel process event listener stopped: {e}")
+                self.manual_watch_wakeup.set()
+                return
 
     def _start_manual_watch(self):
         Plugin._init_runtime_state(self)
         if self.manual_watch_task and not self.manual_watch_task.done():
             return
         try:
+            source = ProcessEventSource()
+            try:
+                source.open()
+                self.process_event_source = source
+                self.process_monitor_mode = "proc_connector"
+                self.process_event_task = asyncio.create_task(Plugin._process_event_loop(self))
+            except Exception as e:
+                source.close()
+                self.process_event_source = None
+                self.process_monitor_mode = "fallback_scan"
+                decky_plugin.logger.warning(f"Process events unavailable; using low-frequency scan: {e}")
             self.manual_watch_task = asyncio.create_task(Plugin._manual_watch_loop(self))
         except Exception as e:
             decky_plugin.logger.error(f"Error starting manual process watcher: {e}")
@@ -447,6 +502,19 @@ class Plugin:
         Plugin._init_runtime_state(self)
         task = self.manual_watch_task
         self.manual_watch_task = None
+        event_task = self.process_event_task
+        self.process_event_task = None
+        if self.process_event_source is not None:
+            self.process_event_source.close()
+            self.process_event_source = None
+        if event_task and not event_task.done():
+            event_task.cancel()
+            try:
+                await event_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                decky_plugin.logger.error(f"Error stopping process event listener: {e}")
         if task and not task.done():
             task.cancel()
             try:
@@ -458,6 +526,7 @@ class Plugin:
         Plugin._stop_manual_inhibitor(self)
         self.manual_active = False
         self.manual_running_app = None
+        self.process_monitor_mode = "stopped"
         manual_inhibiting = False
         sync_inhibit_state()
 
@@ -483,7 +552,7 @@ class Plugin:
         await stop_dbus()
         clear_dbus_requests()
         clear_event_queue()
-        event_queue.put({"type": "UnInhibit"})
+        queue_event({"type": "UnInhibit"})
         return True
 
     async def is_running(self):
@@ -560,6 +629,18 @@ class Plugin:
 
         return []
 
+    async def wait_for_events(self, timeout_seconds: int = 25):
+        timeout = max(5, min(int(timeout_seconds), 30))
+        event_signal.clear()
+        events = await Plugin.get_event(self)
+        if events:
+            return events
+        try:
+            await asyncio.wait_for(event_signal.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return []
+        return await Plugin.get_event(self)
+
     async def get_inhibit_status(self):
         Plugin._init_runtime_state(self)
         manual_apps = settings.getSetting("manual_apps", [])
@@ -608,14 +689,22 @@ class Plugin:
             decky_plugin.logger.warning(f"Rejected unknown setting key: {key!r}")
             return False
         decky_plugin.logger.info('[settings] set {}: {}'.format(key, value))
-        return settings.setSetting(key, value)
+        saved = settings.setSetting(key, value)
+        if saved and key == "manual_apps":
+            queue_event({"type": "SettingsChanged", "key": key})
+            self.manual_watch_wakeup.set()
+        return saved
 
     async def set_settings_batch(self, values: dict):
         if not plugin_contract.validate_settings_batch(values):
             decky_plugin.logger.warning("Rejected invalid settings batch")
             return False
         decky_plugin.logger.info('[settings] batch set keys: {}'.format(list(values.keys())))
-        return settings.setSettings(values)
+        saved = settings.setSettings(values)
+        if saved and "manual_apps" in values:
+            queue_event({"type": "SettingsChanged", "key": "manual_apps"})
+            self.manual_watch_wakeup.set()
+        return saved
 
     async def _main(self):
         decky_plugin.logger.info("Hello World!")
