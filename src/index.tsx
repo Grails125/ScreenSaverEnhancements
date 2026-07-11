@@ -113,6 +113,49 @@ const PANEL_STYLES = {
     fontSize: '0.85em',
     flexShrink: 0,
   },
+  updateSummary: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '7px',
+    width: '100%',
+    padding: '9px 10px',
+    background: 'rgba(255,255,255,0.035)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '6px',
+    boxSizing: 'border-box' as const,
+  },
+  updateVersionRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+  },
+  updateVersionLabel: {
+    color: '#8d8d8d',
+    fontSize: '0.76em',
+  },
+  updateVersionValue: {
+    color: '#f1f1f1',
+    fontSize: '0.82em',
+    fontWeight: 'bold' as const,
+    overflowWrap: 'anywhere' as const,
+    textAlign: 'right' as const,
+  },
+  releaseNotes: {
+    width: '100%',
+    maxHeight: '180px',
+    overflowY: 'auto' as const,
+    padding: '9px 10px',
+    background: 'rgba(93,185,255,0.06)',
+    border: '1px solid rgba(93,185,255,0.2)',
+    borderRadius: '6px',
+    boxSizing: 'border-box' as const,
+    color: '#d7e8f7',
+    fontSize: '0.78em',
+    lineHeight: 1.45,
+    whiteSpace: 'pre-wrap' as const,
+    overflowWrap: 'anywhere' as const,
+  },
   badge: (type: string) => ({
     fontSize: '0.65em',
     padding: '3px 6px',
@@ -687,6 +730,11 @@ const Content: FC<{
   const [blackBackgroundOpacity, setBlackBackgroundOpacity] = useState<number>(opacityState.GetState());
   const [closeOnAnyKey, setCloseOnAnyKey] = useState<boolean>(false);
   const [closeOnAnyKeyLoaded, setCloseOnAnyKeyLoaded] = useState<boolean>(false);
+  const [pluginVersion, setPluginVersion] = useState<string>('');
+  const [latestVersion, setLatestVersion] = useState<string>('');
+  const [updateNotes, setUpdateNotes] = useState<string>('');
+  const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
+  const [checkingUpdate, setCheckingUpdate] = useState<boolean>(false);
   const [powerSettings, setPowerSettings] = useState<PowerSettings>(DEFAULT_POWER_SETTINGS);
   const [deckyMusicActive, setDeckyMusicActive] = useState<boolean>(deckyMusicState.GetState() === 1);
   const [powerConfigCollapsed, setPowerConfigCollapsed] = useState<boolean>(() => {
@@ -748,6 +796,7 @@ const Content: FC<{
   const opacitySaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingOpacityRef = useRef<number | null>(null);
   const persistedOpacityRef = useRef(opacityState.GetState());
+  const updateCheckInFlight = useRef(false);
 
   const isCurrentRequest = (token: number) => {
     return panelVisible.current && requestTokenRef.current === token;
@@ -863,6 +912,48 @@ const Content: FC<{
     await fetchInhibitStatus();
   }
 
+  const checkUpdate = async () => {
+    if (updateCheckInFlight.current) return;
+    updateCheckInFlight.current = true;
+    setCheckingUpdate(true);
+    const token = requestTokenRef.current;
+    try {
+      const result = await serverApi.checkUpdate();
+      if (!isCurrentRequest(token)) return;
+      if (result.error) throw new Error(result.error);
+
+      setPluginVersion(result.current);
+      setLatestVersion(result.latest);
+      setUpdateAvailable(result.has_update);
+      setUpdateNotes(result.has_update ? result.notes : '');
+      serverApi.toaster.toast({
+        title: t(result.has_update ? 'Update Available' : 'No Update'),
+        body: result.has_update
+          ? `${result.current} → ${result.latest}`
+          : t('Already Latest Version'),
+        icon: <GiNightSleep />,
+        critical: result.has_update,
+        duration: result.has_update ? 5000 : 3000,
+      });
+    } catch (error) {
+      console.warn('[ScreenSaverEnhancements] Update check failed', error);
+      if (isCurrentRequest(token)) {
+        setUpdateAvailable(false);
+        setUpdateNotes('');
+        serverApi.toaster.toast({
+          title: t('Update Check Failed'),
+          body: t('Update Check Failed'),
+          icon: <GiNightSleep />,
+          critical: true,
+          duration: 4000,
+        });
+      }
+    } finally {
+      updateCheckInFlight.current = false;
+      if (isCurrentRequest(token)) setCheckingUpdate(false);
+    }
+  }
+
   const refreshAppMenuData = async () => {
     await Promise.all([
       fetchRunningProcesses(),
@@ -971,6 +1062,16 @@ const Content: FC<{
       setCloseOnAnyKeyLoaded(true);
     };
     loadBlackBackgroundSettings();
+
+    const loadPluginVersion = async () => {
+      try {
+        const version = await serverApi.getPluginVersion();
+        if (isCurrentRequest(token)) setPluginVersion(version);
+      } catch (error) {
+        console.warn('[ScreenSaverEnhancements] Could not load plugin version', error);
+      }
+    };
+    void loadPluginVersion();
 
     const loadPowerSettings = async () => {
       const [batteryDim, acDim, batterySuspend, acSuspend] = await Promise.all([
@@ -1293,6 +1394,38 @@ const Content: FC<{
             />
           </PanelSectionRow>
         )}
+      </PanelSection>
+
+      <PanelSection title={t('Update')}>
+        <PanelSectionRow>
+          <div style={PANEL_STYLES.updateSummary}>
+            <div style={PANEL_STYLES.updateVersionRow}>
+              <span style={PANEL_STYLES.updateVersionLabel}>{t('Current Version')}</span>
+              <span style={PANEL_STYLES.updateVersionValue}>{pluginVersion || '-'}</span>
+            </div>
+            <div style={PANEL_STYLES.updateVersionRow}>
+              <span style={PANEL_STYLES.updateVersionLabel}>{t('Latest Version')}</span>
+              <span style={PANEL_STYLES.updateVersionValue}>{latestVersion || '-'}</span>
+            </div>
+          </div>
+        </PanelSectionRow>
+        {updateAvailable && (
+          <PanelSectionRow>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', width: '100%' }}>
+              <div style={PANEL_STYLES.sectionHint}>{t('Release Notes')}</div>
+              <div style={PANEL_STYLES.releaseNotes}>{updateNotes || t('No Release Notes')}</div>
+            </div>
+          </PanelSectionRow>
+        )}
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            disabled={checkingUpdate}
+            onClick={() => void checkUpdate()}
+          >
+            {checkingUpdate ? t('Checking') : t('Check Update')}
+          </ButtonItem>
+        </PanelSectionRow>
       </PanelSection>
 
       <PanelSection title={t('App Rules Section')}>

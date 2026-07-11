@@ -94,5 +94,16 @@
     "Diagnostics Unavailable": "Diagnostics unavailable",
     "Copy Diagnostic Report": "Copy Diagnostic Report",
     "Diagnostic Report Copied": "Diagnostic report copied",
-    "Diagnostic Export Failed": "Copy failed"
+    "Diagnostic Export Failed": "Copy failed",
+    "Update": "Update",
+    "Current Version": "Current Version",
+    "Latest Version": "Latest Version",
+    "Release Notes": "Release Notes",
+    "No Release Notes": "No release notes provided.",
+    "Check Update": "Check Update",
+    "Checking": "Checking…",
+    "Update Available": "Update Available",
+    "No Update": "No Update",
+    "Already Latest Version": "Already Latest Version",
+    "Update Check Failed": "Update Check Failed"
 }

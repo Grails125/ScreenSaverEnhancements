@@ -23,6 +23,7 @@ def load_local_module(module_name, file_name):
 SettingsManager = load_local_module("settings", "settings.py").SettingsManager
 plugin_contract = load_local_module("contract", "plugin_contract.py")
 process_events = load_local_module("process_events", "process_events.py")
+update_checker = load_local_module("update_checker", "update_checker.py")
 ProcessEventSource = process_events.ProcessEventSource
 
 STEAM_CONFIG_PATHS = (
@@ -682,6 +683,32 @@ class Plugin:
 
         # 排序：应用在前，然后按名称字母排序
         result.sort(key=lambda x: (0 if x['type'] == 'app' else 1, x['name'].lower()))
+        return result
+
+    async def get_plugin_version(self):
+        return decky.DECKY_PLUGIN_VERSION
+
+    async def check_update(self):
+        result = {
+            "has_update": False,
+            "current": "",
+            "latest": "",
+            "notes": "",
+            "error": "",
+        }
+        try:
+            current = update_checker.normalize_version(decky.DECKY_PLUGIN_VERSION)
+            release = await asyncio.to_thread(update_checker.fetch_latest_release)
+            latest = release["version"]
+            result.update({
+                "has_update": update_checker.is_newer_version(latest, current),
+                "current": current,
+                "latest": latest,
+                "notes": release["notes"],
+            })
+        except Exception as error:
+            result["error"] = "update_check_failed"
+            decky.logger.warning(f"Update check failed: {error}")
         return result
 
     async def get_diagnostics(self):

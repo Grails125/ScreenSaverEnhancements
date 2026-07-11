@@ -53,6 +53,8 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
     batterySuspend: 300,
     acSuspend: 600,
   });
+  await serverApi.getPluginVersion();
+  await serverApi.checkUpdate();
 
   assert.deepEqual(calls, [
     { route: "get_power_override_state", args: [] },
@@ -61,6 +63,8 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
       route: "begin_power_override",
       args: [{ batteryDim: 60, acDim: 120, batterySuspend: 300, acSuspend: 600 }],
     },
+    { route: "get_plugin_version", args: [] },
+    { route: "check_update", args: [] },
   ]);
   assert.equal(response.active, true);
 });

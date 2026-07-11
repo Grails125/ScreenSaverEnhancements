@@ -45,6 +45,7 @@ def build():
         "settings.py",
         "plugin_contract.py",
         "process_events.py",
+        "update_checker.py",
     ]
     
     for f in files_to_copy:

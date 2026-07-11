@@ -26,6 +26,13 @@ export type InhibitStatus = {
 export type SettingsChangedKey = "manual_apps";
 export type SettingsChangedListener = (key: SettingsChangedKey) => void;
 export type InhibitStateChangedListener = () => void;
+export type UpdateCheckResult = {
+  has_update: boolean;
+  current: string;
+  latest: string;
+  notes: string;
+  error: string;
+};
 
 export interface PluginBackendClient {
   startBackend(): Promise<boolean>;
@@ -34,6 +41,8 @@ export interface PluginBackendClient {
   getRunningProcesses(): Promise<RunningProcess[]>;
   getInhibitStatus(): Promise<InhibitStatus>;
   getDiagnostics(): Promise<unknown>;
+  getPluginVersion(): Promise<string>;
+  checkUpdate(): Promise<UpdateCheckResult>;
   getSystemPowerSettings(): Promise<unknown>;
   getPowerOverrideState(): Promise<unknown>;
   beginPowerOverride(snapshot: PowerSettings): Promise<boolean>;
@@ -71,6 +80,8 @@ export const createPluginServerApi = (
   const getRunningProcesses = callableFactory<[], RunningProcess[]>("get_running_processes");
   const getInhibitStatus = callableFactory<[], InhibitStatus>("get_inhibit_status");
   const getDiagnostics = callableFactory<[], unknown>("get_diagnostics");
+  const getPluginVersion = callableFactory<[], string>("get_plugin_version");
+  const checkUpdate = callableFactory<[], UpdateCheckResult>("check_update");
   const getSystemPowerSettings = callableFactory<[], unknown>("get_system_power_settings");
   const getPowerOverrideState = callableFactory<[], unknown>("get_power_override_state");
   const beginPowerOverride = callableFactory<[snapshot: PowerSettings], boolean>("begin_power_override");
@@ -86,6 +97,8 @@ export const createPluginServerApi = (
     getRunningProcesses,
     getInhibitStatus,
     getDiagnostics,
+    getPluginVersion,
+    checkUpdate,
     getSystemPowerSettings,
     getPowerOverrideState,
     beginPowerOverride,
