@@ -36,13 +36,16 @@ from dbus_next.service import ServiceInterface, method, dbus_property, signal
 bus = None
 
 
-def sync_inhibit_state():
+def sync_inhibit_state(application=None):
     global inhibit_active
     active = manual_inhibiting or len(BaseInterface.request_map) > 0
     if active == inhibit_active:
         return
     inhibit_active = active
-    event_queue.put({"type": "Inhibit" if active else "UnInhibit"})
+    event = {"type": "Inhibit" if active else "UnInhibit"}
+    if active and application:
+        event["application"] = application
+    event_queue.put(event)
 
 class AppRequest:
     def __init__(self, sender, cookie, application, reason):
@@ -85,7 +88,7 @@ class BaseInterface(ServiceInterface):
         sender = ServiceInterface.last_msg.sender
         BaseInterface.cookie += 1
         BaseInterface.request_map[BaseInterface.cookie] = AppRequest(sender, BaseInterface.cookie, application, reason)
-        sync_inhibit_state()
+        sync_inhibit_state(application)
         return BaseInterface.cookie
 
     async def _un_inhibit_impl(self, cookie):
@@ -325,7 +328,7 @@ class Plugin:
         self.manual_running_app = running_app
         manual_inhibiting = manual_active
         if emit_events:
-            sync_inhibit_state()
+            sync_inhibit_state(running_app)
 
     async def _manual_watch_loop(self):
         decky_plugin.logger.info("Manual process watcher started")

@@ -300,6 +300,12 @@ const findModule = (property: string) => {
     }
   });
 }
+
+const getAppDisplayName = (application?: string) => {
+  const normalized = application?.trim() || "";
+  const shortName = normalized.split('.').pop() || normalized;
+  return APP_NAMES[normalized] || APP_NAMES[shortName] || normalized;
+}
 const SystemSleep = findModule("InitiateSleep")
 
 const RUN_ON_LOGIN = "run_on_login"
@@ -500,6 +506,7 @@ const Content: VFC<{
   const [closeOnAnyKey, setCloseOnAnyKey] = useState<boolean>(false);
   const [closeOnAnyKeyLoaded, setCloseOnAnyKeyLoaded] = useState<boolean>(false);
   const [powerSettings, setPowerSettings] = useState<PowerSettings>(DEFAULT_POWER_SETTINGS);
+  const [powerSettingsLoaded, setPowerSettingsLoaded] = useState<boolean>(false);
   const [deckyMusicActive, setDeckyMusicActive] = useState<boolean>(deckyMusicState.GetState() === 1);
   const [powerConfigCollapsed, setPowerConfigCollapsed] = useState<boolean>(() => {
     try {
@@ -668,6 +675,7 @@ const Content: VFC<{
       if (!isCurrentRequest(token)) return;
       const next = normalizePowerSettings({ batteryDim, acDim, batterySuspend, acSuspend, forceSuspend });
       setPowerSettings(next);
+      setPowerSettingsLoaded(true);
       onPowerSettingsLoaded(next);
     };
     loadPowerSettings();
@@ -771,14 +779,14 @@ const Content: VFC<{
             checked={running}
           />
         </PanelSectionRow>
-        <PanelSectionRow>
+        {powerSettingsLoaded && <PanelSectionRow>
           <ToggleField
             label={t('Sleep Warning')}
             description={t('Sleep Warning Description')}
             onChange={(checked) => void updatePowerSetting('forceSuspend', checked)}
             checked={powerSettings.forceSuspend}
           />
-        </PanelSectionRow>
+        </PanelSectionRow>}
         <PanelSectionRow>
           <ToggleField
             label={t('Show Notify')}
@@ -798,6 +806,12 @@ const Content: VFC<{
       </PanelSection>
 
       <PanelSection title={t('Power Profiles')}>
+        <style>{`
+          .ScreenSaverEnhancements_PowerConfigCollapse > div > div > div > button,
+          .ScreenSaverEnhancements_PowerConfigCollapse > div > div > div > div > button {
+            height: 10px !important;
+          }
+        `}</style>
         <PanelSectionRow>
           <div style={{
             fontSize: '14px',
@@ -812,15 +826,17 @@ const Content: VFC<{
           </div>
         </PanelSectionRow>
         <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            bottomSeparator={powerConfigCollapsed ? "standard" : "none"}
-            onClick={() => setPowerConfigCollapsed(!powerConfigCollapsed)}
-          >
-            {powerConfigCollapsed
-              ? <RiArrowDownSFill style={{ fontSize: '1.5em' }} />
-              : <RiArrowUpSFill style={{ fontSize: '1.5em' }} />}
-          </ButtonItem>
+          <div className="ScreenSaverEnhancements_PowerConfigCollapse" style={{ marginTop: '-2px', marginBottom: '4px' }}>
+            <ButtonItem
+              layout="below"
+              bottomSeparator={powerConfigCollapsed ? "standard" : "none"}
+              onClick={() => setPowerConfigCollapsed(!powerConfigCollapsed)}
+            >
+              {powerConfigCollapsed
+                ? <RiArrowDownSFill style={{ transform: 'translate(0, -13px)', fontSize: '1.5em' }} />
+                : <RiArrowUpSFill style={{ transform: 'translate(0, -12px)', fontSize: '1.5em' }} />}
+            </ButtonItem>
+          </div>
         </PanelSectionRow>
         {!powerConfigCollapsed && <>
           <PanelSectionRow>
@@ -1276,8 +1292,10 @@ export default definePlugin((serverApi: ServerAPI) => {
     }, 2000)
   }
 
-  const startInhibit = async () => {
-    notify(t("ScreenSaver"), t("Inhibit"))
+  const startInhibit = async (application?: string) => {
+    const displayName = getAppDisplayName(application);
+    const message = displayName ? `${displayName} ${t("Inhibit")}` : t("Inhibit");
+    notify(t("ScreenSaver"), message)
     clearSuspendTimeout()
     await capturePowerSettings()
     await updateSetting(0, 0, 0, 0);
@@ -1343,7 +1361,7 @@ export default definePlugin((serverApi: ServerAPI) => {
         deckyMusicInhibiting = true;
         deckyMusicState.SetState(1);
         if (shouldStart) {
-          await startInhibit();
+          await startInhibit(DECKY_MUSIC_APP);
         }
       } else if (!deckyMusicPlaying && deckyMusicInhibiting) {
         deckyMusicInhibiting = false;
@@ -1361,7 +1379,7 @@ export default definePlugin((serverApi: ServerAPI) => {
             const shouldStart = shouldStartInhibit(backendInhibiting, deckyMusicInhibiting);
             backendInhibiting = true;
             if (shouldStart) {
-              await startInhibit();
+              await startInhibit(e.application);
             }
           } else if (e.type == 'UnInhibit') {
             backendInhibiting = false;

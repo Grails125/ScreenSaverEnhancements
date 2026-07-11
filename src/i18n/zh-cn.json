@@ -47,7 +47,7 @@
     "AC Suspend Timeout": "接电休眠超时",
     "Custom Power Configuration": "自定义电源配置",
     "Sleep Warning": "休眠前通知",
-    "Sleep Warning Description": "休眠前播放五秒提示音；需开启自定义电源配置，手柄输入或触摸屏幕会取消并重新开始倒计时。",
+    "Sleep Warning Description": "休眠前5秒显示通知。",
     "Zero Disables Timeout": "设为 0 可关闭该超时。",
     "Power Settings Apply Failed": "电源配置应用失败",
     "Power Settings Apply Failed Body": "Steam 未能应用此配置，已恢复之前的值。",
