@@ -105,5 +105,8 @@
     "Update Available": "Update Available",
     "No Update": "No Update",
     "Already Latest Version": "Already Latest Version",
-    "Update Check Failed": "Update Check Failed"
+    "Update Check Failed": "Update Check Failed",
+    "Download and Install": "Download and Install",
+    "Installing Update": "Opening installer…",
+    "Update Install Failed": "Update installation failed"
 }

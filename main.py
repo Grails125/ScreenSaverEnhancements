@@ -694,17 +694,24 @@ class Plugin:
             "current": "",
             "latest": "",
             "notes": "",
+            "download_url": "",
+            "sha256": "",
             "error": "",
         }
         try:
             current = update_checker.normalize_version(decky.DECKY_PLUGIN_VERSION)
             release = await asyncio.to_thread(update_checker.fetch_latest_release)
             latest = release["version"]
+            has_update = update_checker.is_newer_version(latest, current)
+            if has_update and (not release["download_url"] or not release["sha256"]):
+                raise ValueError("latest release package is unavailable")
             result.update({
-                "has_update": update_checker.is_newer_version(latest, current),
+                "has_update": has_update,
                 "current": current,
                 "latest": latest,
                 "notes": release["notes"],
+                "download_url": release["download_url"],
+                "sha256": release["sha256"],
             })
         except Exception as error:
             result["error"] = "update_check_failed"

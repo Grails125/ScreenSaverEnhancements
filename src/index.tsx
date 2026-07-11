@@ -63,6 +63,8 @@ const POWER_SETTING_KEYS = {
   acSuspend: "ac_suspend_timeout",
 } as const
 const POWER_CONFIG_COLLAPSED_KEY = "screensaver-enhancements-power-config-collapsed"
+const UPDATE_RESTART_TARGET_KEY = "screensaver-enhancements-update-restart-target"
+const UPDATE_RESTART_MAX_AGE_MS = 30 * 60 * 1000
 
 const renderBlackBackgroundTip = () => React.createElement(
   'span',
@@ -735,6 +737,9 @@ const Content: FC<{
   const [updateNotes, setUpdateNotes] = useState<string>('');
   const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
   const [checkingUpdate, setCheckingUpdate] = useState<boolean>(false);
+  const [installingUpdate, setInstallingUpdate] = useState<boolean>(false);
+  const [updateDownloadUrl, setUpdateDownloadUrl] = useState<string>('');
+  const [updateSha256, setUpdateSha256] = useState<string>('');
   const [powerSettings, setPowerSettings] = useState<PowerSettings>(DEFAULT_POWER_SETTINGS);
   const [deckyMusicActive, setDeckyMusicActive] = useState<boolean>(deckyMusicState.GetState() === 1);
   const [powerConfigCollapsed, setPowerConfigCollapsed] = useState<boolean>(() => {
@@ -926,6 +931,8 @@ const Content: FC<{
       setLatestVersion(result.latest);
       setUpdateAvailable(result.has_update);
       setUpdateNotes(result.has_update ? result.notes : '');
+      setUpdateDownloadUrl(result.has_update ? result.download_url : '');
+      setUpdateSha256(result.has_update ? result.sha256 : '');
       serverApi.toaster.toast({
         title: t(result.has_update ? 'Update Available' : 'No Update'),
         body: result.has_update
@@ -940,6 +947,8 @@ const Content: FC<{
       if (isCurrentRequest(token)) {
         setUpdateAvailable(false);
         setUpdateNotes('');
+        setUpdateDownloadUrl('');
+        setUpdateSha256('');
         serverApi.toaster.toast({
           title: t('Update Check Failed'),
           body: t('Update Check Failed'),
@@ -951,6 +960,34 @@ const Content: FC<{
     } finally {
       updateCheckInFlight.current = false;
       if (isCurrentRequest(token)) setCheckingUpdate(false);
+    }
+  }
+
+  const installUpdate = async () => {
+    if (installingUpdate || !updateAvailable || !updateDownloadUrl || !updateSha256) return;
+    setInstallingUpdate(true);
+    try {
+      localStorage.setItem(UPDATE_RESTART_TARGET_KEY, JSON.stringify({
+        version: latestVersion,
+        requestedAt: Date.now(),
+      }));
+      await serverApi.installPluginUpdate({
+        downloadUrl: updateDownloadUrl,
+        version: latestVersion,
+        sha256: updateSha256,
+      });
+    } catch (error) {
+      localStorage.removeItem(UPDATE_RESTART_TARGET_KEY);
+      console.error('[ScreenSaverEnhancements] Update installation failed', error);
+      serverApi.toaster.toast({
+        title: t('Update Install Failed'),
+        body: t('Update Install Failed'),
+        icon: <GiNightSleep />,
+        critical: true,
+        duration: 4000,
+      });
+    } finally {
+      setInstallingUpdate(false);
     }
   }
 
@@ -1067,6 +1104,19 @@ const Content: FC<{
       try {
         const version = await serverApi.getPluginVersion();
         if (isCurrentRequest(token)) setPluginVersion(version);
+        const pendingRestart = localStorage.getItem(UPDATE_RESTART_TARGET_KEY);
+        if (pendingRestart) {
+          const { version: restartTarget, requestedAt } = JSON.parse(pendingRestart) as {
+            version?: unknown;
+            requestedAt?: unknown;
+          };
+          if (version === restartTarget) {
+            localStorage.removeItem(UPDATE_RESTART_TARGET_KEY);
+            void serverApi.restartDecky().catch(() => undefined);
+          } else if (typeof requestedAt !== 'number' || Date.now() - requestedAt > UPDATE_RESTART_MAX_AGE_MS) {
+            localStorage.removeItem(UPDATE_RESTART_TARGET_KEY);
+          }
+        }
       } catch (error) {
         console.warn('[ScreenSaverEnhancements] Could not load plugin version', error);
       }
@@ -1415,6 +1465,17 @@ const Content: FC<{
               <div style={PANEL_STYLES.sectionHint}>{t('Release Notes')}</div>
               <div style={PANEL_STYLES.releaseNotes}>{updateNotes || t('No Release Notes')}</div>
             </div>
+          </PanelSectionRow>
+        )}
+        {updateAvailable && (
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              disabled={installingUpdate || !updateDownloadUrl || !updateSha256}
+              onClick={() => void installUpdate()}
+            >
+              {installingUpdate ? t('Installing Update') : t('Download and Install')}
+            </ButtonItem>
           </PanelSectionRow>
         )}
         <PanelSectionRow>

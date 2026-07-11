@@ -31,7 +31,14 @@ export type UpdateCheckResult = {
   current: string;
   latest: string;
   notes: string;
+  download_url: string;
+  sha256: string;
   error: string;
+};
+export type UpdateInstallRequest = {
+  downloadUrl: string;
+  version: string;
+  sha256: string;
 };
 
 export interface PluginBackendClient {
@@ -43,6 +50,8 @@ export interface PluginBackendClient {
   getDiagnostics(): Promise<unknown>;
   getPluginVersion(): Promise<string>;
   checkUpdate(): Promise<UpdateCheckResult>;
+  installPluginUpdate(request: UpdateInstallRequest): Promise<void>;
+  restartDecky(): Promise<void>;
   getSystemPowerSettings(): Promise<unknown>;
   getPowerOverrideState(): Promise<unknown>;
   beginPowerOverride(snapshot: PowerSettings): Promise<boolean>;
@@ -82,6 +91,11 @@ export const createPluginServerApi = (
   const getDiagnostics = callableFactory<[], unknown>("get_diagnostics");
   const getPluginVersion = callableFactory<[], string>("get_plugin_version");
   const checkUpdate = callableFactory<[], UpdateCheckResult>("check_update");
+  const installPlugin = callableFactory<
+    [artifact: string, name: string, version: string, hash: string, installType: number],
+    void
+  >("utilities/install_plugin");
+  const restartDecky = callableFactory<[], void>("updater/do_restart");
   const getSystemPowerSettings = callableFactory<[], unknown>("get_system_power_settings");
   const getPowerOverrideState = callableFactory<[], unknown>("get_power_override_state");
   const beginPowerOverride = callableFactory<[snapshot: PowerSettings], boolean>("begin_power_override");
@@ -99,6 +113,9 @@ export const createPluginServerApi = (
     getDiagnostics,
     getPluginVersion,
     checkUpdate,
+    installPluginUpdate: ({ downloadUrl, version, sha256 }: UpdateInstallRequest) =>
+      installPlugin(downloadUrl, "screensaver-enhancements", version, sha256, 2),
+    restartDecky,
     getSystemPowerSettings,
     getPowerOverrideState,
     beginPowerOverride,

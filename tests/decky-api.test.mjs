@@ -55,6 +55,12 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
   });
   await serverApi.getPluginVersion();
   await serverApi.checkUpdate();
+  await serverApi.installPluginUpdate({
+    downloadUrl: "https://github.com/Grails125/ScreenSaverEnhancements/releases/download/v1.5.0/ScreenSaverEnhancements.zip",
+    version: "1.5.0",
+    sha256: "abc123",
+  });
+  await serverApi.restartDecky();
 
   assert.deepEqual(calls, [
     { route: "get_power_override_state", args: [] },
@@ -65,6 +71,17 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
     },
     { route: "get_plugin_version", args: [] },
     { route: "check_update", args: [] },
+    {
+      route: "utilities/install_plugin",
+      args: [
+        "https://github.com/Grails125/ScreenSaverEnhancements/releases/download/v1.5.0/ScreenSaverEnhancements.zip",
+        "screensaver-enhancements",
+        "1.5.0",
+        "abc123",
+        2,
+      ],
+    },
+    { route: "updater/do_restart", args: [] },
   ]);
   assert.equal(response.active, true);
 });

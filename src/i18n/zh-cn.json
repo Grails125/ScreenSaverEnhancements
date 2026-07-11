@@ -105,5 +105,8 @@
     "Update Available": "发现新版本",
     "No Update": "无需更新",
     "Already Latest Version": "已是最新版本",
-    "Update Check Failed": "检查更新失败"
+    "Update Check Failed": "检查更新失败",
+    "Download and Install": "下载并安装",
+    "Installing Update": "正在打开安装程序…",
+    "Update Install Failed": "更新安装失败"
 }
