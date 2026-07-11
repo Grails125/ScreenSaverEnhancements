@@ -23,7 +23,7 @@ import {
 import { QUICK_ACCESS_MENU } from './ButtonIcons'
 import { copyTextToClipboard } from './clipboard'
 import { Diagnostics, parseDiagnostics } from './diagnostics'
-import { PluginServerApi, serverApi } from './deckyApi'
+import { InhibitStatus, PluginServerApi, RunningProcess, serverApi } from './deckyApi'
 import { StateNumber } from './state'
 import {
   DEFAULT_POWER_SETTINGS,
@@ -299,17 +299,6 @@ const getAppDisplayName = (application?: string) => {
 const RUN_ON_LOGIN = "run_on_login"
 const SHOW_NOTIFY  = "show_notify"
 const DECKY_MUSIC_APP = "DeckyMusic"
-
-type RunningProcess = { name: string, type: string };
-type InhibitRequest = { cookie: number; application: string; reason: string };
-type InhibitStatus = {
-  manual_apps: string[];
-  manual_active_app: string | null;
-  manual_active: boolean;
-  dbus_requests: InhibitRequest[];
-  dbus_active: boolean;
-  is_inhibiting: boolean;
-};
 
 const EMPTY_INHIBIT_STATUS: InhibitStatus = {
   manual_apps: [],
@@ -746,9 +735,9 @@ const Content: FC<{
     const token = requestTokenRef.current;
     setRefreshing(true);
     try {
-      const res = await serverApi.callPluginMethod<any, any>("get_running_processes", {});
-      if (isCurrentRequest(token) && res.success) {
-        setRunningProcesses(res.result);
+      const processes = await serverApi.getRunningProcesses();
+      if (isCurrentRequest(token)) {
+        setRunningProcesses(processes);
       }
     } catch (error) {
       console.warn("[ScreenSaverEnhancements] Could not load running processes", error);
@@ -763,13 +752,13 @@ const Content: FC<{
     if (!panelVisible.current) return;
     const token = requestTokenRef.current;
     try {
-      const res = await serverApi.callPluginMethod<any, InhibitStatus>("get_inhibit_status", {});
-      if (isCurrentRequest(token) && res.success && res.result) {
+      const result = await serverApi.getInhibitStatus();
+      if (isCurrentRequest(token) && result) {
         setInhibitStatus({
           ...EMPTY_INHIBIT_STATUS,
-          ...res.result,
-          manual_apps: normalizeManualApps(res.result.manual_apps),
-          dbus_requests: Array.isArray(res.result.dbus_requests) ? res.result.dbus_requests : [],
+          ...result,
+          manual_apps: normalizeManualApps(result.manual_apps),
+          dbus_requests: Array.isArray(result.dbus_requests) ? result.dbus_requests : [],
         });
       }
     } catch (error) {
@@ -1343,15 +1332,13 @@ export default definePlugin(() => {
   }
 
   const readSystemPowerSettings = async (): Promise<PowerSettings | null> => {
-    const inhibitStatus = await serverApi.callPluginMethod<any, InhibitStatus>("get_inhibit_status", {});
-    if (!inhibitStatus.success) return null;
-
     try {
+      const inhibitStatus = await serverApi.getInhibitStatus();
       const response = await serverApi.callPluginMethod<any, unknown>("get_system_power_settings", {});
       const systemSettings = response.success ? parseSteamPowerSettings(response.result) : null;
       if (!systemSettings) return null;
 
-      const isInhibiting = Boolean(inhibitStatus.result?.is_inhibiting || deckyMusicInhibiting);
+      const isInhibiting = Boolean(inhibitStatus.is_inhibiting || deckyMusicInhibiting);
       return shouldSyncSystemPowerSettings(systemSettings, isInhibiting) ? systemSettings : null;
     } catch (error) {
       console.warn("[ScreenSaverEnhancements] Could not read current power settings", error);

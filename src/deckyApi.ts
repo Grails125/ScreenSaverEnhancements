@@ -53,12 +53,23 @@ export type PluginMethodResponse<Result> = {
   result: Result;
 };
 
+export type RunningProcess = { name: string; type: string };
+export type InhibitRequest = { cookie: number; application: string; reason: string };
+export type InhibitStatus = {
+  manual_apps: string[];
+  manual_active_app: string | null;
+  manual_active: boolean;
+  dbus_requests: InhibitRequest[];
+  dbus_active: boolean;
+  is_inhibiting: boolean;
+};
+
 export interface PluginBackendClient {
   startBackend(): Promise<boolean>;
   stopBackend(): Promise<boolean>;
   isRunning(): Promise<boolean>;
-  getRunningProcesses(): Promise<unknown>;
-  getInhibitStatus(): Promise<unknown>;
+  getRunningProcesses(): Promise<RunningProcess[]>;
+  getInhibitStatus(): Promise<InhibitStatus>;
   getDiagnostics(): Promise<unknown>;
   getSystemPowerSettings(): Promise<unknown>;
   getPowerOverrideState(): Promise<unknown>;
@@ -87,8 +98,8 @@ export const createPluginServerApi = (
   const startBackend = callableFactory<[], boolean>("start_backend");
   const stopBackend = callableFactory<[], boolean>("stop_backend");
   const isRunning = callableFactory<[], boolean>("is_running");
-  const getRunningProcesses = callableFactory<[], unknown>("get_running_processes");
-  const getInhibitStatus = callableFactory<[], unknown>("get_inhibit_status");
+  const getRunningProcesses = callableFactory<[], RunningProcess[]>("get_running_processes");
+  const getInhibitStatus = callableFactory<[], InhibitStatus>("get_inhibit_status");
   const getDiagnostics = callableFactory<[], unknown>("get_diagnostics");
   const getSystemPowerSettings = callableFactory<[], unknown>("get_system_power_settings");
   const getPowerOverrideState = callableFactory<[], unknown>("get_power_override_state");

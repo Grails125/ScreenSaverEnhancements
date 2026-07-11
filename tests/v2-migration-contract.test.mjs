@@ -147,3 +147,14 @@ test("backend lifecycle uses direct typed RPC results", () => {
   assert.match(source, /serverApi\.isRunning\(\)/);
   assert.doesNotMatch(source, /callPluginMethod[^\n]*(start_backend|stop_backend|is_running)/);
 });
+
+test("process and inhibit status use direct typed RPC results", () => {
+  const source = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /serverApi\.getRunningProcesses\(\)/);
+  assert.match(source, /serverApi\.getInhibitStatus\(\)/);
+  assert.doesNotMatch(source, /callPluginMethod[^\n]*(get_running_processes|get_inhibit_status)/);
+});
