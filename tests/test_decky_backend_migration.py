@@ -55,9 +55,16 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertNotIn('queue_event({"type": "SettingsChanged"', self.main_source)
 
     def test_critical_events_are_payload_free_state_change_signals(self):
-        self.assertIn('queue_event({"type": "InhibitStateChanged"})', self.main_source)
+        self.assertIn('await decky.emit("inhibit_state_changed")', self.main_source)
         self.assertNotIn('event = {"type": "Inhibit" if active else "UnInhibit"}', self.main_source)
         self.assertNotIn('queue_event({"type": "UnInhibit", "reason": "monitor_stopped"})', self.main_source)
+
+    def test_stage_4_4_removes_long_polling_but_keeps_connection_reconciliation(self):
+        self.assertNotIn("event_queue", self.main_source)
+        self.assertNotIn("event_signal", self.main_source)
+        self.assertNotIn("def queue_event", self.main_source)
+        self.assertNotIn("async def wait_for_events", self.main_source)
+        self.assertIn("async def _dbus_connection_watch_loop", self.main_source)
 
 
 if __name__ == "__main__":

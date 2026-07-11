@@ -23,9 +23,9 @@ export type InhibitStatus = {
   dbus_active: boolean;
   is_inhibiting: boolean;
 };
-export type PluginEvent = { type: "InhibitStateChanged" };
 export type SettingsChangedKey = "manual_apps";
 export type SettingsChangedListener = (key: SettingsChangedKey) => void;
+export type InhibitStateChangedListener = () => void;
 
 export interface PluginBackendClient {
   startBackend(): Promise<boolean>;
@@ -38,7 +38,6 @@ export interface PluginBackendClient {
   getPowerOverrideState(): Promise<unknown>;
   beginPowerOverride(snapshot: PowerSettings): Promise<boolean>;
   endPowerOverride(): Promise<boolean>;
-  waitForEvents(timeoutSeconds: number): Promise<PluginEvent[]>;
   getSetting<T>(key: string, defaults: T): Promise<T>;
   setSetting(key: string, value: unknown): Promise<boolean>;
   setSettings(values: Record<string, unknown>): Promise<boolean>;
@@ -48,6 +47,7 @@ export interface PluginServerApi extends PluginBackendClient {
   routerHook: RouterHook;
   toaster: Toaster;
   subscribeSettingsChanged(listener: SettingsChangedListener): () => void;
+  subscribeInhibitStateChanged(listener: InhibitStateChangedListener): () => void;
 }
 
 const subscribeSettingsChanged = (listener: SettingsChangedListener) => {
@@ -55,6 +55,11 @@ const subscribeSettingsChanged = (listener: SettingsChangedListener) => {
     if (key === "manual_apps") listener(key);
   });
   return () => removeEventListener("settings_changed", eventListener);
+};
+
+const subscribeInhibitStateChanged = (listener: InhibitStateChangedListener) => {
+  const eventListener = addEventListener("inhibit_state_changed", listener);
+  return () => removeEventListener("inhibit_state_changed", eventListener);
 };
 
 export const createPluginServerApi = (
@@ -70,7 +75,6 @@ export const createPluginServerApi = (
   const getPowerOverrideState = callableFactory<[], unknown>("get_power_override_state");
   const beginPowerOverride = callableFactory<[snapshot: PowerSettings], boolean>("begin_power_override");
   const endPowerOverride = callableFactory<[], boolean>("end_power_override");
-  const waitForEvents = callableFactory<[timeoutSeconds: number], PluginEvent[]>("wait_for_events");
   const getSetting = callableFactory<[key: string, defaults: unknown], unknown>("get_settings");
   const setSetting = callableFactory<[key: string, value: unknown], boolean>("set_settings");
   const setSettings = callableFactory<[values: Record<string, unknown>], boolean>("set_settings_batch");
@@ -86,13 +90,13 @@ export const createPluginServerApi = (
     getPowerOverrideState,
     beginPowerOverride,
     endPowerOverride,
-    waitForEvents,
     getSetting: <T,>(key: string, defaults: T) => getSetting(key, defaults) as Promise<T>,
     setSetting,
     setSettings,
     routerHook,
     toaster,
     subscribeSettingsChanged,
+    subscribeInhibitStateChanged,
   };
 };
 

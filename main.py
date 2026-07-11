@@ -2,7 +2,6 @@ import decky
 import asyncio
 import importlib.util
 from pathlib import Path
-import queue
 import re
 import time
 from collections import deque
@@ -105,8 +104,6 @@ settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
 settings = SettingsManager(name="settings", settings_directory=settings_dir)
 if settings.getSetting("manual_apps", None) is None:
     settings.setSetting("manual_apps", ["chrome", "mpv", "wiliwili"])
-event_queue = queue.Queue()
-event_signal = asyncio.Event()
 recent_diagnostic_events = deque(maxlen=40)
 manual_inhibiting = False
 inhibit_active = False
@@ -125,12 +122,6 @@ def record_diagnostic_event(event_type, detail=None):
     recent_diagnostic_events.append(entry)
 
 
-def queue_event(event):
-    event_queue.put(event)
-    event_signal.set()
-    record_diagnostic_event(event.get("type", "event"), event.get("application") or event.get("key"))
-
-
 async def emit_manual_apps_changed():
     try:
         await decky.emit("settings_changed", "manual_apps")
@@ -139,13 +130,28 @@ async def emit_manual_apps_changed():
         decky.logger.warning(f"Could not emit settings_changed: {e}")
 
 
+async def emit_inhibit_state_changed():
+    try:
+        await decky.emit("inhibit_state_changed")
+        record_diagnostic_event("inhibit_state_changed")
+    except Exception as e:
+        decky.logger.warning(f"Could not emit inhibit_state_changed: {e}")
+
+
+def schedule_inhibit_state_changed():
+    try:
+        asyncio.create_task(emit_inhibit_state_changed())
+    except RuntimeError as e:
+        decky.logger.warning(f"Could not schedule inhibit_state_changed: {e}")
+
+
 def sync_inhibit_state():
     global inhibit_active
     active = manual_inhibiting or len(BaseInterface.request_map) > 0
     if active == inhibit_active:
         return
     inhibit_active = active
-    queue_event({"type": "InhibitStateChanged"})
+    schedule_inhibit_state_changed()
 
 class AppRequest:
     def __init__(self, sender, cookie, application, reason):
@@ -233,14 +239,6 @@ class GnomeInterface(BaseInterface):
     @method()
     async def Uninhibit(self, cookie: 'u'):
         return await self._un_inhibit_impl(cookie)
-
-
-def clear_event_queue():
-    while True:
-        try:
-            event_queue.get_nowait()
-        except queue.Empty:
-            return
 
 
 def clear_dbus_requests():
@@ -385,10 +383,8 @@ class Plugin:
             self.last_process_event_at = None
         if not hasattr(self, 'active_manual_pids'):
             self.active_manual_pids = set()
-        if not hasattr(self, 'long_poll_requests'):
-            self.long_poll_requests = 0
-        if not hasattr(self, 'long_poll_timeouts'):
-            self.long_poll_timeouts = 0
+        if not hasattr(self, 'dbus_connection_watch_task'):
+            self.dbus_connection_watch_task = None
 
     async def _get_all_process_lines(self):
         self.process_scan_count += 1
@@ -518,6 +514,29 @@ class Plugin:
                 self.manual_watch_wakeup.set()
                 return
 
+    async def _dbus_connection_watch_loop(self):
+        decky.logger.info("D-Bus request connection watcher started")
+        while True:
+            try:
+                await asyncio.sleep(25)
+                requests = list(BaseInterface.request_map.items())
+                if not requests:
+                    continue
+                connected_requests = await asyncio.gather(
+                    *(is_dbus_request_connected(request) for _, request in requests),
+                )
+                changed = False
+                for (cookie, _), connected in zip(requests, connected_requests):
+                    if not connected:
+                        BaseInterface.request_map.pop(cookie, None)
+                        changed = True
+                if changed:
+                    sync_inhibit_state()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                decky.logger.warning(f"D-Bus request connection check failed: {e}")
+
     def _process_matches_manual_rule(self, process_id):
         try:
             with open(f"/proc/{process_id}/comm", "r", encoding="utf-8", errors="replace") as comm_file:
@@ -557,11 +576,21 @@ class Plugin:
         except Exception as e:
             decky.logger.error(f"Error starting manual process watcher: {e}")
 
+    def _start_dbus_connection_watch(self):
+        Plugin._init_runtime_state(self)
+        if self.dbus_connection_watch_task and not self.dbus_connection_watch_task.done():
+            return
+        self.dbus_connection_watch_task = asyncio.create_task(
+            Plugin._dbus_connection_watch_loop(self),
+        )
+
     async def _stop_manual_watch(self):
         global manual_inhibiting
         Plugin._init_runtime_state(self)
         task = self.manual_watch_task
         self.manual_watch_task = None
+        connection_watch_task = self.dbus_connection_watch_task
+        self.dbus_connection_watch_task = None
         event_task = self.process_event_task
         self.process_event_task = None
         if self.process_event_source is not None:
@@ -583,6 +612,14 @@ class Plugin:
                 pass
             except Exception as e:
                 decky.logger.error(f"Error stopping manual process watcher: {e}")
+        if connection_watch_task and not connection_watch_task.done():
+            connection_watch_task.cancel()
+            try:
+                await connection_watch_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                decky.logger.error(f"Error stopping D-Bus connection watcher: {e}")
         Plugin._stop_manual_inhibitor(self)
         self.manual_active = False
         self.manual_running_app = None
@@ -605,6 +642,7 @@ class Plugin:
             if bus is None:
                 raise RuntimeError("Could not register D-Bus inhibit services")
         Plugin._start_manual_watch(self)
+        Plugin._start_dbus_connection_watch(self)
         record_diagnostic_event("backend_started")
         return True
 
@@ -613,8 +651,7 @@ class Plugin:
         await Plugin._stop_manual_watch(self)
         await stop_dbus()
         clear_dbus_requests()
-        clear_event_queue()
-        queue_event({"type": "InhibitStateChanged"})
+        await emit_inhibit_state_changed()
         record_diagnostic_event("backend_stopped")
         return True
 
@@ -647,64 +684,6 @@ class Plugin:
         result.sort(key=lambda x: (0 if x['type'] == 'app' else 1, x['name'].lower()))
         return result
 
-    async def get_event(self):
-        Plugin._init_runtime_state(self)
-        global bus, inhibit_active
-        if bus is None:
-            res = []
-            while True:
-                try:
-                    res.append(event_queue.get_nowait())
-                except queue.Empty:
-                    return res
-
-        res = []
-        while True:
-            try:
-                res.append(event_queue.get_nowait())
-            except queue.Empty:
-                break
-        # Read manual state before reconciling disconnected D-Bus requests.
-        manual_active = self.manual_active
-        # check closed dbus connection (only when there are active cookies)
-        requests = list(BaseInterface.request_map.items())
-        clear = False
-        if requests:
-            connected_requests = await asyncio.gather(
-                *(is_dbus_request_connected(request) for _, request in requests),
-            )
-            for (cookie, _), connected in zip(requests, connected_requests):
-                if not connected:
-                    BaseInterface.request_map.pop(cookie, None)
-                    clear = True
-
-        dbus_active = len(BaseInterface.request_map) > 0
-        if clear:
-            active = manual_active or dbus_active
-            if active != inhibit_active:
-                inhibit_active = active
-                res.append({"type": "InhibitStateChanged"})
-
-        if len(res) > 0:
-            decky.logger.info(f"get_event returning events: {res}")
-            return res
-
-        return []
-
-    async def wait_for_events(self, timeout_seconds: int = 25):
-        timeout = max(5, min(int(timeout_seconds), 30))
-        self.long_poll_requests += 1
-        event_signal.clear()
-        events = await Plugin.get_event(self)
-        if events:
-            return events
-        try:
-            await asyncio.wait_for(event_signal.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            self.long_poll_timeouts += 1
-            return []
-        return await Plugin.get_event(self)
-
     async def get_diagnostics(self):
         Plugin._init_runtime_state(self)
         system_power_settings = await asyncio.to_thread(read_steam_power_settings)
@@ -719,9 +698,6 @@ class Plugin:
             "manualRuleCount": len(settings.getSetting("manual_apps", [])),
             "manualActiveApp": self.manual_running_app,
             "dbusRequestCount": len(BaseInterface.request_map),
-            "eventQueueSize": event_queue.qsize(),
-            "longPollRequests": self.long_poll_requests,
-            "longPollTimeouts": self.long_poll_timeouts,
             "powerOverrideActive": override_state["active"],
             "systemPowerSettings": system_power_settings,
             "recentEvents": list(recent_diagnostic_events),

@@ -23,7 +23,7 @@ import {
 import { QUICK_ACCESS_MENU } from './ButtonIcons'
 import { copyTextToClipboard } from './clipboard'
 import { Diagnostics, parseDiagnostics } from './diagnostics'
-import { InhibitStatus, PluginEvent, PluginServerApi, RunningProcess, serverApi } from './deckyApi'
+import { InhibitStatus, PluginServerApi, RunningProcess, serverApi } from './deckyApi'
 import { StateNumber } from './state'
 import {
   DEFAULT_POWER_SETTINGS,
@@ -1490,10 +1490,6 @@ export default definePlugin(() => {
     setConfiguredPowerSettings(settings);
   }
   
-  const waitForEvents = async () => {
-    return await serverApi.waitForEvents(25);
-  }
-
   const isDeckyMusicEnabled = (apps: string[]) => {
     return apps.some(app => app.toLowerCase() === DECKY_MUSIC_APP.toLowerCase());
   }
@@ -1662,8 +1658,9 @@ export default definePlugin(() => {
   }
 
   let deckyMusicEnabled = false;
-  let eventListenerActive = true;
+  let pluginActive = true;
   let unsubscribeSettingsChanged: (() => void) | null = null;
+  let unsubscribeInhibitStateChanged: (() => void) | null = null;
   let powerOperation = Promise.resolve();
 
   const enqueuePowerOperation = (operation: () => Promise<void>) => {
@@ -1749,39 +1746,6 @@ export default definePlugin(() => {
     }
   }
 
-  const processBackendEvents = async (events: PluginEvent[]) => {
-    const hasInhibitStateChange = events.some((event) => event.type === "InhibitStateChanged");
-    if (hasInhibitStateChange) {
-      await synchronizeRuntimeState(true);
-    }
-  }
-
-  const listenForPowerEvents = async () => {
-    try {
-      while (eventListenerActive) {
-        const events = await waitForEvents();
-        if (!eventListenerActive) return;
-        if (events.length > 0) {
-          enqueuePowerOperation(() => processBackendEvents(events));
-        }
-      }
-    } catch (error) {
-      console.error("[ScreenSaverEnhancements] Event listener failed", error);
-      if (eventListenerActive) {
-        setTimeout(() => enqueuePowerOperation(async () => {
-          try {
-            await synchronizeRuntimeState();
-          } catch (syncError) {
-            console.error("[ScreenSaverEnhancements] Runtime state resync failed", syncError);
-          }
-          if (eventListenerActive) {
-            void listenForPowerEvents();
-          }
-        }), 3000);
-      }
-    }
-  }
-
   const initializePlugin = async () => {
     try {
       const blackBackground = await getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_ENABLED, false)
@@ -1811,16 +1775,20 @@ export default definePlugin(() => {
       backendState.SetState(0)
       console.error("[ScreenSaverEnhancements] Plugin initialization failed", error)
     } finally {
-      if (eventListenerActive) {
+      if (pluginActive) {
         try {
           await synchronizeRuntimeState();
         } catch (error) {
           console.error("[ScreenSaverEnhancements] Could not synchronize runtime state", error)
         }
         unsubscribeSettingsChanged = serverApi.subscribeSettingsChanged(() => {
+          if (!pluginActive) return;
           enqueuePowerOperation(() => refreshDeckyMusicSetting());
         });
-        void listenForPowerEvents()
+        unsubscribeInhibitStateChanged = serverApi.subscribeInhibitStateChanged(() => {
+          if (!pluginActive) return;
+          enqueuePowerOperation(() => synchronizeRuntimeState(true));
+        });
       }
     }
   }
@@ -1851,9 +1819,11 @@ export default definePlugin(() => {
       void restorePendingPowerOverride()
       deckyMusicState.SetState(0)
       clearTimeout(timeout)
-      eventListenerActive = false
+      pluginActive = false
       unsubscribeSettingsChanged?.()
       unsubscribeSettingsChanged = null
+      unsubscribeInhibitStateChanged?.()
+      unsubscribeInhibitStateChanged = null
       disposeAudioTracker()
       serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")
     },

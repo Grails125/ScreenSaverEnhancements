@@ -193,7 +193,7 @@ test("power settings and recovery use direct typed RPC results", () => {
   assert.doesNotMatch(source, /callPluginMethod[^\n]*(get_system_power_settings|get_power_override_state|begin_power_override|end_power_override)/);
 });
 
-test("event polling uses direct results and the legacy RPC adapter is removed", () => {
+test("event pushes replace polling and the legacy RPC adapter is removed", () => {
   const pluginSource = readFileSync(
     new URL("../src/index.tsx", import.meta.url),
     "utf8",
@@ -203,7 +203,9 @@ test("event polling uses direct results and the legacy RPC adapter is removed", 
     "utf8",
   );
 
-  assert.match(pluginSource, /serverApi\.waitForEvents\(25\)/);
+  assert.match(pluginSource, /serverApi\.subscribeInhibitStateChanged/);
+  assert.doesNotMatch(pluginSource, /waitForEvents|listenForPowerEvents|processBackendEvents/);
+  assert.doesNotMatch(apiSource, /wait_for_events|waitForEvents|PluginEvent/);
   assert.doesNotMatch(pluginSource, /callPluginMethod|response\.success|response\.result/);
   assert.doesNotMatch(apiSource, /callPluginMethod|PluginMethodResponse|getPluginMethodArguments|PLUGIN_METHOD_ARGUMENT_KEYS/);
 });
@@ -291,7 +293,7 @@ test("diagnostics merge monitor state and process mode behind an accessible deta
   assert.match(source, /aria-expanded=\{detailsVisible\}/);
 });
 
-test("Stage 4.1 performs silent full-state sync before polling and after reconnects", () => {
+test("Stage 4.1 performs silent full-state sync before event subscriptions", () => {
   const source = readFileSync(
     new URL("../src/index.tsx", import.meta.url),
     "utf8",
@@ -301,11 +303,11 @@ test("Stage 4.1 performs silent full-state sync before polling and after reconne
   assert.match(source, /serverApi\.getInhibitStatus\(\)/);
   assert.match(source, /getPowerSyncAction\(/);
   assert.match(source, /refreshDeckyMusicSetting\(false, running\)/);
-  assert.match(source, /await synchronizeRuntimeState\(\);[\s\S]*void listenForPowerEvents\(\)/);
+  assert.match(source, /await synchronizeRuntimeState\(\);[\s\S]*subscribeInhibitStateChanged/);
   assert.match(source, /backendState\.SetState\(running \? 1 : 0\)/);
 });
 
-test("Stage 4.2 pushes settings changes while critical power edges stay long-polled", () => {
+test("Stage 4.2 keeps the narrow settings push independently subscribed", () => {
   const source = readFileSync(
     new URL("../src/index.tsx", import.meta.url),
     "utf8",
@@ -315,11 +317,10 @@ test("Stage 4.2 pushes settings changes while critical power edges stay long-pol
   assert.match(source, /enqueuePowerOperation\(\(\) => refreshDeckyMusicSetting\(\)\)/);
   assert.match(source, /unsubscribeSettingsChanged\?\.\(\)/);
   assert.doesNotMatch(source, /event\.type === "SettingsChanged"/);
-  assert.match(source, /waitForEvents\(\)/);
-  assert.match(source, /event\.type === "InhibitStateChanged"/);
+  assert.match(source, /serverApi\.subscribeInhibitStateChanged/);
 });
 
-test("Stage 4.3 treats critical events as coalesced full-state refresh signals", () => {
+test("Stage 4.3 treats critical pushes as full-state refresh signals", () => {
   const source = readFileSync(
     new URL("../src/index.tsx", import.meta.url),
     "utf8",
@@ -329,10 +330,10 @@ test("Stage 4.3 treats critical events as coalesced full-state refresh signals",
     "utf8",
   );
 
-  assert.match(apiSource, /type PluginEvent = \{ type: "InhibitStateChanged" \}/);
-  assert.match(source, /events\.some\(\(event\) => event\.type === "InhibitStateChanged"\)/);
+  assert.match(apiSource, /subscribeInhibitStateChanged/);
+  assert.match(source, /serverApi\.subscribeInhibitStateChanged\(\(\) =>/);
   assert.match(source, /const synchronizeRuntimeState = async \(showStateNotification = false\) =>/);
-  assert.match(source, /if \(hasInhibitStateChange\) \{\s*await synchronizeRuntimeState\(true\);\s*\}/);
+  assert.match(source, /enqueuePowerOperation\(\(\) => synchronizeRuntimeState\(true\)\)/);
   assert.doesNotMatch(source, /startInhibit\(event\.application\)/);
   assert.doesNotMatch(source, /event\.reason/);
 });

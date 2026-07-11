@@ -105,3 +105,31 @@ test("subscribes to the narrow settings-changed event contract and cleans it up"
   assert.equal(removals[0].event, "settings_changed");
   assert.equal(removals[0].listener, registrations[0].listener);
 });
+
+test("subscribes to payload-free inhibit state pushes and cleans them up", () => {
+  const registrations = [];
+  const removals = [];
+  const { createPluginServerApi } = loadDeckyApi(
+    () => async () => undefined,
+    {
+      addEventListener(event, listener) {
+        registrations.push({ event, listener });
+        return listener;
+      },
+      removeEventListener(event, listener) {
+        removals.push({ event, listener });
+      },
+    },
+  );
+  const serverApi = createPluginServerApi();
+  let changes = 0;
+  const unsubscribe = serverApi.subscribeInhibitStateChanged(() => changes += 1);
+
+  registrations[0].listener("ignored payload");
+  unsubscribe();
+
+  assert.equal(registrations[0].event, "inhibit_state_changed");
+  assert.equal(changes, 1);
+  assert.equal(removals[0].event, "inhibit_state_changed");
+  assert.equal(removals[0].listener, registrations[0].listener);
+});
