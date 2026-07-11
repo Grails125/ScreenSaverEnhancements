@@ -7,8 +7,6 @@ import {
   ButtonItem,
   Navigation,
   ServerAPI,
-  findModuleChild,
-  Module,
   staticClasses,
   Focusable,
 } from "decky-frontend-lib";
@@ -33,7 +31,6 @@ import {
   shouldStartInhibit,
   secondsToMinutes,
   shouldApplyPowerSettingsImmediately,
-  getForceSuspendWarningDelayMs,
 } from './powerSettings'
 import {
   areStringArraysEqual,
@@ -54,7 +51,6 @@ const POWER_SETTING_KEYS = {
   acDim: "ac_dim_timeout",
   batterySuspend: "battery_suspend_timeout",
   acSuspend: "ac_suspend_timeout",
-  forceSuspend: "force_suspend_enabled",
 } as const
 const POWER_CONFIG_COLLAPSED_KEY = "screensaver-enhancements-power-config-collapsed"
 
@@ -286,28 +282,11 @@ const APP_NAMES: Record<string, string> = {
   "flatpak": "Flatpak 管理器",
 };
 
-const findModule = (property: string) => {
-  return findModuleChild((m: Module) => {
-    if (typeof m !== "object") return undefined;
-    for (let prop in m) {
-      try {
-        if (m[prop][property]) {
-          return m[prop];
-        }
-      } catch (e) {
-        return undefined;
-      }
-    }
-  });
-}
-
 const getAppDisplayName = (application?: string) => {
   const normalized = application?.trim() || "";
   const shortName = normalized.split('.').pop() || normalized;
   return APP_NAMES[normalized] || APP_NAMES[shortName] || normalized;
 }
-const SystemSleep = findModule("InitiateSleep")
-
 const RUN_ON_LOGIN = "run_on_login"
 const SHOW_NOTIFY  = "show_notify"
 const DECKY_MUSIC_APP = "DeckyMusic"
@@ -506,7 +485,6 @@ const Content: VFC<{
   const [closeOnAnyKey, setCloseOnAnyKey] = useState<boolean>(false);
   const [closeOnAnyKeyLoaded, setCloseOnAnyKeyLoaded] = useState<boolean>(false);
   const [powerSettings, setPowerSettings] = useState<PowerSettings>(DEFAULT_POWER_SETTINGS);
-  const [powerSettingsLoaded, setPowerSettingsLoaded] = useState<boolean>(false);
   const [deckyMusicActive, setDeckyMusicActive] = useState<boolean>(deckyMusicState.GetState() === 1);
   const [powerConfigCollapsed, setPowerConfigCollapsed] = useState<boolean>(() => {
     try {
@@ -665,17 +643,15 @@ const Content: VFC<{
     loadBlackBackgroundSettings();
 
     const loadPowerSettings = async () => {
-      const [batteryDim, acDim, batterySuspend, acSuspend, forceSuspend] = await Promise.all([
+      const [batteryDim, acDim, batterySuspend, acSuspend] = await Promise.all([
         getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batteryDim, DEFAULT_POWER_SETTINGS.batteryDim),
         getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acDim, DEFAULT_POWER_SETTINGS.acDim),
         getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batterySuspend, DEFAULT_POWER_SETTINGS.batterySuspend),
         getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acSuspend, DEFAULT_POWER_SETTINGS.acSuspend),
-        getPluginBooleanSetting(serverApi, POWER_SETTING_KEYS.forceSuspend, DEFAULT_POWER_SETTINGS.forceSuspend),
       ]);
       if (!isCurrentRequest(token)) return;
-      const next = normalizePowerSettings({ batteryDim, acDim, batterySuspend, acSuspend, forceSuspend });
+      const next = normalizePowerSettings({ batteryDim, acDim, batterySuspend, acSuspend });
       setPowerSettings(next);
-      setPowerSettingsLoaded(true);
       onPowerSettingsLoaded(next);
     };
     loadPowerSettings();
@@ -779,14 +755,6 @@ const Content: VFC<{
             checked={running}
           />
         </PanelSectionRow>
-        {powerSettingsLoaded && <PanelSectionRow>
-          <ToggleField
-            label={t('Sleep Warning')}
-            description={t('Sleep Warning Description')}
-            onChange={(checked) => void updatePowerSetting('forceSuspend', checked)}
-            checked={powerSettings.forceSuspend}
-          />
-        </PanelSectionRow>}
         <PanelSectionRow>
           <ToggleField
             label={t('Show Notify')}
@@ -981,37 +949,13 @@ export default definePlugin((serverApi: ServerAPI) => {
   const overlayState = new StateNumber(0);
   const opacityState = new StateNumber(1);
   const deckyMusicState = new StateNumber(0);
-  let forced_suspend:NodeJS.Timeout;
-  let forced_suspend_tip:NodeJS.Timeout;
-  let input_changed:boolean = true;
   let configuredPowerSettings: PowerSettings = { ...DEFAULT_POWER_SETTINGS };
-  let capturedPowerSettings: PowerSettings | null = null;
   let backendInhibiting = false;
   let deckyMusicInhibiting = false;
 
   const setConfiguredPowerSettings = (settings: PowerSettings) => {
     configuredPowerSettings = { ...settings };
-    if (shouldApplyPowerSettingsImmediately(backendInhibiting, deckyMusicInhibiting)) {
-      scheduleForceSuspend();
-    }
   }
-
-  const clearSuspendTimeout = () => {
-    clearTimeout(forced_suspend)
-    clearTimeout(forced_suspend_tip)
-  }
-
-  function handleUserActivity() {
-    if (input_changed) return;
-    input_changed = true;
-    clearSuspendTimeout();
-    if (shouldApplyPowerSettingsImmediately(backendInhibiting, deckyMusicInhibiting)) {
-      scheduleForceSuspend();
-    }
-  }
-
-  const handlePointerDown = () => handleUserActivity();
-  window.addEventListener("pointerdown", handlePointerDown);
 
   let SettingDef = {
     battery_idle: {
@@ -1038,54 +982,8 @@ export default definePlugin((serverApi: ServerAPI) => {
   let updateIdleSetting = _updateSettings;
   let updateSuspendSetting = _updateSettings;
 
-  // SteamClient version 1759461205 does not have `RegisterForControllerStateChanges`
-  let controllerHandle: any = null;
-  const releaseSteamHandle = (handle: any) => {
-    if (typeof handle === "function") {
-      handle();
-    } else if (typeof handle?.unregister === "function") {
-      handle.unregister();
-    } else if (typeof handle?.Unregister === "function") {
-      handle.Unregister();
-    }
-  }
-
-  controllerHandle =
-    SteamClient.Input.RegisterForControllerStateChanges &&
-    SteamClient.Input.RegisterForControllerStateChanges (
-    (changes: any[]) => {
-      if (input_changed) return
-      for (const inputs of changes) {
-        const { ulButtons, sLeftStickX, sLeftStickY, sRightStickX, sRightStickY, } = inputs;
-        if (ulButtons != 0) {
-          handleUserActivity();
-          return;
-        }
-        if (Math.abs(sLeftStickX) > 5000 || Math.abs(sLeftStickY) > 5000 ||
-            Math.abs(sRightStickX) > 5000 || Math.abs(sRightStickY) > 5000) {
-          handleUserActivity();
-          return;
-        }
-      }
-    }
-  );
-  if (!controllerHandle) {
-    controllerHandle = SteamClient.Input.RegisterForControllerInputMessages(
-      () => {
-        handleUserActivity()
-      }
-    );
-  }
-
-  // SteamClient023 does not have `RegisterForOnSuspendRequest`
-  let suspendHandle: any = null
-  suspendHandle =
-    SteamClient.System.RegisterForOnSuspendRequest && 
-    SteamClient.System.RegisterForOnSuspendRequest(clearSuspendTimeout);
-  if (!suspendHandle) {
-    suspendHandle = SteamClient.User.RegisterForPrepareForSystemSuspendProgress(clearSuspendTimeout);
-
-    // SteamClient023 using new suspend settings
+  // SteamClient023 uses the newer suspend setting fields.
+  if (!SteamClient.System.RegisterForOnSuspendRequest) {
     SettingDef.battery_suspend = {
       field: 24003,
       wireType: 0
@@ -1153,53 +1051,6 @@ export default definePlugin((serverApi: ServerAPI) => {
       );
     }
     setConfiguredPowerSettings(settings);
-    if (!isInhibiting) {
-      scheduleForceSuspend();
-    }
-  }
-
-  const readCurrentPowerSettings = async (): Promise<PowerSettings | null> => {
-    const getSettings = (SteamClient.System as any)?.GetSettings;
-    if (typeof getSettings !== "function") return null;
-
-    try {
-      const result = await getSettings.call(SteamClient.System);
-      const settings = result && typeof result === "object"
-        ? ((result as any).settings ?? result) as Record<string, unknown>
-        : null;
-      if (!settings) return null;
-
-      const readValue = (...keys: string[]) => {
-        for (const key of keys) {
-          const value = Number(settings[key]);
-          if (Number.isFinite(value)) return value;
-        }
-        return undefined;
-      };
-      const batteryDim = readValue("battery_idle", "batteryIdle");
-      const acDim = readValue("ac_idle", "acIdle");
-      const batterySuspend = readValue("battery_suspend", "batterySuspend");
-      const acSuspend = readValue("ac_suspend", "acSuspend");
-      if ([batteryDim, acDim, batterySuspend, acSuspend].some(value => value === undefined)) {
-        return null;
-      }
-
-      return normalizePowerSettings({
-        batteryDim,
-        acDim,
-        batterySuspend,
-        acSuspend,
-        forceSuspend: configuredPowerSettings.forceSuspend,
-      });
-    } catch (error) {
-      console.warn("[ScreenSaverEnhancements] Could not read current power settings", error);
-      return null;
-    }
-  }
-
-  const capturePowerSettings = async () => {
-    if (capturedPowerSettings) return;
-    capturedPowerSettings = await readCurrentPowerSettings() ?? { ...configuredPowerSettings };
   }
   
   const getEvent = async () => {
@@ -1299,8 +1150,6 @@ export default definePlugin((serverApi: ServerAPI) => {
     const displayName = getAppDisplayName(application);
     const message = displayName ? `${displayName} ${t("Inhibit")}` : t("Inhibit");
     notify(t("ScreenSaver"), message)
-    clearSuspendTimeout()
-    await capturePowerSettings()
     await updateSetting(0, 0, 0, 0);
   }
 
@@ -1313,30 +1162,6 @@ export default definePlugin((serverApi: ServerAPI) => {
       restoreSettings.batterySuspend,
       restoreSettings.acSuspend,
     );
-    capturedPowerSettings = null;
-    scheduleForceSuspend()
-  }
-
-  function scheduleForceSuspend() {
-    clearSuspendTimeout()
-    if (!configuredPowerSettings.forceSuspend) return;
-    const warningDelay = getForceSuspendWarningDelayMs(configuredPowerSettings);
-    if (warningDelay === null) return;
-
-    input_changed = false
-    forced_suspend = setTimeout(() => {
-      forced_suspend_tip = setTimeout(()=>{
-        SystemSleep.InitiateSleep()
-      }, 5_000)
-      serverApi.toaster.toast({
-        title: t("suspend_tip_title"),
-        body: t("suspend_tip_body"),
-        critical: true,
-        duration: 5_000,
-        playSound: true,
-        icon: <GiNightSleep />,
-      });
-    }, warningDelay)
   }
 
   let deckyMusicEnabled = false;
@@ -1414,19 +1239,17 @@ export default definePlugin((serverApi: ServerAPI) => {
 
     showNotify = await getPluginBooleanSetting(serverApi, SHOW_NOTIFY, false)
 
-    const [batteryDim, acDim, batterySuspend, acSuspend, forceSuspend] = await Promise.all([
+    const [batteryDim, acDim, batterySuspend, acSuspend] = await Promise.all([
       getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batteryDim, DEFAULT_POWER_SETTINGS.batteryDim),
       getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acDim, DEFAULT_POWER_SETTINGS.acDim),
       getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batterySuspend, DEFAULT_POWER_SETTINGS.batterySuspend),
       getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acSuspend, DEFAULT_POWER_SETTINGS.acSuspend),
-      getPluginBooleanSetting(serverApi, POWER_SETTING_KEYS.forceSuspend, DEFAULT_POWER_SETTINGS.forceSuspend),
     ])
     setConfiguredPowerSettings(normalizePowerSettings({
       batteryDim,
       acDim,
       batterySuspend,
       acSuspend,
-      forceSuspend,
     }))
 
     const run = await getPluginBooleanSetting(serverApi, RUN_ON_LOGIN, true)
@@ -1453,14 +1276,10 @@ export default definePlugin((serverApi: ServerAPI) => {
     />,
     icon: <GiNightSleep />,
     onDismount() {
-      clearSuspendTimeout()
       deckyMusicState.SetState(0)
       clearTimeout(timeout)
       eventPollingActive = false
       clearTimeout(eventPollTimeout)
-      window.removeEventListener("pointerdown", handlePointerDown)
-      releaseSteamHandle(controllerHandle)
-      releaseSteamHandle(suspendHandle)
       serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")
     },
   };
