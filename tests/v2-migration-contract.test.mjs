@@ -350,3 +350,28 @@ test("disabling the monitor also disables DeckyMusic inhibition before reporting
   assert.match(source, /deckyMusicEnabled = monitorRunning\s*&& isDeckyMusicEnabled\(normalizeManualApps\(manualApps\)\)/);
   assert.match(source, /await refreshDeckyMusicSetting\(false, running\)/);
 });
+
+test("Stage 4.4 diagnostics report push health instead of polling counters", () => {
+  const source = readFileSync(
+    new URL("../src/index.tsx", import.meta.url),
+    "utf8",
+  );
+  const diagnosticsSource = readFileSync(
+    new URL("../src/diagnostics.ts", import.meta.url),
+    "utf8",
+  );
+  const zh = JSON.parse(
+    readFileSync(new URL("../src/i18n/zh-cn.json", import.meta.url), "utf8"),
+  );
+
+  assert.doesNotMatch(diagnosticsSource, /eventQueueSize|longPollRequests|longPollTimeouts/);
+  assert.match(diagnosticsSource, /pushListenerActive: boolean/);
+  assert.match(diagnosticsSource, /pushReconnectCount: number/);
+  assert.match(diagnosticsSource, /lastFullSyncAt: number \| null/);
+  assert.match(diagnosticsSource, /lastFullSyncSuccessful: boolean \| null/);
+  assert.match(source, /getEventChannelDiagnostics/);
+  assert.doesNotMatch(source, /t\('Long Poll Requests'\)|t\('Long Poll Timeouts'\)|t\('Queued Events'\)/);
+  assert.equal(zh["Push Listener"], "推送监听");
+  assert.equal(zh["Reconnect Count"], "重连次数");
+  assert.equal(zh["Last Full Sync"], "最近一次全量同步");
+});

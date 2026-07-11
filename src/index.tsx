@@ -564,6 +564,11 @@ type DiagnosticsPageProps = {
   onExport: () => void;
 };
 
+type EventChannelDiagnostics = Pick<
+  Diagnostics,
+  'pushListenerActive' | 'pushReconnectCount' | 'lastFullSyncAt' | 'lastFullSyncSuccessful'
+>;
+
 const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
   diagnostics,
   loading,
@@ -624,9 +629,17 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
         )}
 
         <PanelSection title={t('Event Channel')}>
-          <DiagnosticRow label={t('Long Poll Requests')} value={diagnostics.longPollRequests} />
-          <DiagnosticRow label={t('Long Poll Timeouts')} value={diagnostics.longPollTimeouts} />
-          <DiagnosticRow label={t('Queued Events')} value={diagnostics.eventQueueSize} />
+          <DiagnosticRow
+            label={t('Push Listener')}
+            value={diagnostics.pushListenerActive ? t('Connected') : t('Disconnected')}
+          />
+          <DiagnosticRow label={t('Reconnect Count')} value={diagnostics.pushReconnectCount} />
+          <DiagnosticRow
+            label={t('Last Full Sync')}
+            value={diagnostics.lastFullSyncAt === null
+              ? t('Not Available')
+              : `${formatDiagnosticTime(diagnostics.lastFullSyncAt)} (${diagnostics.lastFullSyncSuccessful ? t('Successful') : t('Failed')})`}
+          />
         </PanelSection>
 
         <PanelSection title={t('Recent Plugin Events')}>
@@ -665,7 +678,8 @@ const Content: FC<{
   onPowerSettingsApply: (settings: PowerSettings) => Promise<void>;
   readSystemPowerSettings: () => Promise<PowerSettings | null>;
   onMonitorChanged: () => Promise<void>;
-}> = ({serverApi, backendState, overlayState, opacityState, deckyMusicState, onPowerSettingsLoaded, onPowerSettingsApply, readSystemPowerSettings, onMonitorChanged}) => {
+  getEventChannelDiagnostics: () => EventChannelDiagnostics;
+}> = ({serverApi, backendState, overlayState, opacityState, deckyMusicState, onPowerSettingsLoaded, onPowerSettingsApply, readSystemPowerSettings, onMonitorChanged, getEventChannelDiagnostics}) => {
   const [running, setRunning] = useState<boolean>(backendState.GetState() === 1);
   const [notify, setNotify] = useState<boolean>(showNotify);
   const [blackBackground, setBlackBackground] = useState<boolean>(overlayState.GetState() === 1);
@@ -859,7 +873,8 @@ const Content: FC<{
     setDiagnosticsLoading(true);
     try {
       const result = await serverApi.getDiagnostics();
-      setDiagnostics(parseDiagnostics(result));
+      const parsed = parseDiagnostics(result);
+      setDiagnostics(parsed ? { ...parsed, ...getEventChannelDiagnostics() } : null);
     } catch (error) {
       console.warn("[ScreenSaverEnhancements] Could not load diagnostics", error);
       setDiagnostics(null);
@@ -1661,6 +1676,12 @@ export default definePlugin(() => {
   let pluginActive = true;
   let unsubscribeSettingsChanged: (() => void) | null = null;
   let unsubscribeInhibitStateChanged: (() => void) | null = null;
+  const eventChannelDiagnostics: EventChannelDiagnostics = {
+    pushListenerActive: false,
+    pushReconnectCount: 0,
+    lastFullSyncAt: null,
+    lastFullSyncSuccessful: null,
+  };
   let powerOperation = Promise.resolve();
 
   const enqueuePowerOperation = (operation: () => Promise<void>) => {
@@ -1713,36 +1734,44 @@ export default definePlugin(() => {
   }
 
   const synchronizeRuntimeState = async (showStateNotification = false) => {
-    const [running, inhibitStatus, rawOverrideState, rawSystemSettings] = await Promise.all([
-      serverApi.isRunning(),
-      serverApi.getInhibitStatus(),
-      serverApi.getPowerOverrideState(),
-      serverApi.getSystemPowerSettings(),
-    ]);
-    const overrideState = parsePowerOverrideState(rawOverrideState);
-    const systemSettings = parseSteamPowerSettings(rawSystemSettings);
-    const activeApplication = inhibitStatus.manual_active_app
-      ?? inhibitStatus.dbus_requests[0]?.application;
-    const notifyStateChange = showStateNotification && running;
+    try {
+      const [running, inhibitStatus, rawOverrideState, rawSystemSettings] = await Promise.all([
+        serverApi.isRunning(),
+        serverApi.getInhibitStatus(),
+        serverApi.getPowerOverrideState(),
+        serverApi.getSystemPowerSettings(),
+      ]);
+      const overrideState = parsePowerOverrideState(rawOverrideState);
+      const systemSettings = parseSteamPowerSettings(rawSystemSettings);
+      const activeApplication = inhibitStatus.manual_active_app
+        ?? inhibitStatus.dbus_requests[0]?.application;
+      const notifyStateChange = showStateNotification && running;
 
-    backendState.SetState(running ? 1 : 0);
-    backendInhibiting = running && inhibitStatus.is_inhibiting;
-    await refreshDeckyMusicSetting(false, running);
+      backendState.SetState(running ? 1 : 0);
+      backendInhibiting = running && inhibitStatus.is_inhibiting;
+      await refreshDeckyMusicSetting(false, running);
 
-    if (overrideState.active && overrideState.snapshot) {
-      setConfiguredPowerSettings(overrideState.snapshot);
-    }
-    const shouldBeInhibiting = backendInhibiting || deckyMusicInhibiting;
-    const action = getPowerSyncAction(shouldBeInhibiting, overrideState, systemSettings);
-    if (action === "start") {
-      const snapshot = systemSettings && shouldSyncSystemPowerSettings(systemSettings, true)
-        ? systemSettings
-        : configuredPowerSettings;
-      await activateInhibit(snapshot, activeApplication, notifyStateChange);
-    } else if (action === "reapply") {
-      await updateSetting(0, 0, 0, 0);
-    } else if (action === "restore") {
-      await stopInhibit(notifyStateChange, overrideState);
+      if (overrideState.active && overrideState.snapshot) {
+        setConfiguredPowerSettings(overrideState.snapshot);
+      }
+      const shouldBeInhibiting = backendInhibiting || deckyMusicInhibiting;
+      const action = getPowerSyncAction(shouldBeInhibiting, overrideState, systemSettings);
+      if (action === "start") {
+        const snapshot = systemSettings && shouldSyncSystemPowerSettings(systemSettings, true)
+          ? systemSettings
+          : configuredPowerSettings;
+        await activateInhibit(snapshot, activeApplication, notifyStateChange);
+      } else if (action === "reapply") {
+        await updateSetting(0, 0, 0, 0);
+      } else if (action === "restore") {
+        await stopInhibit(notifyStateChange, overrideState);
+      }
+      eventChannelDiagnostics.lastFullSyncAt = Math.floor(Date.now() / 1000);
+      eventChannelDiagnostics.lastFullSyncSuccessful = true;
+    } catch (error) {
+      eventChannelDiagnostics.lastFullSyncAt = Math.floor(Date.now() / 1000);
+      eventChannelDiagnostics.lastFullSyncSuccessful = false;
+      throw error;
     }
   }
 
@@ -1789,6 +1818,7 @@ export default definePlugin(() => {
           if (!pluginActive) return;
           enqueuePowerOperation(() => synchronizeRuntimeState(true));
         });
+        eventChannelDiagnostics.pushListenerActive = true;
       }
     }
   }
@@ -1813,6 +1843,7 @@ export default definePlugin(() => {
       onPowerSettingsApply={applyConfiguredPowerSettings}
       readSystemPowerSettings={readSystemPowerSettings}
       onMonitorChanged={() => enqueuePowerOperation(() => synchronizeRuntimeState())}
+      getEventChannelDiagnostics={() => ({ ...eventChannelDiagnostics })}
     />,
     icon: <GiNightSleep />,
     onDismount() {
@@ -1824,6 +1855,7 @@ export default definePlugin(() => {
       unsubscribeSettingsChanged = null
       unsubscribeInhibitStateChanged?.()
       unsubscribeInhibitStateChanged = null
+      eventChannelDiagnostics.pushListenerActive = false
       disposeAudioTracker()
       serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")
     },

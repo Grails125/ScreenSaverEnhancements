@@ -16,9 +16,10 @@ export type Diagnostics = {
   manualRuleCount: number;
   manualActiveApp: string | null;
   dbusRequestCount: number;
-  eventQueueSize: number;
-  longPollRequests: number;
-  longPollTimeouts: number;
+  pushListenerActive: boolean;
+  pushReconnectCount: number;
+  lastFullSyncAt: number | null;
+  lastFullSyncSuccessful: boolean | null;
   powerOverrideActive: boolean;
   systemPowerSettings: PowerSettings | null;
   recentEvents: DiagnosticEvent[];
@@ -61,9 +62,12 @@ export const parseDiagnostics = (value: unknown): Diagnostics | null => {
     manualRuleCount: finiteNumber(source.manualRuleCount),
     manualActiveApp: typeof source.manualActiveApp === "string" ? source.manualActiveApp : null,
     dbusRequestCount: finiteNumber(source.dbusRequestCount),
-    eventQueueSize: finiteNumber(source.eventQueueSize),
-    longPollRequests: finiteNumber(source.longPollRequests),
-    longPollTimeouts: finiteNumber(source.longPollTimeouts),
+    pushListenerActive: source.pushListenerActive === true,
+    pushReconnectCount: finiteNumber(source.pushReconnectCount),
+    lastFullSyncAt: nullableTimestamp(source.lastFullSyncAt),
+    lastFullSyncSuccessful: typeof source.lastFullSyncSuccessful === "boolean"
+      ? source.lastFullSyncSuccessful
+      : null,
     powerOverrideActive: source.powerOverrideActive === true,
     systemPowerSettings: parseSteamPowerSettings(source.systemPowerSettings),
     recentEvents,
