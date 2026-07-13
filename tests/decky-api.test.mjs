@@ -100,6 +100,11 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
   assert.equal(response.active, true);
 });
 
+test("does not expose the obsolete frontend DeckyMusic playback RPC", () => {
+  assert.doesNotMatch(source, /record_decky_music_playback_state/);
+  assert.doesNotMatch(source, /recordDeckyMusicPlaybackState/);
+});
+
 test("propagates callable rejections to feature boundaries", async () => {
   const failure = new Error("backend unavailable");
   const { createPluginServerApi } = loadDeckyApi(

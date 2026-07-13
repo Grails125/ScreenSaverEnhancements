@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const pluginSource = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
+const updateHookSource = readFileSync(new URL("../src/usePluginUpdate.ts", import.meta.url), "utf8");
+const updateSource = `${pluginSource}\n${updateHookSource}`;
 const apiSource = readFileSync(new URL("../src/deckyApi.ts", import.meta.url), "utf8");
 const zh = JSON.parse(readFileSync(new URL("../src/i18n/zh-cn.json", import.meta.url), "utf8"));
 const en = JSON.parse(readFileSync(new URL("../src/i18n/en.json", import.meta.url), "utf8"));
@@ -10,20 +12,20 @@ const en = JSON.parse(readFileSync(new URL("../src/i18n/en.json", import.meta.ur
 test("update checking uses the V2 typed RPC contract", () => {
   assert.match(apiSource, /getPluginVersion\(\): Promise<string>/);
   assert.match(apiSource, /checkUpdate\(\): Promise<UpdateCheckResult>/);
-  assert.match(pluginSource, /serverApi\.getPluginVersion\(\)/);
-  assert.match(pluginSource, /serverApi\.checkUpdate\(\)/);
+  assert.match(updateSource, /serverApi\.getPluginVersion\(\)/);
+  assert.match(updateSource, /serverApi\.checkUpdate\(\)/);
   assert.match(apiSource, /installPluginUpdate\([^)]*UpdateInstallRequest/);
   assert.match(apiSource, /restartDecky\(\): Promise<void>/);
-  assert.match(pluginSource, /serverApi\.installPluginUpdate\(/);
-  assert.match(pluginSource, /serverApi\.restartDecky\(\)/);
-  assert.match(pluginSource, /serverApi\.getInstalledPluginVersion\(\)/);
-  assert.doesNotMatch(pluginSource, /callPluginMethod/);
+  assert.match(updateSource, /serverApi\.installPluginUpdate\(/);
+  assert.match(updateSource, /serverApi\.restartDecky\(\)/);
+  assert.match(updateSource, /serverApi\.getInstalledPluginVersion\(\)/);
+  assert.doesNotMatch(updateSource, /callPluginMethod/);
 });
 
 test("installation restarts Decky after the target package version reaches disk", () => {
-  assert.match(pluginSource, /installedVersion === latestVersion/);
-  assert.match(pluginSource, /UPDATE_INSTALL_POLL_INTERVAL_MS/);
-  assert.match(pluginSource, /await serverApi\.restartDecky\(\)/);
+  assert.match(updateHookSource, /installedVersion === latestVersion/);
+  assert.match(updateHookSource, /UPDATE_INSTALL_POLL_INTERVAL_MS/);
+  assert.match(updateHookSource, /await serverApi\.restartDecky\(\)/);
 });
 
 test("update checking has localized status and error copy", () => {
@@ -39,12 +41,12 @@ test("update checking has localized status and error copy", () => {
 });
 
 test("checking or loading the current version never restarts Decky", () => {
-  const checkStart = pluginSource.indexOf("const checkUpdate = async () =>");
-  const installStart = pluginSource.indexOf("const installUpdate = async () =>");
+  const checkStart = updateHookSource.indexOf("const checkUpdate = async () =>");
+  const installStart = updateHookSource.indexOf("const installUpdate = async () =>");
   const loadStart = pluginSource.indexOf("const loadPluginVersion = async () =>");
   const loadEnd = pluginSource.indexOf("const loadPowerSettings = async () =>", loadStart);
 
-  assert.doesNotMatch(pluginSource.slice(checkStart, installStart), /restartDecky/);
+  assert.doesNotMatch(updateHookSource.slice(checkStart, installStart), /restartDecky/);
   assert.doesNotMatch(pluginSource.slice(loadStart, loadEnd), /restartDecky/);
 });
 

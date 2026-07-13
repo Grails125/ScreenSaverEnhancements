@@ -21,7 +21,6 @@ const {
   parsePowerOverrideState,
   minutesToSeconds,
   secondsToMinutes,
-  shouldStartInhibit,
   shouldApplyPowerSettingsImmediately,
   getPowerSyncAction,
 } = module.exports;
@@ -60,18 +59,11 @@ test("uses persisted power values and converts displayed minutes", () => {
   assert.equal(secondsToMinutes(300), 5);
 });
 
-test("only starts a new inhibit session when no source is already active", () => {
-  assert.equal(shouldStartInhibit(false, false), true);
-  assert.equal(shouldStartInhibit(true, false), false);
-  assert.equal(shouldStartInhibit(false, true), false);
-  assert.equal(shouldStartInhibit(true, true), false);
-});
-
 test("only applies a changed profile immediately while no source is inhibiting sleep", () => {
-  assert.equal(shouldApplyPowerSettingsImmediately(false, false), true);
-  assert.equal(shouldApplyPowerSettingsImmediately(true, false), false);
-  assert.equal(shouldApplyPowerSettingsImmediately(false, true), false);
-  assert.equal(shouldApplyPowerSettingsImmediately(true, true), false);
+  assert.equal(shouldApplyPowerSettingsImmediately(false), true);
+  assert.equal(shouldApplyPowerSettingsImmediately(true), false);
+  assert.doesNotMatch(source, /shouldStartInhibit/);
+  assert.doesNotMatch(source, /deckyMusicInhibiting/);
 });
 
 test("reads the current battery and AC timeouts from Steam system settings", () => {

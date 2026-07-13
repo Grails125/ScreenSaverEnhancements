@@ -21,6 +21,7 @@ export type Diagnostics = {
   lastFullSyncAt: number | null;
   lastFullSyncSuccessful: boolean | null;
   powerOverrideActive: boolean;
+  powerOverrideSnapshot: PowerSettings | null;
   systemPowerSettings: PowerSettings | null;
   recentEvents: DiagnosticEvent[];
 };
@@ -69,6 +70,7 @@ export const parseDiagnostics = (value: unknown): Diagnostics | null => {
       ? source.lastFullSyncSuccessful
       : null,
     powerOverrideActive: source.powerOverrideActive === true,
+    powerOverrideSnapshot: parseSteamPowerSettings(source.powerOverrideSnapshot),
     systemPowerSettings: parseSteamPowerSettings(source.systemPowerSettings),
     recentEvents,
   };

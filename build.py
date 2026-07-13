@@ -43,6 +43,7 @@ def build():
         "settings.py",
         "plugin_contract.py",
         "process_events.py",
+        "task_lifecycle.py",
         "update_checker.py",
     ]
     

@@ -159,13 +159,17 @@ test("settings and diagnostics use direct typed RPC results", () => {
     new URL("../src/index.tsx", import.meta.url),
     "utf8",
   );
+  const diagnosticsHookSource = readFileSync(
+    new URL("../src/useDiagnosticsData.ts", import.meta.url),
+    "utf8",
+  );
 
   assert.match(settingsSource, /serverApi\.getSetting/);
   assert.match(settingsSource, /serverApi\.setSetting/);
   assert.match(settingsSource, /serverApi\.setSettings/);
   assert.doesNotMatch(settingsSource, /callPluginMethod|\.success|\.result/);
-  assert.match(pluginSource, /serverApi\.getDiagnostics/);
-  assert.doesNotMatch(pluginSource, /callPluginMethod[^\n]*get_diagnostics/);
+  assert.match(diagnosticsHookSource, /serverApi\.getDiagnostics/);
+  assert.doesNotMatch(`${pluginSource}\n${diagnosticsHookSource}`, /callPluginMethod[^\n]*get_diagnostics/);
 });
 
 test("backend lifecycle uses direct typed RPC results", () => {
@@ -185,10 +189,14 @@ test("process and inhibit status use direct typed RPC results", () => {
     new URL("../src/index.tsx", import.meta.url),
     "utf8",
   );
+  const appRulesHookSource = readFileSync(
+    new URL("../src/useAppRulesData.ts", import.meta.url),
+    "utf8",
+  );
 
-  assert.match(source, /serverApi\.getRunningProcesses\(\)/);
-  assert.match(source, /serverApi\.getInhibitStatus\(\)/);
-  assert.doesNotMatch(source, /callPluginMethod[^\n]*(get_running_processes|get_inhibit_status)/);
+  assert.match(appRulesHookSource, /serverApi\.getRunningProcesses\(\)/);
+  assert.match(appRulesHookSource, /serverApi\.getInhibitStatus\(\)/);
+  assert.doesNotMatch(`${source}\n${appRulesHookSource}`, /callPluginMethod[^\n]*(get_running_processes|get_inhibit_status)/);
 });
 
 test("power settings and recovery use direct typed RPC results", () => {
@@ -313,7 +321,7 @@ test("Stage 4.1 performs silent full-state sync before event subscriptions", () 
   assert.match(source, /const synchronizeRuntimeState = async \(showStateNotification = false\) =>/);
   assert.match(source, /serverApi\.getInhibitStatus\(\)/);
   assert.match(source, /getPowerSyncAction\(/);
-  assert.match(source, /refreshDeckyMusicSetting\(false, running\)/);
+  assert.doesNotMatch(source, /refreshDeckyMusicSetting/);
   assert.match(source, /await synchronizeRuntimeState\(\);[\s\S]*reconnectPushListeners\(\)/);
   assert.match(source, /const reconnectPushListeners = \([^)]*\) =>[\s\S]*subscribeSettingsChanged[\s\S]*subscribeInhibitStateChanged/);
   assert.match(source, /backendState\.SetState\(running \? 1 : 0\)/);
@@ -326,7 +334,7 @@ test("Stage 4.2 keeps the narrow settings push independently subscribed", () => 
   );
 
   assert.match(source, /serverApi\.subscribeSettingsChanged\(\(\) =>/);
-  assert.match(source, /enqueuePowerOperation\(\(\) => refreshDeckyMusicSetting\(\)\)/);
+  assert.match(source, /enqueuePowerOperation\(\(\) => synchronizeRuntimeState\(\)\)/);
   assert.match(source, /unsubscribeSettingsChanged\?\.\(\)/);
   assert.doesNotMatch(source, /event\.type === "SettingsChanged"/);
   assert.match(source, /serverApi\.subscribeInhibitStateChanged/);
@@ -350,7 +358,7 @@ test("Stage 4.3 treats critical pushes as full-state refresh signals", () => {
   assert.doesNotMatch(source, /event\.reason/);
 });
 
-test("disabling the monitor also disables DeckyMusic inhibition before reporting success", () => {
+test("monitor lifecycle is synchronized from backend inhibit state", () => {
   const source = readFileSync(
     new URL("../src/index.tsx", import.meta.url),
     "utf8",
@@ -358,9 +366,9 @@ test("disabling the monitor also disables DeckyMusic inhibition before reporting
 
   assert.match(source, /onMonitorChanged: \(\) => Promise<void>/);
   assert.match(source, /if \(succeeded !== true\) throw new Error\("backend lifecycle RPC failed"\);\s*await onMonitorChanged\(\);\s*notifyMonitorStatus\(checked\)/);
-  assert.match(source, /const refreshDeckyMusicSetting = async \(\s*reconcilePower = true,\s*monitorRunning = backendState\.GetState\(\) === 1,\s*\) =>/);
-  assert.match(source, /deckyMusicEnabled = monitorRunning\s*&& isDeckyMusicEnabled\(normalizeManualApps\(manualApps\)\)/);
-  assert.match(source, /await refreshDeckyMusicSetting\(false, running\)/);
+  assert.match(source, /backendInhibiting = running && inhibitStatus\.is_inhibiting;/);
+  assert.doesNotMatch(source, /deckyMusicInhibiting/);
+  assert.doesNotMatch(source, /deckyMusicState/);
 });
 
 test("Stage 4.4 diagnostics report push health instead of polling counters", () => {

@@ -84,13 +84,7 @@ export const secondsToMinutes = (seconds: unknown) => Math.round(
 
 export const shouldApplyPowerSettingsImmediately = (
   backendInhibiting: boolean,
-  deckyMusicInhibiting: boolean,
-) => !backendInhibiting && !deckyMusicInhibiting;
-
-export const shouldStartInhibit = (
-  backendInhibiting: boolean,
-  deckyMusicInhibiting: boolean,
-) => !backendInhibiting && !deckyMusicInhibiting;
+) => !backendInhibiting;
 
 export type PowerSyncAction = "start" | "reapply" | "restore" | "none";
 

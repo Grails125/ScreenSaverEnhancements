@@ -12,7 +12,13 @@ import {
 import React, { FC } from "react";
 import { useState, useEffect, useRef } from 'react'
 import { GiNightSleep } from "react-icons/gi";
-import { RiArrowDownSFill, RiArrowUpSFill, RiInformationLine } from "react-icons/ri";
+import {
+  RiArrowDownSFill,
+  RiArrowLeftSLine,
+  RiArrowUpSFill,
+  RiInformationLine,
+  RiMoonClearLine,
+} from "react-icons/ri";
 import i18n from './i18n'
 import {
   BlackOverlay,
@@ -21,11 +27,20 @@ import {
   BLACK_BACKGROUND_OPACITY,
 } from './blackOverlay'
 import { QUICK_ACCESS_MENU } from './ButtonIcons'
-import { copyTextToClipboard } from './clipboard'
-import { Diagnostics, parseDiagnostics } from './diagnostics'
+import {
+  getDiagnosticEventDetailMessage,
+  getDiagnosticEventMessage,
+  shouldShowLastProcessScan,
+} from './diagnosticEvents'
+import { Diagnostics } from './diagnostics'
 import { InhibitStatus, PluginServerApi, RunningProcess, serverApi } from './deckyApi'
 import { createPushListenerHealth } from './pushListenerHealth'
+import { resetSecondaryPageScroll } from './panelNavigation'
 import { StateNumber } from './state'
+import { usePluginUpdate } from './usePluginUpdate'
+import { EventChannelDiagnostics, useDiagnosticsData } from './useDiagnosticsData'
+import { useAppRulesData } from './useAppRulesData'
+import { usePluginSettings } from './usePluginSettings'
 import {
   DEFAULT_POWER_SETTINGS,
   getPowerSyncAction,
@@ -35,7 +50,6 @@ import {
   parsePowerOverrideState,
   PowerSettings,
   PowerOverrideState,
-  shouldStartInhibit,
   secondsToMinutes,
   shouldApplyPowerSettingsImmediately,
   shouldSyncSystemPowerSettings,
@@ -63,8 +77,6 @@ const POWER_SETTING_KEYS = {
   acSuspend: "ac_suspend_timeout",
 } as const
 const POWER_CONFIG_COLLAPSED_KEY = "screensaver-enhancements-power-config-collapsed"
-const UPDATE_INSTALL_POLL_INTERVAL_MS = 1000
-const UPDATE_INSTALL_MAX_POLLS = 120
 
 const renderBlackBackgroundTip = () => React.createElement(
   'span',
@@ -252,21 +264,6 @@ const PANEL_STYLES = {
     minWidth: 0,
     flex: 1,
   },
-  backIcon: {
-    width: '30px',
-    height: '30px',
-    borderRadius: '4px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'rgba(255,255,255,0.1)',
-    border: '1px solid rgba(255,255,255,0.18)',
-    color: '#fff',
-    fontSize: '1.35em',
-    fontWeight: 700,
-    lineHeight: 1,
-    flexShrink: 0,
-  },
   backButton: {
     width: '34px',
     height: '34px',
@@ -314,6 +311,27 @@ const PANEL_STYLES = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap' as const,
+  },
+  diagnosticEventMain: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '3px',
+    minWidth: 0,
+    flex: 1,
+  },
+  diagnosticEventName: {
+    color: '#f1f1f1',
+    fontSize: '0.9em',
+    overflow: 'hidden' as const,
+    textOverflow: 'ellipsis' as const,
+    whiteSpace: 'nowrap' as const,
+  },
+  diagnosticEventTime: {
+    fontSize: '0.78em',
+    color: '#8d8d8d',
+    flexShrink: 0,
+    whiteSpace: 'nowrap' as const,
+    fontVariantNumeric: 'tabular-nums' as const,
   }
 }
 
@@ -345,20 +363,13 @@ const getAppDisplayName = (application?: string) => {
 const RUN_ON_LOGIN = "run_on_login"
 const SHOW_NOTIFY  = "show_notify"
 const DECKY_MUSIC_APP = "DeckyMusic"
-
-const EMPTY_INHIBIT_STATUS: InhibitStatus = {
-  manual_apps: [],
-  manual_active_app: null,
-  manual_active: false,
-  dbus_requests: [],
-  dbus_active: false,
-  is_inhibiting: false,
-};
+const isDeckyMusicSource = (application: string | null | undefined) => (
+  application?.toLowerCase() === DECKY_MUSIC_APP.toLowerCase()
+)
 
 type InhibitAppsPageProps = {
   manualApps: string[];
   inhibitStatus: InhibitStatus;
-  deckyMusicActive: boolean;
   runningProcesses: RunningProcess[];
   refreshing: boolean;
   onBack: () => void;
@@ -367,28 +378,35 @@ type InhibitAppsPageProps = {
   onRemoveApp: (appName: string) => void;
 };
 
+const SecondaryPageBackButton: FC<{ onBack: () => void }> = ({ onBack }) => (
+  <Focusable
+    aria-label={t('Back')}
+    style={PANEL_STYLES.backButton}
+    onClick={onBack}
+  >
+    <RiArrowLeftSLine aria-hidden="true" />
+  </Focusable>
+);
+
 const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
   manualApps,
   inhibitStatus,
-  deckyMusicActive,
   runningProcesses,
   refreshing,
   onBack,
   onRefresh,
   onAddApp,
   onRemoveApp,
-}) => (
+}) => {
+  const manualDeckyMusicActive = isDeckyMusicSource(inhibitStatus.manual_active_app);
+
+  return (
   <PanelLayout>
     <PanelSection>
       <PanelSectionRow>
         <div style={PANEL_STYLES.pageHeader}>
           <div style={PANEL_STYLES.pageHeaderMain}>
-            <Focusable
-              style={PANEL_STYLES.backButton}
-              onClick={onBack}
-            >
-              ‹
-            </Focusable>
+            <SecondaryPageBackButton onBack={onBack} />
             <div style={PANEL_STYLES.menuText}>
               <span style={PANEL_STYLES.menuTitle}>{t('Inhibit Apps')}</span>
               <span style={PANEL_STYLES.menuDescription}>{t('app_rules_tip')}</span>
@@ -428,14 +446,14 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
     </PanelSection>
 
     <PanelSection title={t('Active Inhibit Sources')}>
-      {!inhibitStatus.manual_active && !deckyMusicActive && inhibitStatus.dbus_requests.length === 0 && (
+      {!inhibitStatus.manual_active && inhibitStatus.dbus_requests.length === 0 && (
         <PanelSectionRow>
           <div style={PANEL_STYLES.emptyState}>
             {t('No Active Inhibit')}
           </div>
         </PanelSectionRow>
       )}
-      {inhibitStatus.manual_active && inhibitStatus.manual_active_app && (
+      {inhibitStatus.manual_active && inhibitStatus.manual_active_app && !manualDeckyMusicActive && (
         <PanelSectionRow>
           <div style={PANEL_STYLES.processItem}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
@@ -446,7 +464,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
           </div>
         </PanelSectionRow>
       )}
-      {deckyMusicActive && (
+      {manualDeckyMusicActive && (
         <PanelSectionRow>
           <div style={PANEL_STYLES.processItem}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
@@ -512,7 +530,8 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
       </Focusable>
     </PanelSection>
   </PanelLayout>
-);
+  );
+};
 
 const formatDiagnosticTime = (timestamp: number | null) => timestamp
   ? new Date(timestamp * 1000).toLocaleString()
@@ -529,11 +548,14 @@ const formatProcessMonitorMode = (mode: string) => {
 };
 
 const formatDiagnosticEventType = (type: string) => {
-  switch (type) {
-    case 'backend_started': return t('backend_started');
-    case 'backend_stopped': return t('backend_stopped');
-    default: return type;
-  }
+  const message = getDiagnosticEventMessage(type);
+  return 'key' in message ? t(message.key) : message.fallback;
+};
+
+const formatDiagnosticEventDetail = (detail: string | undefined) => {
+  if (!detail) return undefined;
+  const message = getDiagnosticEventDetailMessage(detail);
+  return 'key' in message ? t(message.key) : message.fallback;
 };
 
 const DiagnosticRow: FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
@@ -610,11 +632,6 @@ type DiagnosticsPageProps = {
   onExport: () => void;
 };
 
-type EventChannelDiagnostics = Pick<
-  Diagnostics,
-  'pushListenerActive' | 'pushReconnectCount' | 'lastFullSyncAt' | 'lastFullSyncSuccessful'
->;
-
 const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
   diagnostics,
   loading,
@@ -628,9 +645,7 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
       <PanelSectionRow>
         <div style={PANEL_STYLES.pageHeader}>
           <div style={PANEL_STYLES.pageHeaderMain}>
-            <Focusable style={PANEL_STYLES.backButton} onClick={onBack}>
-              ←
-            </Focusable>
+            <SecondaryPageBackButton onBack={onBack} />
             <div style={PANEL_STYLES.menuText}>
               <span style={PANEL_STYLES.menuTitle}>{t('Diagnostics')}</span>
               <span style={PANEL_STYLES.menuDescription}>{t('diagnostics_tip')}</span>
@@ -657,7 +672,9 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
             processMonitorMode={diagnostics.processMonitorMode}
           />
           <DiagnosticRow label={t('Process Scan Count')} value={diagnostics.processScanCount} />
-          <DiagnosticRow label={t('Last Process Scan')} value={formatDiagnosticTime(diagnostics.lastProcessScanAt)} />
+          {shouldShowLastProcessScan(diagnostics.processMonitorMode) && (
+            <DiagnosticRow label={t('Last Process Scan')} value={formatDiagnosticTime(diagnostics.lastProcessScanAt)} />
+          )}
           <DiagnosticRow label={t('Last Process Event')} value={formatDiagnosticTime(diagnostics.lastProcessEventAt)} />
           <DiagnosticRow label={t('Manual Rule Count')} value={diagnostics.manualRuleCount} />
           <DiagnosticRow label={t('Active Application')} value={diagnostics.manualActiveApp || t('None')} />
@@ -665,12 +682,15 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
           <DiagnosticRow label={t('Power Recovery Active')} value={diagnostics.powerOverrideActive ? t('Yes') : t('No')} />
         </PanelSection>
 
-        {diagnostics.systemPowerSettings && (
-          <PanelSection title={t('System Power Settings')}>
-            <DiagnosticRow label={t('Battery Dim Timeout')} value={`${diagnostics.systemPowerSettings.batteryDim}${t('Seconds')}`} />
-            <DiagnosticRow label={t('AC Dim Timeout')} value={`${diagnostics.systemPowerSettings.acDim}${t('Seconds')}`} />
-            <DiagnosticRow label={t('Battery Suspend Timeout')} value={`${diagnostics.systemPowerSettings.batterySuspend}${t('Seconds')}`} />
-            <DiagnosticRow label={t('AC Suspend Timeout')} value={`${diagnostics.systemPowerSettings.acSuspend}${t('Seconds')}`} />
+        {(diagnostics.powerOverrideSnapshot || diagnostics.systemPowerSettings) && (
+          <PanelSection title={t(diagnostics.powerOverrideSnapshot ? 'Saved System Power Settings' : 'System Power Settings')}>
+            {diagnostics.powerOverrideSnapshot && (
+              <DiagnosticRow label={t('Active Power Override')} value={t('Actual system timeouts are temporarily set to 0 seconds')} />
+            )}
+            <DiagnosticRow label={t('Battery Dim Timeout')} value={`${(diagnostics.powerOverrideSnapshot || diagnostics.systemPowerSettings)!.batteryDim}${t('Seconds')}`} />
+            <DiagnosticRow label={t('AC Dim Timeout')} value={`${(diagnostics.powerOverrideSnapshot || diagnostics.systemPowerSettings)!.acDim}${t('Seconds')}`} />
+            <DiagnosticRow label={t('Battery Suspend Timeout')} value={`${(diagnostics.powerOverrideSnapshot || diagnostics.systemPowerSettings)!.batterySuspend}${t('Seconds')}`} />
+            <DiagnosticRow label={t('AC Suspend Timeout')} value={`${(diagnostics.powerOverrideSnapshot || diagnostics.systemPowerSettings)!.acSuspend}${t('Seconds')}`} />
           </PanelSection>
         )}
 
@@ -691,17 +711,27 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
         <PanelSection title={t('Recent Plugin Events')}>
           {diagnostics.recentEvents.length === 0 ? (
             <PanelSectionRow><div style={PANEL_STYLES.emptyState}>{t('No Recent Events')}</div></PanelSectionRow>
-          ) : diagnostics.recentEvents.slice().reverse().map((event, index) => (
-            <PanelSectionRow key={`${event.timestamp}-${event.type}-${index}`}>
-              <div style={PANEL_STYLES.processItem}>
-                <div style={PANEL_STYLES.menuText}>
-                  <span style={PANEL_STYLES.processName}>{formatDiagnosticEventType(event.type)}</span>
-                  <span style={PANEL_STYLES.sectionHint}>{event.detail || formatDiagnosticTime(event.timestamp)}</span>
+          ) : diagnostics.recentEvents.slice().reverse().map((event, index) => {
+            const eventDetail = formatDiagnosticEventDetail(event.detail);
+            return (
+              <PanelSectionRow key={`${event.timestamp}-${event.type}-${index}`}>
+                <div style={PANEL_STYLES.processItem}>
+                  <div style={PANEL_STYLES.diagnosticEventMain}>
+                    <span style={PANEL_STYLES.diagnosticEventName}>{formatDiagnosticEventType(event.type)}</span>
+                    {eventDetail && (
+                      <span style={PANEL_STYLES.sectionHint}>{eventDetail}</span>
+                    )}
+                  </div>
+                  <time
+                    dateTime={new Date(event.timestamp * 1000).toISOString()}
+                    style={PANEL_STYLES.diagnosticEventTime}
+                  >
+                    {new Date(event.timestamp * 1000).toLocaleTimeString()}
+                  </time>
                 </div>
-                <span style={PANEL_STYLES.sectionHint}>{new Date(event.timestamp * 1000).toLocaleTimeString()}</span>
-              </div>
-            </PanelSectionRow>
-          ))}
+              </PanelSectionRow>
+            );
+          })}
         </PanelSection>
 
         <PanelSection>
@@ -719,29 +749,19 @@ const Content: FC<{
   backendState: StateNumber;
   overlayState: StateNumber;
   opacityState: StateNumber;
-  deckyMusicState: StateNumber;
   onPowerSettingsLoaded: (settings: PowerSettings) => void;
   onPowerSettingsApply: (settings: PowerSettings) => Promise<void>;
   readSystemPowerSettings: () => Promise<PowerSettings | null>;
   onMonitorChanged: () => Promise<void>;
   getEventChannelDiagnostics: () => EventChannelDiagnostics;
-}> = ({serverApi, backendState, overlayState, opacityState, deckyMusicState, onPowerSettingsLoaded, onPowerSettingsApply, readSystemPowerSettings, onMonitorChanged, getEventChannelDiagnostics}) => {
+}> = ({serverApi, backendState, overlayState, opacityState, onPowerSettingsLoaded, onPowerSettingsApply, readSystemPowerSettings, onMonitorChanged, getEventChannelDiagnostics}) => {
   const [running, setRunning] = useState<boolean>(backendState.GetState() === 1);
   const [notify, setNotify] = useState<boolean>(showNotify);
   const [blackBackground, setBlackBackground] = useState<boolean>(overlayState.GetState() === 1);
   const [blackBackgroundOpacity, setBlackBackgroundOpacity] = useState<number>(opacityState.GetState());
   const [closeOnAnyKey, setCloseOnAnyKey] = useState<boolean>(false);
   const [closeOnAnyKeyLoaded, setCloseOnAnyKeyLoaded] = useState<boolean>(false);
-  const [pluginVersion, setPluginVersion] = useState<string>('');
-  const [latestVersion, setLatestVersion] = useState<string>('');
-  const [updateNotes, setUpdateNotes] = useState<string>('');
-  const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
-  const [checkingUpdate, setCheckingUpdate] = useState<boolean>(false);
-  const [installingUpdate, setInstallingUpdate] = useState<boolean>(false);
-  const [updateDownloadUrl, setUpdateDownloadUrl] = useState<string>('');
-  const [updateSha256, setUpdateSha256] = useState<string>('');
   const [powerSettings, setPowerSettings] = useState<PowerSettings>(DEFAULT_POWER_SETTINGS);
-  const [deckyMusicActive, setDeckyMusicActive] = useState<boolean>(deckyMusicState.GetState() === 1);
   const [powerConfigCollapsed, setPowerConfigCollapsed] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(POWER_CONFIG_COLLAPSED_KEY);
@@ -751,49 +771,9 @@ const Content: FC<{
     }
   });
 
-  const startBackend = async () => {
-    return await serverApi.startBackend();
-  }
-
-  const stopBackend = async () => {
-    return await serverApi.stopBackend();
-  }
-
-  const isBackendRunning = async () => {
-    return await serverApi.isRunning();
-  }
-
-  const saveSetting = async (
-    key: string,
-    value: any,
-    rollback: () => void,
-  ): Promise<boolean> => {
-    try {
-      const response = await setPluginSetting(serverApi, key, value);
-      if (isPluginSettingSaveSuccessful(response)) return true;
-      throw new Error("settings RPC failed");
-    } catch {
-      rollback();
-      serverApi.toaster.toast({
-        title: t("Settings Save Failed"),
-        body: t("Settings Save Failed Body"),
-        icon: <GiNightSleep />,
-        critical: true,
-        duration: 4000,
-      });
-      return false;
-    }
-  }
-
   const [manualApps, setManualApps] = useState<string[]>([]);
-  const [inhibitStatus, setInhibitStatus] = useState<InhibitStatus>(EMPTY_INHIBIT_STATUS);
-  const [runningProcesses, setRunningProcesses] = useState<RunningProcess[]>([]);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [showAppMenu, setShowAppMenu] = useState<boolean>(false);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
-  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
-  const [diagnosticsLoading, setDiagnosticsLoading] = useState<boolean>(false);
-  const [diagnosticsExportStatus, setDiagnosticsExportStatus] = useState<string>('');
   const quickAccessVisible = useQuickAccessVisible();
   const quickAccessWasVisible = useRef(quickAccessVisible);
   const panelVisible = useRef(true);
@@ -801,11 +781,47 @@ const Content: FC<{
   const opacitySaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingOpacityRef = useRef<number | null>(null);
   const persistedOpacityRef = useRef(opacityState.GetState());
-  const updateCheckInFlight = useRef(false);
 
   const isCurrentRequest = (token: number) => {
     return panelVisible.current && requestTokenRef.current === token;
   }
+
+  const { saveSetting } = usePluginSettings(serverApi, t);
+
+  const {
+    pluginVersion,
+    latestVersion,
+    updateNotes,
+    updateAvailable,
+    checkingUpdate,
+    installingUpdate,
+    updateDownloadUrl,
+    updateSha256,
+    loadPluginVersion,
+    checkUpdate,
+    installUpdate,
+  } = usePluginUpdate(serverApi, () => requestTokenRef.current, isCurrentRequest, t);
+
+  const {
+    diagnostics,
+    diagnosticsLoading,
+    diagnosticsExportStatus,
+    refreshDiagnostics,
+    exportDiagnostics,
+  } = useDiagnosticsData(serverApi, getEventChannelDiagnostics, t);
+
+  const {
+    inhibitStatus,
+    runningProcesses,
+    refreshing,
+    refreshInhibitStatus,
+    refreshAppMenuData,
+  } = useAppRulesData(
+    serverApi,
+    () => panelVisible.current,
+    isCurrentRequest,
+    () => requestTokenRef.current,
+  );
 
   const applySystemPowerSettings = async () => {
     try {
@@ -877,157 +893,6 @@ const Content: FC<{
     }, 300);
   }
 
-  const fetchRunningProcesses = async () => {
-    if (!panelVisible.current) return;
-    const token = requestTokenRef.current;
-    setRefreshing(true);
-    try {
-      const processes = await serverApi.getRunningProcesses();
-      if (isCurrentRequest(token)) {
-        setRunningProcesses(processes);
-      }
-    } catch (error) {
-      console.warn("[ScreenSaverEnhancements] Could not load running processes", error);
-    } finally {
-      if (isCurrentRequest(token)) {
-        setRefreshing(false);
-      }
-    }
-  }
-
-  const fetchInhibitStatus = async () => {
-    if (!panelVisible.current) return;
-    const token = requestTokenRef.current;
-    try {
-      const result = await serverApi.getInhibitStatus();
-      if (isCurrentRequest(token) && result) {
-        setInhibitStatus({
-          ...EMPTY_INHIBIT_STATUS,
-          ...result,
-          manual_apps: normalizeManualApps(result.manual_apps),
-          dbus_requests: Array.isArray(result.dbus_requests) ? result.dbus_requests : [],
-        });
-      }
-    } catch (error) {
-      console.warn("[ScreenSaverEnhancements] Could not load inhibit status", error);
-    }
-  }
-
-  const refreshInhibitStatus = async () => {
-    await fetchInhibitStatus();
-  }
-
-  const checkUpdate = async () => {
-    if (updateCheckInFlight.current) return;
-    updateCheckInFlight.current = true;
-    setCheckingUpdate(true);
-    const token = requestTokenRef.current;
-    try {
-      const result = await serverApi.checkUpdate();
-      if (!isCurrentRequest(token)) return;
-      if (result.error) throw new Error(result.error);
-
-      setPluginVersion(result.current);
-      setLatestVersion(result.latest);
-      setUpdateAvailable(result.has_update);
-      setUpdateNotes(result.has_update ? result.notes : '');
-      setUpdateDownloadUrl(result.has_update ? result.download_url : '');
-      setUpdateSha256(result.has_update ? result.sha256 : '');
-      serverApi.toaster.toast({
-        title: t(result.has_update ? 'Update Available' : 'No Update'),
-        body: result.has_update
-          ? `${result.current} → ${result.latest}`
-          : t('Already Latest Version'),
-        icon: <GiNightSleep />,
-        critical: result.has_update,
-        duration: result.has_update ? 5000 : 3000,
-      });
-    } catch (error) {
-      console.warn('[ScreenSaverEnhancements] Update check failed', error);
-      if (isCurrentRequest(token)) {
-        setUpdateAvailable(false);
-        setUpdateNotes('');
-        setUpdateDownloadUrl('');
-        setUpdateSha256('');
-        serverApi.toaster.toast({
-          title: t('Update Check Failed'),
-          body: t('Update Check Failed'),
-          icon: <GiNightSleep />,
-          critical: true,
-          duration: 4000,
-        });
-      }
-    } finally {
-      updateCheckInFlight.current = false;
-      if (isCurrentRequest(token)) setCheckingUpdate(false);
-    }
-  }
-
-  const installUpdate = async () => {
-    if (installingUpdate || !updateAvailable || !updateDownloadUrl || !updateSha256) return;
-    setInstallingUpdate(true);
-    try {
-      await serverApi.installPluginUpdate({
-        downloadUrl: updateDownloadUrl,
-        version: latestVersion,
-        sha256: updateSha256,
-      });
-      for (let attempt = 0; attempt < UPDATE_INSTALL_MAX_POLLS; attempt += 1) {
-        await new Promise(resolve => setTimeout(resolve, UPDATE_INSTALL_POLL_INTERVAL_MS));
-        const installedVersion = await serverApi.getInstalledPluginVersion();
-        if (installedVersion === latestVersion) {
-          await serverApi.restartDecky();
-          return;
-        }
-      }
-      throw new Error("Decky installer did not finish before the timeout");
-    } catch (error) {
-      console.error('[ScreenSaverEnhancements] Update installation failed', error);
-      serverApi.toaster.toast({
-        title: t('Update Install Failed'),
-        body: t('Update Install Failed'),
-        icon: <GiNightSleep />,
-        critical: true,
-        duration: 4000,
-      });
-    } finally {
-      setInstallingUpdate(false);
-    }
-  }
-
-  const refreshAppMenuData = async () => {
-    await Promise.all([
-      fetchRunningProcesses(),
-      fetchInhibitStatus(),
-    ]);
-  }
-
-  const refreshDiagnostics = async () => {
-    setDiagnosticsLoading(true);
-    try {
-      const result = await serverApi.getDiagnostics();
-      const parsed = parseDiagnostics(result);
-      setDiagnostics(parsed ? { ...parsed, ...getEventChannelDiagnostics() } : null);
-    } catch (error) {
-      console.warn("[ScreenSaverEnhancements] Could not load diagnostics", error);
-      setDiagnostics(null);
-    } finally {
-      setDiagnosticsLoading(false);
-    }
-  }
-
-  const exportDiagnostics = async () => {
-    if (!diagnostics) return;
-    const copied = await copyTextToClipboard(JSON.stringify(diagnostics, null, 2));
-    if (copied) {
-      setDiagnosticsExportStatus(t('Diagnostic Report Copied'));
-    } else {
-      console.warn("[ScreenSaverEnhancements] No clipboard method succeeded");
-      setDiagnosticsExportStatus(t('Diagnostic Export Failed'));
-    }
-    setTimeout(() => setDiagnosticsExportStatus(''), 2000);
-  }
-
   const updatePowerSetting = async (
     field: keyof PowerSettings,
     value: unknown,
@@ -1075,7 +940,7 @@ const Content: FC<{
 
     const loadBackendState = async () => {
       try {
-        const isRunning = await isBackendRunning();
+        const isRunning = await serverApi.isRunning();
         if (!isCurrentRequest(token)) return;
         backendState.SetState(isRunning ? 1 : 0);
         setRunning(isRunning);
@@ -1104,15 +969,7 @@ const Content: FC<{
     };
     loadBlackBackgroundSettings();
 
-    const loadPluginVersion = async () => {
-      try {
-        const version = await serverApi.getPluginVersion();
-        if (isCurrentRequest(token)) setPluginVersion(version);
-      } catch (error) {
-        console.warn('[ScreenSaverEnhancements] Could not load plugin version', error);
-      }
-    };
-    void loadPluginVersion();
+    void loadPluginVersion(token);
 
     const loadPowerSettings = async () => {
       const [batteryDim, acDim, batterySuspend, acSuspend] = await Promise.all([
@@ -1141,8 +998,6 @@ const Content: FC<{
     backendState.onStateChanged(onBackendChanged);
     overlayState.onStateChanged(onOverlayChanged);
     opacityState.onStateChanged(onOpacityChanged);
-    const onDeckyMusicChanged = (value: number) => setDeckyMusicActive(value === 1);
-    deckyMusicState.onStateChanged(onDeckyMusicChanged);
 
     return () => {
       panelVisible.current = false;
@@ -1157,9 +1012,8 @@ const Content: FC<{
       backendState.offStateChanged(onBackendChanged);
       overlayState.offStateChanged(onOverlayChanged);
       opacityState.offStateChanged(onOpacityChanged);
-      deckyMusicState.offStateChanged(onDeckyMusicChanged);
     };
-  }, [backendState, overlayState, opacityState, deckyMusicState]);
+  }, [backendState, overlayState, opacityState]);
 
   useEffect(() => {
     if (!quickAccessVisible) return;
@@ -1196,12 +1050,14 @@ const Content: FC<{
     await saveSetting("manual_apps", newList, () => setManualApps(manualApps));
   }
 
-  const openAppMenu = () => {
+  const openAppMenu = (trigger: HTMLElement) => {
+    resetSecondaryPageScroll(trigger);
     setShowAppMenu(true);
     refreshAppMenuData();
   }
 
-  const openDiagnostics = () => {
+  const openDiagnostics = (trigger: HTMLElement) => {
+    resetSecondaryPageScroll(trigger);
     setShowDiagnostics(true);
     void refreshDiagnostics();
   }
@@ -1213,7 +1069,6 @@ const Content: FC<{
       <InhibitAppsPage
         manualApps={manualApps}
         inhibitStatus={inhibitStatus}
-        deckyMusicActive={deckyMusicActive}
         runningProcesses={runningProcesses}
         refreshing={refreshing}
         onBack={() => setShowAppMenu(false)}
@@ -1254,7 +1109,7 @@ const Content: FC<{
               })) return;
 
               try {
-                const succeeded = checked ? await startBackend() : await stopBackend();
+                const succeeded = checked ? await serverApi.startBackend() : await serverApi.stopBackend();
                 if (succeeded !== true) throw new Error("backend lifecycle RPC failed");
                 await onMonitorChanged();
                 notifyMonitorStatus(checked);
@@ -1441,10 +1296,10 @@ const Content: FC<{
         <PanelSectionRow>
           <Focusable
             style={PANEL_STYLES.menuItem}
-            onClick={openAppMenu}
+            onClick={(event) => openAppMenu(event.currentTarget)}
           >
             <div style={PANEL_STYLES.menuMain}>
-              <span style={PANEL_STYLES.menuIcon}>☾</span>
+              <span style={PANEL_STYLES.menuIcon}><RiMoonClearLine /></span>
               <div style={PANEL_STYLES.menuText}>
                 <span style={PANEL_STYLES.menuTitle}>{t('Inhibit Apps')}</span>
                 <span style={PANEL_STYLES.menuDescription}>{t('app_rules_tip')}</span>
@@ -1462,9 +1317,9 @@ const Content: FC<{
 
       <PanelSection title={t('Diagnostics Section')}>
         <PanelSectionRow>
-          <Focusable style={PANEL_STYLES.menuItem} onClick={openDiagnostics}>
+          <Focusable style={PANEL_STYLES.menuItem} onClick={(event) => openDiagnostics(event.currentTarget)}>
             <div style={PANEL_STYLES.menuMain}>
-              <span style={PANEL_STYLES.menuIcon}>i</span>
+              <span style={PANEL_STYLES.menuIcon}><RiInformationLine /></span>
               <div style={PANEL_STYLES.menuText}>
                 <span style={PANEL_STYLES.menuTitle}>{t('Diagnostics')}</span>
                 <span style={PANEL_STYLES.menuDescription}>{t('diagnostics_tip')}</span>
@@ -1526,10 +1381,8 @@ export default definePlugin(() => {
   const backendState = new StateNumber(0);
   const overlayState = new StateNumber(0);
   const opacityState = new StateNumber(1);
-  const deckyMusicState = new StateNumber(0);
   let configuredPowerSettings: PowerSettings = { ...DEFAULT_POWER_SETTINGS };
   let backendInhibiting = false;
-  let deckyMusicInhibiting = false;
 
   const setConfiguredPowerSettings = (settings: PowerSettings) => {
     configuredPowerSettings = { ...settings };
@@ -1625,7 +1478,7 @@ export default definePlugin(() => {
       const systemSettings = parseSteamPowerSettings(result);
       if (!systemSettings) return null;
 
-      const isInhibiting = Boolean(inhibitStatus.is_inhibiting || deckyMusicInhibiting);
+      const isInhibiting = Boolean(inhibitStatus.is_inhibiting);
       return shouldSyncSystemPowerSettings(systemSettings, isInhibiting) ? systemSettings : null;
     } catch (error) {
       console.warn("[ScreenSaverEnhancements] Could not read current power settings", error);
@@ -1679,7 +1532,7 @@ export default definePlugin(() => {
   }
 
   const applyConfiguredPowerSettings = async (settings: PowerSettings) => {
-    const isInhibiting = !shouldApplyPowerSettingsImmediately(backendInhibiting, deckyMusicInhibiting);
+    const isInhibiting = !shouldApplyPowerSettingsImmediately(backendInhibiting);
     if (!isInhibiting) {
       await updateSetting(
         settings.batteryDim,
@@ -1689,110 +1542,6 @@ export default definePlugin(() => {
       );
     }
     setConfiguredPowerSettings(settings);
-  }
-
-  const isDeckyMusicEnabled = (apps: string[]) => {
-    return apps.some(app => app.toLowerCase() === DECKY_MUSIC_APP.toLowerCase());
-  }
-
-  type AudioTracker = {
-    elements: Set<HTMLMediaElement>;
-    dispose: () => void;
-  };
-
-  const installAudioTracker = (onStateChanged: () => void): AudioTracker => {
-    const trackerKey = "__screensaverEnhancementsAudioTrackerV2";
-    const existingTracker = (window as any)[trackerKey] as AudioTracker | undefined;
-    if (existingTracker) return existingTracker;
-
-    const tracked = new Set<HTMLMediaElement>();
-    const originalPlay = HTMLMediaElement.prototype.play;
-    const originalPause = HTMLMediaElement.prototype.pause;
-
-    const handlePause = function(this: HTMLMediaElement) {
-      tracked.delete(this);
-      onStateChanged();
-    };
-
-    const handleEnded = function(this: HTMLMediaElement) {
-      tracked.delete(this);
-      onStateChanged();
-    };
-
-    const trackedPlay = function(this: HTMLMediaElement) {
-      tracked.add(this);
-      this.addEventListener("pause", handlePause, { once: true });
-      this.addEventListener("ended", handleEnded, { once: true });
-      onStateChanged();
-      return originalPlay.apply(this);
-    };
-
-    const trackedPause = function(this: HTMLMediaElement) {
-      tracked.delete(this);
-      onStateChanged();
-      return originalPause.apply(this);
-    };
-
-    HTMLMediaElement.prototype.play = trackedPlay;
-    HTMLMediaElement.prototype.pause = trackedPause;
-
-    document.querySelectorAll("audio,video").forEach((element) => {
-      const mediaElement = element as HTMLMediaElement;
-      if (!mediaElement.paused && !mediaElement.ended) {
-        tracked.add(mediaElement);
-        mediaElement.addEventListener("pause", handlePause, { once: true });
-        mediaElement.addEventListener("ended", handleEnded, { once: true });
-      }
-    });
-
-    const tracker: AudioTracker = {
-      elements: tracked,
-      dispose: () => {
-        tracked.forEach((mediaElement) => {
-          mediaElement.removeEventListener("pause", handlePause);
-          mediaElement.removeEventListener("ended", handleEnded);
-        });
-        tracked.clear();
-        if (HTMLMediaElement.prototype.play === trackedPlay) {
-          HTMLMediaElement.prototype.play = originalPlay;
-        }
-        if (HTMLMediaElement.prototype.pause === trackedPause) {
-          HTMLMediaElement.prototype.pause = originalPause;
-        }
-        if ((window as any)[trackerKey] === tracker) {
-          delete (window as any)[trackerKey];
-        }
-      },
-    };
-    (window as any)[trackerKey] = tracker;
-    return tracker;
-  }
-
-  let audioTracker: AudioTracker | null = null;
-
-  const ensureAudioTracker = (onStateChanged: () => void) => {
-    if (!audioTracker) {
-      audioTracker = installAudioTracker(onStateChanged);
-    }
-    return audioTracker.elements;
-  }
-
-  const disposeAudioTracker = () => {
-    audioTracker?.dispose();
-    audioTracker = null;
-  }
-
-  const isAnyAudioPlaying = () => {
-    const trackedAudioElements = audioTracker?.elements;
-    if (!trackedAudioElements || trackedAudioElements.size === 0) return false;
-
-    for (const audio of trackedAudioElements) {
-      if (audio.src && !audio.paused && !audio.ended && audio.readyState > HTMLMediaElement.HAVE_NOTHING) {
-        return true;
-      }
-    }
-
-    return false;
   }
 
   let timeout:NodeJS.Timeout;
@@ -1810,13 +1559,19 @@ export default definePlugin(() => {
     }, 2000)
   }
 
+  const notifyInhibitState = (application: string | undefined, active: boolean) => {
+    const displayName = getAppDisplayName(application);
+    const body = active
+      ? (displayName ? `${displayName} ${t("Inhibit")}` : t("Inhibit"))
+      : t("UnInhibit");
+    notify(t("ScreenSaver"), body);
+  }
+
   const activateInhibit = async (
     snapshot: PowerSettings,
     application?: string,
     showNotification = true,
   ) => {
-    const displayName = getAppDisplayName(application);
-    const message = displayName ? `${displayName} ${t("Inhibit")}` : t("Inhibit");
     if (!await beginPowerOverride(snapshot)) {
       throw new Error("Could not save the power override recovery snapshot");
     }
@@ -1824,17 +1579,12 @@ export default definePlugin(() => {
     try {
       await updateSetting(0, 0, 0, 0);
       if (showNotification) {
-        notify(t("ScreenSaver"), message)
+        notifyInhibitState(application, true)
       }
     } catch (error) {
       await endPowerOverride();
       throw error;
     }
-  }
-
-  const startInhibit = async (application?: string) => {
-    const snapshot = await readSystemPowerSettings() ?? configuredPowerSettings;
-    await activateInhibit(snapshot, application);
   }
 
   const stopInhibit = async (
@@ -1854,11 +1604,10 @@ export default definePlugin(() => {
       await endPowerOverride();
     }
     if (showRestoreNotification) {
-      notify(t("ScreenSaver"), t("UnInhibit"))
+      notifyInhibitState(undefined, false)
     }
   }
 
-  let deckyMusicEnabled = false;
   let pluginActive = true;
   let unsubscribeSettingsChanged: (() => void) | null = null;
   let unsubscribeInhibitStateChanged: (() => void) | null = null;
@@ -1879,48 +1628,6 @@ export default definePlugin(() => {
     return operationResult;
   }
 
-  const reconcileDeckyMusicState = async () => {
-    const deckyMusicPlaying = deckyMusicEnabled && isAnyAudioPlaying();
-    if (deckyMusicPlaying && !deckyMusicInhibiting) {
-      const shouldStart = shouldStartInhibit(backendInhibiting, deckyMusicInhibiting);
-      deckyMusicInhibiting = true;
-      deckyMusicState.SetState(1);
-      if (shouldStart) {
-        await startInhibit(DECKY_MUSIC_APP);
-      }
-    } else if (!deckyMusicPlaying && deckyMusicInhibiting) {
-      deckyMusicInhibiting = false;
-      deckyMusicState.SetState(0);
-      if (!backendInhibiting) {
-        await stopInhibit();
-      }
-    }
-  }
-
-  const scheduleDeckyMusicReconciliation = () => {
-    enqueuePowerOperation(reconcileDeckyMusicState);
-  }
-
-  const refreshDeckyMusicSetting = async (
-    reconcilePower = true,
-    monitorRunning = backendState.GetState() === 1,
-  ) => {
-    const manualApps = await getPluginSetting(serverApi, "manual_apps", []);
-    deckyMusicEnabled = monitorRunning
-      && isDeckyMusicEnabled(normalizeManualApps(manualApps));
-    if (deckyMusicEnabled) {
-      ensureAudioTracker(scheduleDeckyMusicReconciliation);
-    } else {
-      disposeAudioTracker();
-    }
-    if (reconcilePower) {
-      await reconcileDeckyMusicState();
-    } else {
-      deckyMusicInhibiting = deckyMusicEnabled && isAnyAudioPlaying();
-      deckyMusicState.SetState(deckyMusicInhibiting ? 1 : 0);
-    }
-  }
-
   const synchronizeRuntimeState = async (showStateNotification = false) => {
     try {
       const [running, inhibitStatus, rawOverrideState, rawSystemSettings] = await Promise.all([
@@ -1937,12 +1644,11 @@ export default definePlugin(() => {
 
       backendState.SetState(running ? 1 : 0);
       backendInhibiting = running && inhibitStatus.is_inhibiting;
-      await refreshDeckyMusicSetting(false, running);
 
       if (overrideState.active && overrideState.snapshot) {
         setConfiguredPowerSettings(overrideState.snapshot);
       }
-      const shouldBeInhibiting = backendInhibiting || deckyMusicInhibiting;
+      const shouldBeInhibiting = backendInhibiting;
       const action = getPowerSyncAction(shouldBeInhibiting, overrideState, systemSettings);
       if (action === "start") {
         const snapshot = systemSettings && shouldSyncSystemPowerSettings(systemSettings, true)
@@ -1977,7 +1683,7 @@ export default definePlugin(() => {
     try {
       unsubscribeSettingsChanged = serverApi.subscribeSettingsChanged(() => {
         if (!pluginActive) return;
-        enqueuePowerOperation(() => refreshDeckyMusicSetting())
+        enqueuePowerOperation(() => synchronizeRuntimeState())
           .catch(() => reconnectPushListeners(true));
       });
       unsubscribeInhibitStateChanged = serverApi.subscribeInhibitStateChanged(() => {
@@ -2054,7 +1760,6 @@ export default definePlugin(() => {
       backendState={backendState}
       overlayState={overlayState}
       opacityState={opacityState}
-      deckyMusicState={deckyMusicState}
       onPowerSettingsLoaded={setConfiguredPowerSettings}
       onPowerSettingsApply={applyConfiguredPowerSettings}
       readSystemPowerSettings={readSystemPowerSettings}
@@ -2067,11 +1772,9 @@ export default definePlugin(() => {
     icon: <GiNightSleep />,
     onDismount() {
       void restorePendingPowerOverride()
-      deckyMusicState.SetState(0)
       clearTimeout(timeout)
       pluginActive = false
       disconnectPushListeners()
-      disposeAudioTracker()
       serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")
     },
   };

@@ -1,10 +1,18 @@
 import decky
 import asyncio
 import importlib.util
+import base64
+import hashlib
+import json
+import os
 from pathlib import Path
 import re
+import socket
+import struct
 import time
 from collections import deque
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 
 def load_local_module(module_name, file_name):
@@ -24,7 +32,9 @@ SettingsManager = load_local_module("settings", "settings.py").SettingsManager
 plugin_contract = load_local_module("contract", "plugin_contract.py")
 process_events = load_local_module("process_events", "process_events.py")
 update_checker = load_local_module("update_checker", "update_checker.py")
+task_lifecycle = load_local_module("task_lifecycle", "task_lifecycle.py")
 ProcessEventSource = process_events.ProcessEventSource
+ManagedTask = task_lifecycle.ManagedTask
 
 STEAM_CONFIG_PATHS = (
     "/home/deck/.local/share/Steam/config/config.vdf",
@@ -45,6 +55,237 @@ LEGACY_SETTING_KEYS = (
     "mute_notifications",
     "system_power_settings_snapshot",
 )
+DECKY_CDP_ADDRESS = ("127.0.0.1", 8080)
+DECKY_CDP_TARGET_TITLE = "SharedJSContext"
+DECKY_MUSIC_TRACKER_KEY = "__screenSaverEnhancementsDeckyMusicTrackerV1"
+DECKY_MUSIC_TRACKER_SCRIPT = r'''
+(() => {
+  const key = "__screenSaverEnhancementsDeckyMusicTrackerV1";
+  const existing = globalThis[key];
+  if (existing && existing.version === 1) return true;
+
+  const tracked = new Set();
+  const mediaPrototype = HTMLMediaElement.prototype;
+  const originalPlay = mediaPrototype.play;
+  const originalPause = mediaPrototype.pause;
+  const remove = function() { tracked.delete(this); };
+  const track = (audio) => {
+    if (!audio || tracked.has(audio)) return audio;
+    tracked.add(audio);
+    audio.addEventListener("pause", remove, { once: true });
+    audio.addEventListener("ended", remove, { once: true });
+    return audio;
+  };
+
+  mediaPrototype.play = function(...args) {
+    track(this);
+    return originalPlay.apply(this, args);
+  };
+  mediaPrototype.pause = function(...args) {
+    track(this);
+    return originalPause.apply(this, args);
+  };
+  globalThis[key] = {
+    version: 1,
+    trackAll(audioObjects) {
+      for (const audio of audioObjects) track(audio);
+      return this.isPlaying();
+    },
+    isPlaying() {
+      for (const audio of tracked) {
+        if (!audio.paused && !audio.ended && audio.readyState > 0) return true;
+      }
+      return false;
+    },
+  };
+  return true;
+})()
+'''
+
+
+def _recv_exact(sock, size):
+    chunks = []
+    remaining = size
+    while remaining:
+        chunk = sock.recv(remaining)
+        if not chunk:
+            raise ConnectionError("Chrome DevTools connection closed")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def _send_websocket_text(sock, payload):
+    data = payload.encode("utf-8")
+    mask = os.urandom(4)
+    size = len(data)
+    if size < 126:
+        header = bytes((0x81, 0x80 | size))
+    elif size <= 0xFFFF:
+        header = bytes((0x81, 0x80 | 126)) + struct.pack("!H", size)
+    else:
+        header = bytes((0x81, 0x80 | 127)) + struct.pack("!Q", size)
+    masked = bytes(value ^ mask[index % 4] for index, value in enumerate(data))
+    sock.sendall(header + mask + masked)
+
+
+def _recv_websocket_text(sock):
+    while True:
+        first, second = _recv_exact(sock, 2)
+        opcode = first & 0x0F
+        masked = bool(second & 0x80)
+        size = second & 0x7F
+        if size == 126:
+            size = struct.unpack("!H", _recv_exact(sock, 2))[0]
+        elif size == 127:
+            size = struct.unpack("!Q", _recv_exact(sock, 8))[0]
+        mask = _recv_exact(sock, 4) if masked else b""
+        data = _recv_exact(sock, size)
+        if masked:
+            data = bytes(value ^ mask[index % 4] for index, value in enumerate(data))
+        if opcode == 0x8:
+            raise ConnectionError("Chrome DevTools WebSocket closed")
+        if opcode == 0x9:
+            sock.sendall(bytes((0x8A, len(data))) + data)
+            continue
+        if opcode == 0x1:
+            return data.decode("utf-8")
+
+
+def _open_cdp_websocket(websocket_url):
+    parsed = urlparse(websocket_url)
+    if (
+        parsed.scheme != "ws"
+        or parsed.hostname not in {"127.0.0.1", "localhost"}
+        or parsed.port != DECKY_CDP_ADDRESS[1]
+        or not parsed.path.startswith("/devtools/page/")
+    ):
+        raise ValueError("Unexpected Chrome DevTools endpoint")
+    sock = socket.create_connection(DECKY_CDP_ADDRESS, timeout=6)
+    sock.settimeout(6)
+    key = base64.b64encode(os.urandom(16)).decode("ascii")
+    request = (
+        f"GET {parsed.path} HTTP/1.1\r\n"
+        f"Host: {DECKY_CDP_ADDRESS[0]}:{DECKY_CDP_ADDRESS[1]}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key}\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Origin: http://localhost\r\n\r\n"
+    )
+    sock.sendall(request.encode("ascii"))
+    response = b""
+    while b"\r\n\r\n" not in response:
+        chunk = sock.recv(1024)
+        if not chunk:
+            raise ConnectionError("Chrome DevTools closed during handshake")
+        response += chunk
+        if len(response) > 16 * 1024:
+            raise ConnectionError("Invalid Chrome DevTools handshake")
+    headers, _ = response.split(b"\r\n\r\n", 1)
+    expected_accept = base64.b64encode(
+        hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest(),
+    ).decode("ascii")
+    if b" 101 " not in headers.splitlines()[0] or expected_accept.encode("ascii") not in headers:
+        sock.close()
+        raise ConnectionError("Chrome DevTools WebSocket handshake failed")
+    return sock
+
+
+def _call_cdp(sock, request_id, method_name, params):
+    _send_websocket_text(sock, json.dumps({
+        "id": request_id,
+        "method": method_name,
+        "params": params,
+    }, separators=(",", ":")))
+    while True:
+        message = json.loads(_recv_websocket_text(sock))
+        if message.get("id") != request_id:
+            continue
+        if "error" in message:
+            raise RuntimeError(message["error"].get("message", "Chrome DevTools error"))
+        return message["result"]
+
+
+def _read_decky_music_tracker(sock):
+    result = _call_cdp(sock, 1, "Runtime.evaluate", {
+        "expression": (
+            "(() => { const tracker = globalThis["
+            f"{json.dumps(DECKY_MUSIC_TRACKER_KEY)}"
+            "]; return tracker ? tracker.isPlaying() : null; })()"
+        ),
+        "returnByValue": True,
+    })
+    value = result["result"].get("value")
+    return value if isinstance(value, bool) else None
+
+
+def _install_decky_music_tracker(sock):
+    installed = _call_cdp(sock, 2, "Runtime.evaluate", {
+        "expression": DECKY_MUSIC_TRACKER_SCRIPT,
+        "returnByValue": True,
+    })["result"].get("value")
+    if installed is not True:
+        raise RuntimeError("Could not install DeckyMusic playback tracker")
+
+    prototype = _call_cdp(sock, 3, "Runtime.evaluate", {
+        "expression": "HTMLAudioElement.prototype",
+    })["result"]["objectId"]
+    audio_objects = _call_cdp(sock, 4, "Runtime.queryObjects", {
+        "prototypeObjectId": prototype,
+    })["objects"]["objectId"]
+    result = _call_cdp(sock, 5, "Runtime.callFunctionOn", {
+        "objectId": audio_objects,
+        "functionDeclaration": (
+            "function() { return globalThis["
+            f"{json.dumps(DECKY_MUSIC_TRACKER_KEY)}"
+            "].trackAll(this); }"
+        ),
+        "returnByValue": True,
+    })
+    return result["result"].get("value") is True
+
+
+def is_decky_music_playing():
+    """Read the lightweight DeckyMusic tracker in Decky's CEF context."""
+    with urlopen("http://127.0.0.1:8080/json", timeout=2) as response:
+        targets = json.load(response)
+    target = next(
+        (item for item in targets if item.get("title") == DECKY_CDP_TARGET_TITLE),
+        None,
+    )
+    if not target or not isinstance(target.get("webSocketDebuggerUrl"), str):
+        return False
+    sock = _open_cdp_websocket(target["webSocketDebuggerUrl"])
+    try:
+        playback_state = _read_decky_music_tracker(sock)
+        return _install_decky_music_tracker(sock) if playback_state is None else playback_state
+    finally:
+        sock.close()
+
+
+def update_decky_music_detection_state(was_active, is_playing, missing_checks):
+    if is_playing:
+        return 0, True
+    missing_checks = min(missing_checks + 1, 2)
+    return missing_checks, was_active and missing_checks < 2
+
+
+def should_scan_manual_processes(
+    has_manual_process_rules,
+    decky_music_active,
+    current_manual_app,
+    wakeup_received,
+    last_scan_monotonic,
+    now_monotonic,
+):
+    if not has_manual_process_rules or decky_music_active:
+        return False
+    if wakeup_received or current_manual_app == "DeckyMusic":
+        return True
+    if last_scan_monotonic is None:
+        return True
+    return now_monotonic - last_scan_monotonic >= 120
 
 
 def normalize_power_settings(value):
@@ -114,6 +355,7 @@ from dbus_next.aio import MessageBus
 from dbus_next import Message, MessageType
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
 bus = None
+inhibit_state_changed_task = ManagedTask()
 
 
 def record_diagnostic_event(event_type, detail=None):
@@ -141,9 +383,16 @@ async def emit_inhibit_state_changed():
 
 def schedule_inhibit_state_changed():
     try:
-        asyncio.create_task(emit_inhibit_state_changed())
+        inhibit_state_changed_task.schedule(emit_inhibit_state_changed)
     except RuntimeError as e:
         decky.logger.warning(f"Could not schedule inhibit_state_changed: {e}")
+
+
+async def cancel_inhibit_state_changed_task():
+    try:
+        await inhibit_state_changed_task.cancel_and_wait()
+    except Exception as error:
+        decky.logger.warning(f"Could not stop inhibit_state_changed task: {error}")
 
 
 def sync_inhibit_state():
@@ -289,7 +538,6 @@ async def start_dbus():
         clear_dbus_requests()
         return False
 
-import os
 import shlex
 import subprocess
 
@@ -380,30 +628,24 @@ class Plugin:
             self.process_scan_count = 0
         if not hasattr(self, 'last_process_scan_at'):
             self.last_process_scan_at = None
+        if not hasattr(self, 'last_manual_process_scan_monotonic'):
+            self.last_manual_process_scan_monotonic = None
         if not hasattr(self, 'last_process_event_at'):
             self.last_process_event_at = None
         if not hasattr(self, 'active_manual_pids'):
             self.active_manual_pids = set()
         if not hasattr(self, 'dbus_connection_watch_task'):
             self.dbus_connection_watch_task = None
+        if not hasattr(self, 'decky_music_detection_error_logged'):
+            self.decky_music_detection_error_logged = False
+        if not hasattr(self, 'decky_music_missing_checks'):
+            self.decky_music_missing_checks = 0
 
     async def _get_all_process_lines(self):
         self.process_scan_count += 1
         self.last_process_scan_at = int(time.time())
+        self.last_manual_process_scan_monotonic = time.monotonic()
         return await asyncio.to_thread(get_process_lines, ['ps', '-eo', 'pid=,comm=,args='])
-
-    async def _is_process_running(self, name):
-        lines = await Plugin._get_all_process_lines(self)
-        target = normalize_process_name(name)
-        for line in lines:
-            parts = line.split(None, 2)
-            if len(parts) < 2:
-                continue
-            comm = parts[1]
-            args = parts[2] if len(parts) > 2 else ""
-            if target in process_candidates(comm, args):
-                return True
-        return False
 
     async def _find_running_manual_app(self, manual_apps):
         apps_to_check = [app for app in manual_apps if not is_decky_music_name(app)]
@@ -441,6 +683,7 @@ class Plugin:
 
     def _set_manual_active(self, running_app, emit_events=True):
         global manual_inhibiting
+        previous_running_app = self.manual_running_app
         manual_active = running_app is not None
         changed = manual_active != self.manual_active or running_app != self.manual_running_app
 
@@ -454,6 +697,10 @@ class Plugin:
                 decky.logger.info(f"Manual Inhibit triggered by process: {running_app}")
             else:
                 decky.logger.info("Manual UnInhibit: no monitored processes running")
+            if running_app == "DeckyMusic":
+                record_diagnostic_event("decky_music_playback", "decky_music_playing")
+            elif previous_running_app == "DeckyMusic":
+                record_diagnostic_event("decky_music_playback", "decky_music_stopped")
 
         self.manual_active = manual_active
         self.manual_running_app = running_app
@@ -463,30 +710,84 @@ class Plugin:
 
     async def _manual_watch_loop(self):
         decky.logger.info("Manual process watcher started")
+        process_scan_wakeup = True
         while True:
             self.manual_watch_wakeup.clear()
             has_manual_process_rules = False
+            has_decky_music_rule = False
             try:
                 manual_apps = settings.getSetting("manual_apps", [])
                 has_manual_process_rules = any(
                     not is_decky_music_name(app)
                     for app in manual_apps
                 )
-                running_app = await Plugin._find_running_manual_app(self, manual_apps)
+                has_decky_music_rule = any(
+                    is_decky_music_name(app)
+                    for app in manual_apps
+                )
+                decky_music_playing = False
+                decky_music_detection_succeeded = False
+                if has_decky_music_rule:
+                    try:
+                        decky_music_playing = await asyncio.to_thread(is_decky_music_playing)
+                        decky_music_detection_succeeded = True
+                        self.decky_music_detection_error_logged = False
+                    except Exception as error:
+                        if not self.decky_music_detection_error_logged:
+                            decky.logger.warning(f"DeckyMusic playback detection unavailable: {error}")
+                            self.decky_music_detection_error_logged = True
+                if has_decky_music_rule:
+                    if decky_music_detection_succeeded:
+                        was_decky_music_active = self.manual_running_app == "DeckyMusic"
+                        self.decky_music_missing_checks, decky_music_active = update_decky_music_detection_state(
+                            was_decky_music_active,
+                            decky_music_playing,
+                            self.decky_music_missing_checks,
+                        )
+                        if was_decky_music_active and self.decky_music_missing_checks == 1:
+                            decky.logger.info("DeckyMusic audio was temporarily not detected; waiting for confirmation")
+                            record_diagnostic_event(
+                                "decky_music_playback",
+                                "decky_music_audio_temporarily_missing",
+                            )
+                    else:
+                        decky_music_active = self.manual_running_app == "DeckyMusic"
+                else:
+                    self.decky_music_missing_checks = 0
+                    decky_music_active = False
+                scan_manual_processes = should_scan_manual_processes(
+                    has_manual_process_rules,
+                    decky_music_active,
+                    self.manual_running_app,
+                    process_scan_wakeup,
+                    self.last_manual_process_scan_monotonic,
+                    time.monotonic(),
+                )
+                if decky_music_active:
+                    running_app = "DeckyMusic"
+                elif not has_manual_process_rules:
+                    running_app = None
+                elif scan_manual_processes:
+                    running_app = await Plugin._find_running_manual_app(self, manual_apps)
+                else:
+                    running_app = self.manual_running_app
                 Plugin._set_manual_active(self, running_app)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 decky.logger.error(f"Error in manual process watcher: {e}")
-            fallback_interval = 300 if not has_manual_process_rules else 120
+            fallback_interval = 5 if has_decky_music_rule else (
+                300 if not has_manual_process_rules else 120
+            )
             try:
                 await asyncio.wait_for(
                     self.manual_watch_wakeup.wait(),
                     timeout=fallback_interval,
                 )
+                process_scan_wakeup = True
                 await asyncio.sleep(0.35)
             except asyncio.TimeoutError:
-                pass
+                process_scan_wakeup = False
 
     async def _process_event_loop(self):
         decky.logger.info("Kernel process event listener started")
@@ -652,6 +953,7 @@ class Plugin:
         await Plugin._stop_manual_watch(self)
         await stop_dbus()
         clear_dbus_requests()
+        await cancel_inhibit_state_changed_task()
         await emit_inhibit_state_changed()
         record_diagnostic_event("backend_stopped")
         return True
@@ -741,6 +1043,7 @@ class Plugin:
             "manualActiveApp": self.manual_running_app,
             "dbusRequestCount": len(BaseInterface.request_map),
             "powerOverrideActive": override_state["active"],
+            "powerOverrideSnapshot": override_state["snapshot"],
             "systemPowerSettings": system_power_settings,
             "recentEvents": list(recent_diagnostic_events),
         }
