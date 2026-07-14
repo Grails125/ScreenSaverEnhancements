@@ -6,9 +6,11 @@
   "publish": {
     "tags": [
       "dbus",
-      "screensaver"
+      "screensaver",
+      "media",
+      "power-management"
     ],
-    "description": "Inhibit screensaver during video playback.",
-    "image": "https://opengraph.githubassets.com/1/xfangfang/DeckyInhibitScreenSaver"
+    "description": "Keep Steam Deck awake for D-Bus media apps, selected processes, and DeckyMusic playback.",
+    "image": "https://raw.githubusercontent.com/Grails125/ScreenSaverEnhancements/main/docs/release-cover-zh-v2.0.0.png"
   }
 }

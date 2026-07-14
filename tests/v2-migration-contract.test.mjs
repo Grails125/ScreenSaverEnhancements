@@ -39,6 +39,9 @@ test("release metadata identifies the 2.0.0 V2 release", () => {
   assert.match(pnpmLock, /'@decky\/api':/);
   assert.doesNotMatch(pnpmLock, /decky-frontend-lib:/);
   assert.match(deckyStub, /async def emit\(event: str, \*args: Any\) -> None:/);
+  assert.match(pluginJson.publish.description, /DeckyMusic playback/);
+  assert.deepEqual(pluginJson.publish.tags, ["dbus", "screensaver", "media", "power-management"]);
+  assert.match(pluginJson.publish.image, /Grails125\/ScreenSaverEnhancements\/main\/docs\/release-cover-zh-v2\.0\.0\.png$/);
 });
 
 test("the V2 probe uses typed callable RPC and reversible modern APIs", () => {
