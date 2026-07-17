@@ -34,11 +34,11 @@ test("removes the unused secondary page back icon style", () => {
   assert.doesNotMatch(indexSource, /backIcon:\s*\{/);
 });
 
-test("contains running-process scrolls within the app rules page", () => {
+test("allows running-process scrolls to hand off at list boundaries", () => {
   assert.match(indexSource, /aria-label=\{t\('Running Processes'\)\}/);
   assert.match(indexSource, /maxHeight: '400px'/);
-  assert.match(indexSource, /overscrollBehaviorY: 'contain'/);
-  assert.match(indexSource, /onWheelCapture=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(indexSource, /overscrollBehaviorY: 'auto'/);
+  assert.doesNotMatch(indexSource, /onWheelCapture=\{\(event\) => event\.stopPropagation\(\)\}/);
 });
 
 test("cleans up the diagnostics export status timer on dismount", () => {

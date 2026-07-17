@@ -539,12 +539,11 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
         style={{
           maxHeight: '400px',
           overflowY: 'auto',
-          overscrollBehaviorY: 'contain',
+          overscrollBehaviorY: 'auto',
           touchAction: 'pan-y',
           padding: '2px',
           boxSizing: 'border-box',
         }}
-        onWheelCapture={(event) => event.stopPropagation()}
       >
         {runningProcesses
           .filter(p => !manualApps.includes(p.name))
