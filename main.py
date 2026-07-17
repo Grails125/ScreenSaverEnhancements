@@ -1257,9 +1257,11 @@ class Plugin:
         return settings.unsetSettings((POWER_OVERRIDE_ACTIVE, POWER_OVERRIDE_SNAPSHOT))
 
     async def set_settings(self, key: str, value):
-        if not plugin_contract.validate_setting_key(key):
-            decky.logger.warning(f"Rejected unknown setting key: {key!r}")
+        normalized = plugin_contract.normalize_settings_batch({key: value})
+        if normalized is None:
+            decky.logger.warning(f"Rejected invalid setting: {key!r}")
             return False
+        value = normalized[key]
         previous_manual_apps = settings.getSetting("manual_apps", []) if key == "manual_apps" else []
         decky.logger.info('[settings] set {}: {}'.format(key, value))
         saved = settings.setSetting(key, value)
@@ -1269,9 +1271,11 @@ class Plugin:
         return saved
 
     async def set_settings_batch(self, values: dict):
-        if not plugin_contract.validate_settings_batch(values):
+        normalized = plugin_contract.normalize_settings_batch(values)
+        if normalized is None:
             decky.logger.warning("Rejected invalid settings batch")
             return False
+        values = normalized
         previous_manual_apps = settings.getSetting("manual_apps", []) if "manual_apps" in values else []
         decky.logger.info('[settings] batch set keys: {}'.format(list(values.keys())))
         saved = settings.setSettings(values)
