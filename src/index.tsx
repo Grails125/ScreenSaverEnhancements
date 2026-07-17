@@ -532,7 +532,20 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
           <RefreshButton refreshing={refreshing} onRefresh={onRefresh} />
         </div>
       </PanelSectionRow>
-      <Focusable style={{maxHeight: '400px', overflowY: 'scroll', padding: '2px'}}>
+      <div
+        role="region"
+        aria-label={t('Running Processes')}
+        tabIndex={0}
+        style={{
+          maxHeight: 'min(400px, 45vh)',
+          overflowY: 'auto',
+          overscrollBehaviorY: 'contain',
+          touchAction: 'pan-y',
+          padding: '2px',
+          boxSizing: 'border-box',
+        }}
+        onWheelCapture={(event) => event.stopPropagation()}
+      >
         {runningProcesses
           .filter(p => !manualApps.includes(p.name))
           .map(proc => (
@@ -559,7 +572,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
             </PanelSectionRow>
           ))
         }
-      </Focusable>
+      </div>
     </PanelSection>
   </PanelLayout>
   );
