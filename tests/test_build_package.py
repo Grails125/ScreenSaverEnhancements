@@ -3,10 +3,13 @@ import tempfile
 import unittest
 import zipfile
 
-from build import verify_package
+from build import REQUIRED_PACKAGE_ENTRIES, verify_package
 
 
 class BuildPackageTests(unittest.TestCase):
+    def complete_entries(self):
+        return {f"ScreenSaverEnhancements/{entry}" for entry in REQUIRED_PACKAGE_ENTRIES}
+
     def create_archive(self, entries, overrides=None):
         directory = tempfile.TemporaryDirectory()
         archive_path = Path(directory.name) / "ScreenSaverEnhancements.zip"
@@ -22,52 +25,36 @@ class BuildPackageTests(unittest.TestCase):
         return directory, archive_path
 
     def test_accepts_a_complete_plugin_package(self):
-        directory, archive_path = self.create_archive({
-            "ScreenSaverEnhancements/main.py",
-            "ScreenSaverEnhancements/plugin.json",
-            "ScreenSaverEnhancements/package.json",
-            "ScreenSaverEnhancements/dist/index.js",
-            "ScreenSaverEnhancements/dbus_next/__init__.py",
-            "ScreenSaverEnhancements/lib/x/__init__.py",
-        })
+        directory, archive_path = self.create_archive(self.complete_entries())
         with directory:
             verify_package(archive_path, "ScreenSaverEnhancements")
 
     def test_rejects_a_package_without_the_frontend_entry_point(self):
-        directory, archive_path = self.create_archive({
-            "ScreenSaverEnhancements/main.py",
-            "ScreenSaverEnhancements/plugin.json",
-            "ScreenSaverEnhancements/package.json",
-            "ScreenSaverEnhancements/dbus_next/__init__.py",
-            "ScreenSaverEnhancements/lib/x/__init__.py",
-        })
+        entries = self.complete_entries()
+        entries.remove("ScreenSaverEnhancements/dist/index.js")
+        directory, archive_path = self.create_archive(entries)
         with directory:
             with self.assertRaisesRegex(ValueError, "dist/index.js"):
                 verify_package(archive_path, "ScreenSaverEnhancements")
 
+    def test_rejects_a_package_without_a_backend_module(self):
+        entries = self.complete_entries()
+        entries.remove("ScreenSaverEnhancements/settings.py")
+        directory, archive_path = self.create_archive(entries)
+        with directory:
+            with self.assertRaisesRegex(ValueError, "settings.py"):
+                verify_package(archive_path, "ScreenSaverEnhancements")
+
     def test_rejects_python_cache_files(self):
-        directory, archive_path = self.create_archive({
-            "ScreenSaverEnhancements/main.py",
-            "ScreenSaverEnhancements/plugin.json",
-            "ScreenSaverEnhancements/package.json",
-            "ScreenSaverEnhancements/dist/index.js",
-            "ScreenSaverEnhancements/dbus_next/__init__.py",
-            "ScreenSaverEnhancements/lib/x/__init__.py",
-            "ScreenSaverEnhancements/dbus_next/__pycache__/message.cpython-313.pyc",
-        })
+        entries = self.complete_entries()
+        entries.add("ScreenSaverEnhancements/dbus_next/__pycache__/message.cpython-313.pyc")
+        directory, archive_path = self.create_archive(entries)
         with directory:
             with self.assertRaisesRegex(ValueError, "cache"):
                 verify_package(archive_path, "ScreenSaverEnhancements")
 
     def test_rejects_invalid_package_versions(self):
-        entries = {
-            "ScreenSaverEnhancements/main.py",
-            "ScreenSaverEnhancements/plugin.json",
-            "ScreenSaverEnhancements/package.json",
-            "ScreenSaverEnhancements/dist/index.js",
-            "ScreenSaverEnhancements/dbus_next/__init__.py",
-            "ScreenSaverEnhancements/lib/x/__init__.py",
-        }
+        entries = self.complete_entries()
         directory, archive_path = self.create_archive(entries, {
             "ScreenSaverEnhancements/package.json": '{"version": "next"}',
         })

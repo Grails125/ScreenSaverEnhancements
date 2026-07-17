@@ -6,10 +6,21 @@ import subprocess
 import zipfile
 
 
-REQUIRED_PACKAGE_ENTRIES = (
+PACKAGE_SOURCE_FILES = (
     "main.py",
     "plugin.json",
     "package.json",
+    "settings.py",
+    "plugin_contract.py",
+    "process_events.py",
+    "process_utils.py",
+    "power_settings.py",
+    "decky_music_cdp.py",
+    "manual_watch_utils.py",
+    "task_lifecycle.py",
+    "update_checker.py",
+)
+REQUIRED_PACKAGE_ENTRIES = PACKAGE_SOURCE_FILES + (
     "dist/index.js",
     "dbus_next/__init__.py",
     "lib/x/__init__.py",
@@ -84,27 +95,19 @@ def build():
     os.makedirs(os.path.join(out_dir, "dist"), exist_ok=True)
     
     # 4. Copy files
-    files_to_copy = [
-        "main.py",
-        "plugin.json",
-        "package.json",
+    optional_files_to_copy = (
         "README_ZH.md",
         "README.md",
         "LICENSE",
-        "settings.py",
-        "plugin_contract.py",
-        "process_events.py",
-        "process_utils.py",
-        "power_settings.py",
-        "decky_music_cdp.py",
-        "manual_watch_utils.py",
-        "task_lifecycle.py",
-        "update_checker.py",
-    ]
-    
-    for f in files_to_copy:
-        if os.path.exists(f):
-            shutil.copy(f, out_dir)
+    )
+
+    for file_name in PACKAGE_SOURCE_FILES:
+        if not os.path.isfile(file_name):
+            raise FileNotFoundError(f"required package source file is missing: {file_name}")
+        shutil.copy(file_name, out_dir)
+    for file_name in optional_files_to_copy:
+        if os.path.isfile(file_name):
+            shutil.copy(file_name, out_dir)
             
     # 5. Bundle the Python dependencies required by Decky's restricted runtime.
     bundled_directories = (
