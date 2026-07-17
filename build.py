@@ -95,6 +95,7 @@ def build():
         "plugin_contract.py",
         "process_events.py",
         "process_utils.py",
+        "power_settings.py",
         "task_lifecycle.py",
         "update_checker.py",
     ]
