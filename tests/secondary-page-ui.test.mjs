@@ -36,7 +36,7 @@ test("removes the unused secondary page back icon style", () => {
 
 test("allows running-process scrolls to hand off at list boundaries", () => {
   assert.match(indexSource, /aria-label=\{t\('Running Processes'\)\}/);
-  assert.match(indexSource, /maxHeight: '400px'/);
+  assert.match(indexSource, /maxHeight: '320px'/);
   assert.match(indexSource, /overscrollBehaviorY: 'auto'/);
   assert.doesNotMatch(indexSource, /onWheelCapture=\{\(event\) => event\.stopPropagation\(\)\}/);
 });

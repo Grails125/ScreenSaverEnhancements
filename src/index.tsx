@@ -537,7 +537,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
         aria-label={t('Running Processes')}
         tabIndex={0}
         style={{
-          maxHeight: '400px',
+          maxHeight: '320px',
           overflowY: 'auto',
           overscrollBehaviorY: 'auto',
           touchAction: 'pan-y',
