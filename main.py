@@ -593,6 +593,14 @@ def display_process_name(comm, args):
     return comm.strip()
 
 
+def parse_process_listing_line(line):
+    """Parse fixed-width ps output without splitting process names on spaces."""
+    user = line[:16].strip()
+    comm = line[16:48].strip()
+    args = line[48:].strip()
+    return comm, user, args
+
+
 def is_decky_music_name(name):
     return normalize_process_name(name) == "deckymusic"
 
@@ -968,14 +976,12 @@ class Plugin:
     async def get_running_processes(self):
         lines = await asyncio.to_thread(
             get_process_lines,
-            ['ps', '-eo', 'comm=,user=,args='],
+            ['ps', '-eo', 'user:16=,comm:32=,args='],
         )
         proc_map = {}
         for line in lines:
-            parts = line.split(None, 2)
-            if len(parts) >= 2:
-                comm, user = parts[0], parts[1]
-                args = parts[2] if len(parts) > 2 else ""
+            comm, user, args = parse_process_listing_line(line)
+            if comm and user:
                 name = display_process_name(comm, args)
                 if name and not name.startswith('['):
                     proc_type = "app" if user == "deck" else "system"
