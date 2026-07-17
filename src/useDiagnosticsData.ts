@@ -59,11 +59,16 @@ export const useDiagnosticsData = (
     }, 2000);
   };
 
+  const clearDiagnosticEvents = async () => {
+    if (await serverApi.clearDiagnosticEvents()) await refreshDiagnostics();
+  };
+
   return {
     diagnostics,
     diagnosticsLoading,
     diagnosticsExportStatus,
     refreshDiagnostics,
     exportDiagnostics,
+    clearDiagnosticEvents,
   };
 };

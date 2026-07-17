@@ -358,12 +358,23 @@ from dbus_next.service import ServiceInterface, method, dbus_property, signal
 bus = None
 inhibit_state_changed_task = ManagedTask()
 DECKY_MUSIC_MPRIS_PREFIX = "org.mpris.MediaPlayer2.decky_music."
+decky_music_mpris_owners = {}
+decky_music_mpris_states = {}
+decky_music_mpris_change_callback = None
 
 
 async def _is_decky_music_playing_mpris():
-    """Read MPRIS from every active Decky Music instance on the user session bus."""
+    """Return the event-maintained state of every active Decky Music MPRIS instance."""
+    return any(decky_music_mpris_states.values())
+
+
+async def refresh_decky_music_mpris_state():
+    """Discover dynamic MPRIS instances and obtain their initial playback state."""
+    global decky_music_mpris_owners, decky_music_mpris_states
     if bus is None:
-        return None
+        decky_music_mpris_owners = {}
+        decky_music_mpris_states = {}
+        return
     names_reply = await bus.call(Message(
         destination="org.freedesktop.DBus",
         path="/org/freedesktop/DBus",
@@ -371,12 +382,23 @@ async def _is_decky_music_playing_mpris():
         member="ListNames",
     ))
     if names_reply.message_type == MessageType.ERROR:
-        return None
+        return
     services = [
         name for name in names_reply.body[0]
         if name.startswith(DECKY_MUSIC_MPRIS_PREFIX)
     ]
+    owners, states = {}, {}
     for service in services:
+        owner_reply = await bus.call(Message(
+            destination="org.freedesktop.DBus",
+            path="/org/freedesktop/DBus",
+            interface="org.freedesktop.DBus",
+            member="GetNameOwner",
+            signature="s",
+            body=[service],
+        ))
+        if owner_reply.message_type != MessageType.ERROR and owner_reply.body:
+            owners[owner_reply.body[0]] = service
         status_reply = await bus.call(Message(
             destination=service,
             path="/org/mpris/MediaPlayer2",
@@ -385,10 +407,33 @@ async def _is_decky_music_playing_mpris():
             signature="ss",
             body=["org.mpris.MediaPlayer2.Player", "PlaybackStatus"],
         ))
-        if status_reply.message_type == MessageType.ERROR or not status_reply.body:
-            continue
-        if status_reply.body[0].value == "Playing":
-            return True
+        if status_reply.message_type != MessageType.ERROR and status_reply.body:
+            states[service] = status_reply.body[0].value == "Playing"
+    changed = states != decky_music_mpris_states
+    decky_music_mpris_owners, decky_music_mpris_states = owners, states
+    if changed and decky_music_mpris_change_callback:
+        decky_music_mpris_change_callback()
+
+
+def handle_decky_music_mpris_message(message):
+    if message.message_type != MessageType.SIGNAL:
+        return False
+    if message.interface == "org.freedesktop.DBus" and message.member == "NameOwnerChanged":
+        if message.body and str(message.body[0]).startswith(DECKY_MUSIC_MPRIS_PREFIX):
+            asyncio.create_task(refresh_decky_music_mpris_state())
+    elif (
+        message.interface == "org.freedesktop.DBus.Properties"
+        and message.member == "PropertiesChanged"
+        and message.path == "/org/mpris/MediaPlayer2"
+        and message.sender in decky_music_mpris_owners
+        and len(message.body) >= 2
+        and message.body[0] == "org.mpris.MediaPlayer2.Player"
+        and "PlaybackStatus" in message.body[1]
+    ):
+        service = decky_music_mpris_owners[message.sender]
+        decky_music_mpris_states[service] = message.body[1]["PlaybackStatus"].value == "Playing"
+        if decky_music_mpris_change_callback:
+            decky_music_mpris_change_callback()
     return False
 
 
@@ -415,10 +460,20 @@ def record_diagnostic_event(event_type, detail=None):
     recent_diagnostic_events.append(entry)
 
 
-async def emit_manual_apps_changed():
+def get_manual_app_rule_change_details(previous, current):
+    previous_set = set(previous if isinstance(previous, list) else [])
+    current_set = set(current if isinstance(current, list) else [])
+    return (
+        [f"manual_app_rule_added:{app}" for app in current if app not in previous_set]
+        + [f"manual_app_rule_removed:{app}" for app in previous if app not in current_set]
+    )
+
+
+async def emit_manual_apps_changed(details=None):
     try:
         await decky.emit("settings_changed", "manual_apps")
-        record_diagnostic_event("settings_changed", "manual_apps")
+        for detail in details or ["manual_apps"]:
+            record_diagnostic_event("settings_changed", detail)
     except Exception as e:
         decky.logger.warning(f"Could not emit settings_changed: {e}")
 
@@ -556,11 +611,13 @@ async def is_dbus_request_connected(request):
 
 
 async def stop_dbus():
-    global bus
+    global bus, decky_music_mpris_owners, decky_music_mpris_states
     try:
         if bus is not None:
             bus.disconnect()
         bus = None
+        decky_music_mpris_owners = {}
+        decky_music_mpris_states = {}
     except Exception as e:
         decky.logger.info(f"error: {e}")
 
@@ -570,6 +627,19 @@ async def start_dbus():
     clear_dbus_requests()
     try:
         bus = await MessageBus().connect()
+        bus.add_message_handler(handle_decky_music_mpris_message)
+        for match_rule in (
+            "type='signal',interface='org.freedesktop.DBus',member='NameOwnerChanged'",
+            "type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='/org/mpris/MediaPlayer2'",
+        ):
+            await bus.call(Message(
+                destination="org.freedesktop.DBus",
+                path="/org/freedesktop/DBus",
+                interface="org.freedesktop.DBus",
+                member="AddMatch",
+                signature="s",
+                body=[match_rule],
+            ))
         interface = InhibitInterface()
         pm_interface = PMInhibitInterface()
         gnome_interface = GnomeInterface()
@@ -581,6 +651,7 @@ async def start_dbus():
         await bus.request_name('org.freedesktop.PowerManagement.Inhibit')
         await bus.request_name('org.freedesktop.ScreenSaver')
         await bus.request_name('org.gnome.SessionManager')
+        await refresh_decky_music_mpris_state()
         return True
     except Exception as e:
         decky.logger.error(f"Could not start D-Bus services: {e}")
@@ -783,11 +854,14 @@ class Plugin:
             sync_inhibit_state(inhibit_detail)
 
     async def _manual_watch_loop(self):
+        global decky_music_mpris_change_callback
+        decky_music_mpris_change_callback = self.manual_watch_wakeup.set
         decky.logger.info("Manual process watcher started")
         process_scan_wakeup = True
         while True:
             self.manual_watch_wakeup.clear()
             has_manual_process_rules = False
+            has_legacy_decky_music_rule = False
             decky_music_rule = None
             try:
                 manual_apps = settings.getSetting("manual_apps", [])
@@ -801,6 +875,7 @@ class Plugin:
                     if is_decky_music_name(app)
                 ]
                 has_decky_music_rule = bool(decky_music_rules)
+                has_legacy_decky_music_rule = any(source == "legacy_cdp" for _, source in decky_music_rules)
                 decky_music_playing = False
                 decky_music_detection_succeeded = has_decky_music_rule
                 if has_decky_music_rule:
@@ -862,7 +937,7 @@ class Plugin:
                 raise
             except Exception as e:
                 decky.logger.error(f"Error in manual process watcher: {e}")
-            fallback_interval = 5 if has_decky_music_rule else (
+            fallback_interval = 5 if has_legacy_decky_music_rule else (
                 300 if not has_manual_process_rules else 120
             )
             try:
@@ -973,6 +1048,8 @@ class Plugin:
         )
 
     async def _stop_manual_watch(self):
+        global decky_music_mpris_change_callback
+        decky_music_mpris_change_callback = None
         global manual_inhibiting
         Plugin._init_runtime_state(self)
         task = self.manual_watch_task
@@ -1132,6 +1209,10 @@ class Plugin:
             "recentEvents": list(recent_diagnostic_events),
         }
 
+    async def clear_diagnostic_events(self):
+        recent_diagnostic_events.clear()
+        return True
+
     async def get_inhibit_status(self):
         Plugin._init_runtime_state(self)
         manual_apps = settings.getSetting("manual_apps", [])
@@ -1179,10 +1260,11 @@ class Plugin:
         if not plugin_contract.validate_setting_key(key):
             decky.logger.warning(f"Rejected unknown setting key: {key!r}")
             return False
+        previous_manual_apps = settings.getSetting("manual_apps", []) if key == "manual_apps" else []
         decky.logger.info('[settings] set {}: {}'.format(key, value))
         saved = settings.setSetting(key, value)
         if saved and key == "manual_apps":
-            await emit_manual_apps_changed()
+            await emit_manual_apps_changed(get_manual_app_rule_change_details(previous_manual_apps, value))
             self.manual_watch_wakeup.set()
         return saved
 
@@ -1190,10 +1272,11 @@ class Plugin:
         if not plugin_contract.validate_settings_batch(values):
             decky.logger.warning("Rejected invalid settings batch")
             return False
+        previous_manual_apps = settings.getSetting("manual_apps", []) if "manual_apps" in values else []
         decky.logger.info('[settings] batch set keys: {}'.format(list(values.keys())))
         saved = settings.setSettings(values)
         if saved and "manual_apps" in values:
-            await emit_manual_apps_changed()
+            await emit_manual_apps_changed(get_manual_app_rule_change_details(previous_manual_apps, values["manual_apps"]))
             self.manual_watch_wakeup.set()
         return saved
 

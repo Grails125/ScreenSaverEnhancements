@@ -99,7 +99,10 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn('if has_decky_music_rule:', self.main_source)
         self.assertIn('await is_decky_music_playing_mpris()', self.main_source)
         self.assertIn('await is_decky_music_playing_legacy()', self.main_source)
-        self.assertIn('fallback_interval = 5 if has_decky_music_rule', self.main_source)
+        self.assertIn('bus.add_message_handler(handle_decky_music_mpris_message)', self.main_source)
+        self.assertIn('member == "PropertiesChanged"', self.main_source)
+        self.assertIn('member == "NameOwnerChanged"', self.main_source)
+        self.assertIn('fallback_interval = 5 if has_legacy_decky_music_rule', self.main_source)
 
     def test_decky_music_uses_a_persistent_tracker_after_one_bootstrap_heap_scan(self):
         self.assertIn('DECKY_MUSIC_TRACKER_KEY = "__screenSaverEnhancementsDeckyMusicTrackerV1"', self.main_source)

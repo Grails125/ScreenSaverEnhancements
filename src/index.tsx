@@ -16,6 +16,7 @@ import {
   RiArrowDownSFill,
   RiArrowLeftSLine,
   RiArrowUpSFill,
+  RiDeleteBinLine,
   RiInformationLine,
   RiMoonClearLine,
 } from "react-icons/ri";
@@ -337,6 +338,7 @@ const PANEL_STYLES = {
 }
 
 const APP_NAMES: Record<string, string> = {
+  "DeckyMusic": "DeckyMusic(1.0以下)",
   "vlc": "VLC 播放器",
   "mpv": "MPV 播放器",
   "chrome": "谷歌浏览器",
@@ -555,6 +557,11 @@ const formatDiagnosticEventType = (type: string) => {
 
 const formatDiagnosticEventDetail = (detail: string | undefined) => {
   if (!detail) return undefined;
+  const ruleChange = /^(manual_app_rule_added|manual_app_rule_removed):(.+)$/.exec(detail);
+  if (ruleChange) {
+    const application = APP_NAMES[ruleChange[2]] ?? ruleChange[2];
+    return `${t(ruleChange[1] === 'manual_app_rule_added' ? 'Added Rule' : 'Removed Rule')} ${application} ${t('Sleep Rule')}`;
+  }
   const manualAppDetail = getManualAppInhibitDetail(detail);
   if (manualAppDetail) {
     const application = APP_NAMES[manualAppDetail.application] ?? manualAppDetail.application;
@@ -605,8 +612,9 @@ const MonitorStatusRow: FC<{ running: boolean; processMonitorMode: string }> = (
               position: 'absolute',
               zIndex: 20,
               top: 'calc(100% + 6px)',
+              left: 0,
               right: 0,
-              width: '260px',
+              boxSizing: 'border-box',
               padding: '10px',
               borderRadius: '6px',
               border: '1px solid rgba(255,255,255,0.18)',
@@ -636,6 +644,7 @@ type DiagnosticsPageProps = {
   onBack: () => void;
   onRefresh: () => void;
   onExport: () => void;
+  onClearEvents: () => void;
 };
 
 const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
@@ -645,7 +654,10 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
   onBack,
   onRefresh,
   onExport,
-}) => (
+  onClearEvents,
+}) => {
+  const [eventsTipVisible, setEventsTipVisible] = useState(false);
+  return (
   <PanelLayout>
     <PanelSection>
       <PanelSectionRow>
@@ -684,7 +696,7 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
           <DiagnosticRow label={t('Last Process Event')} value={formatDiagnosticTime(diagnostics.lastProcessEventAt)} />
           <DiagnosticRow label={t('Manual Rule Count')} value={diagnostics.manualRuleCount} />
           <DiagnosticRow label={t('Active Application')} value={diagnostics.manualActiveApp || t('None')} />
-          <DiagnosticRow label={t('D-Bus Request Count')} value={diagnostics.dbusRequestCount} />
+          <DiagnosticRow label={t('Active D-Bus Inhibit Requests')} value={diagnostics.dbusRequestCount} />
           <DiagnosticRow label={t('Power Recovery Active')} value={diagnostics.powerOverrideActive ? t('Yes') : t('No')} />
         </PanelSection>
 
@@ -715,6 +727,52 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
         </PanelSection>
 
         <PanelSection title={t('Recent Plugin Events')}>
+          <div style={{ position: 'relative', height: 0, overflow: 'visible' }}>
+            <div style={{ position: 'absolute', left: '108px', top: '-38px', zIndex: 20 }}>
+              <Focusable
+                aria-label={t('Recent Events Details')}
+                aria-expanded={eventsTipVisible}
+                aria-controls="sse-recent-events-details"
+                style={{ ...PANEL_STYLES.panelAction, width: '28px', height: '28px' }}
+                onClick={() => setEventsTipVisible(!eventsTipVisible)}
+              >
+                <RiInformationLine aria-hidden="true" />
+              </Focusable>
+            </div>
+            {eventsTipVisible && (
+              <div
+                id="sse-recent-events-details"
+                role="tooltip"
+                style={{
+                  position: 'absolute',
+                  zIndex: 20,
+                  top: '-4px',
+                  left: 0,
+                  right: 0,
+                  boxSizing: 'border-box',
+                  padding: '10px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#20242b',
+                  color: '#c7cbd1',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.38)',
+                  fontSize: '0.76em',
+                  lineHeight: 1.45,
+                }}
+              >
+                {t('recent_events_tip')}
+              </div>
+            )}
+            <div style={{ position: 'absolute', right: 0, top: '-38px', zIndex: 1 }}>
+              <Focusable
+                aria-label={t('Clear Recent Events')}
+                style={{ ...PANEL_STYLES.panelAction, width: '28px', height: '28px' }}
+                onClick={onClearEvents}
+              >
+                <RiDeleteBinLine aria-hidden="true" />
+              </Focusable>
+            </div>
+          </div>
           {diagnostics.recentEvents.length === 0 ? (
             <PanelSectionRow><div style={PANEL_STYLES.emptyState}>{t('No Recent Events')}</div></PanelSectionRow>
           ) : diagnostics.recentEvents.slice().reverse().map((event, index) => {
@@ -748,7 +806,8 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
       </>
     )}
   </PanelLayout>
-);
+  );
+};
 
 const Content: FC<{
   serverApi: PluginServerApi;
@@ -814,6 +873,7 @@ const Content: FC<{
     diagnosticsExportStatus,
     refreshDiagnostics,
     exportDiagnostics,
+    clearDiagnosticEvents,
   } = useDiagnosticsData(serverApi, getEventChannelDiagnostics, t);
 
   const {
@@ -1094,6 +1154,7 @@ const Content: FC<{
         onBack={() => setShowDiagnostics(false)}
         onRefresh={refreshDiagnostics}
         onExport={exportDiagnostics}
+        onClearEvents={clearDiagnosticEvents}
       />
     );
   }

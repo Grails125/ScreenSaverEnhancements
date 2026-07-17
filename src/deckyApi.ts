@@ -58,6 +58,7 @@ export interface PluginBackendClient {
   getRunningProcesses(): Promise<RunningProcess[]>;
   getInhibitStatus(): Promise<InhibitStatus>;
   getDiagnostics(): Promise<unknown>;
+  clearDiagnosticEvents(): Promise<boolean>;
   getPluginVersion(): Promise<string>;
   getInstalledPluginVersion(): Promise<string>;
   checkUpdate(): Promise<UpdateCheckResult>;
@@ -101,6 +102,7 @@ export const createPluginServerApi = (
   const getRunningProcesses = callableFactory<[], RunningProcess[]>("get_running_processes");
   const getInhibitStatus = callableFactory<[], InhibitStatus>("get_inhibit_status");
   const getDiagnostics = callableFactory<[], unknown>("get_diagnostics");
+  const clearDiagnosticEvents = callableFactory<[], boolean>("clear_diagnostic_events");
   const getPluginVersion = callableFactory<[], string>("get_plugin_version");
   const getInstalledPluginVersion = callableFactory<[], string>("get_installed_plugin_version");
   const checkUpdate = callableFactory<[], UpdateCheckResult>("check_update");
@@ -124,6 +126,7 @@ export const createPluginServerApi = (
     getRunningProcesses,
     getInhibitStatus,
     getDiagnostics,
+    clearDiagnosticEvents,
     getPluginVersion,
     getInstalledPluginVersion,
     checkUpdate,
