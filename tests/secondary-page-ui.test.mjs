@@ -41,6 +41,12 @@ test("allows running-process scrolls to hand off at list boundaries", () => {
   assert.doesNotMatch(indexSource, /onWheelCapture=\{\(event\) => event\.stopPropagation\(\)\}/);
 });
 
+test("only shows the raw process name when it differs from the display name", () => {
+  assert.match(indexSource, /const displayName = APP_NAMES\[proc\.name\] \|\| proc\.name;/);
+  assert.match(indexSource, /\{displayName !== proc\.name && \(/);
+  assert.doesNotMatch(indexSource, /\{APP_NAMES\[proc\.name\] && \(/);
+});
+
 test("cleans up the diagnostics export status timer on dismount", () => {
   assert.match(diagnosticsHookSource, /const diagnosticsExportTimeoutRef = useRef<ReturnType<typeof setTimeout> \| null>\(null\);/);
   assert.match(diagnosticsHookSource, /diagnosticsExportTimeoutRef\.current = setTimeout\(/);

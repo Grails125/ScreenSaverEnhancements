@@ -547,17 +547,19 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
       >
         {runningProcesses
           .filter(p => !manualApps.includes(p.name))
-          .map(proc => (
-            <PanelSectionRow key={proc.name}>
+          .map(proc => {
+            const displayName = APP_NAMES[proc.name] || proc.name;
+            return (
+              <PanelSectionRow key={proc.name}>
               <div style={PANEL_STYLES.processItem}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={PANEL_STYLES.processName}>{APP_NAMES[proc.name] || proc.name}</span>
+                    <span style={PANEL_STYLES.processName}>{displayName}</span>
                     <span style={PANEL_STYLES.badge(proc.type)}>
                       {proc.type === 'app' ? "应用" : "系统"}
                     </span>
                   </div>
-                  {APP_NAMES[proc.name] && (
+                  {displayName !== proc.name && (
                     <span style={{fontSize: '0.7em', color: '#777'}}>{proc.name}</span>
                   )}
                 </div>
@@ -569,7 +571,8 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
                 </Focusable>
               </div>
             </PanelSectionRow>
-          ))
+            );
+          })
         }
       </div>
     </PanelSection>
