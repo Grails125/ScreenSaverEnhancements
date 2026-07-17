@@ -1,4 +1,6 @@
+import json
 import os
+import re
 import shutil
 import subprocess
 import zipfile
@@ -7,10 +9,12 @@ import zipfile
 REQUIRED_PACKAGE_ENTRIES = (
     "main.py",
     "plugin.json",
+    "package.json",
     "dist/index.js",
     "dbus_next/__init__.py",
     "lib/x/__init__.py",
 )
+VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 
 def ignore_build_artifacts(_dir, names):
     ignored = []
@@ -38,6 +42,23 @@ def verify_package(archive_path, plugin_name):
     ]
     if cache_entries:
         raise ValueError("package contains Python cache files")
+
+    with zipfile.ZipFile(archive_path) as archive:
+        try:
+            plugin_metadata = json.loads(
+                archive.read(f"{package_prefix}plugin.json").decode("utf-8")
+            )
+            package_metadata = json.loads(
+                archive.read(f"{package_prefix}package.json").decode("utf-8")
+            )
+        except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("package contains invalid JSON metadata") from error
+
+    if not isinstance(plugin_metadata, dict) or plugin_metadata.get("api_version") != 1:
+        raise ValueError("package has an invalid Decky API version")
+    version = package_metadata.get("version") if isinstance(package_metadata, dict) else None
+    if not isinstance(version, str) or VERSION_PATTERN.fullmatch(version) is None:
+        raise ValueError("package has an invalid semantic version")
 
 def build():
     plugin_name = "ScreenSaverEnhancements"
