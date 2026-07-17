@@ -5,15 +5,31 @@ class SettingsManager:
     def __init__(self, name, settings_directory):
         self.settings_file = os.path.join(settings_directory, f"{name}.json")
         self.settings = {}
+        self.recovery_file = None
         self.read_settings()
+
+    def preserve_corrupt_settings(self):
+        recovery_file = f"{self.settings_file}.corrupt"
+        suffix = 1
+        while os.path.exists(recovery_file):
+            recovery_file = f"{self.settings_file}.corrupt.{suffix}"
+            suffix += 1
+        try:
+            os.replace(self.settings_file, recovery_file)
+            self.recovery_file = recovery_file
+        except OSError:
+            pass
 
     def read_settings(self):
         if os.path.exists(self.settings_file):
             try:
-                with open(self.settings_file, "r") as f:
+                with open(self.settings_file, "r", encoding="utf-8") as f:
                     self.settings = json.load(f)
-            except Exception:
+                if not isinstance(self.settings, dict):
+                    raise ValueError("settings root must be an object")
+            except (OSError, ValueError, json.JSONDecodeError):
                 self.settings = {}
+                self.preserve_corrupt_settings()
 
     def getSetting(self, key, default):
         return self.settings.get(key, default)

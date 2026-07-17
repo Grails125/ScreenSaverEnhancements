@@ -8,6 +8,20 @@ from settings import SettingsManager
 
 
 class SettingsManagerTests(unittest.TestCase):
+    def test_preserves_corrupt_settings_before_resetting_memory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings_file = os.path.join(directory, "settings.json")
+            with open(settings_file, "w", encoding="utf-8") as file:
+                file.write("{not valid json")
+
+            manager = SettingsManager("settings", directory)
+
+            self.assertEqual(manager.settings, {})
+            self.assertEqual(manager.recovery_file, f"{settings_file}.corrupt")
+            self.assertFalse(os.path.exists(settings_file))
+            with open(manager.recovery_file, "r", encoding="utf-8") as file:
+                self.assertEqual(file.read(), "{not valid json")
+
     def test_batch_update_is_saved_as_one_complete_document(self):
         with tempfile.TemporaryDirectory() as directory:
             manager = SettingsManager("settings", directory)

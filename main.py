@@ -345,6 +345,8 @@ decky.logger.info("Main.py Loading...")
 decky.logger.info("Environment setup complete")
 settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
 settings = SettingsManager(name="settings", settings_directory=settings_dir)
+if settings.recovery_file:
+    decky.logger.warning("Recovered from an invalid plugin settings file")
 persisted_setting_updates = plugin_contract.normalize_persisted_settings(settings.settings)
 if persisted_setting_updates and not settings.setSettings(persisted_setting_updates):
     decky.logger.warning("Could not normalize persisted plugin settings")
