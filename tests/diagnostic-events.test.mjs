@@ -13,6 +13,7 @@ vm.runInNewContext(compiled, { module, exports: module.exports });
 const {
   getDiagnosticEventMessage,
   getDiagnosticEventDetailMessage,
+  getManualAppInhibitDetail,
   shouldShowLastProcessScan,
 } = module.exports;
 
@@ -36,6 +37,17 @@ test("maps diagnostic event details to translatable messages", () => {
   assert.equal(getDiagnosticEventDetailMessage("custom_detail").fallback, "custom_detail");
 });
 
+test("parses manual application inhibit details with the application name", () => {
+  const inhibiting = getManualAppInhibitDetail("manual_app_inhibiting:chrome");
+  assert.equal(inhibiting?.action, "inhibiting");
+  assert.equal(inhibiting?.application, "chrome");
+  const released = getManualAppInhibitDetail("manual_app_released:chrome");
+  assert.equal(released?.action, "released");
+  assert.equal(released?.application, "chrome");
+  assert.equal(getManualAppInhibitDetail("manual_app_inhibiting:"), null);
+  assert.equal(getManualAppInhibitDetail("decky_music_playing"), null);
+});
+
 test("only shows the last scan timestamp when fallback scanning is the active monitor", () => {
   assert.equal(shouldShowLastProcessScan("fallback_scan"), true);
   assert.equal(shouldShowLastProcessScan("proc_connector"), false);
@@ -55,6 +67,8 @@ test("provides Chinese translations for every diagnostic event message", () => {
     "decky_music_playing",
     "decky_music_stopped",
     "decky_music_audio_temporarily_missing",
+    "Disabled Sleep",
+    "Restored Sleep",
     "manual_apps",
     "proc_connector",
     "fallback_scan",

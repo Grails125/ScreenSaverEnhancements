@@ -30,6 +30,7 @@ import { QUICK_ACCESS_MENU } from './ButtonIcons'
 import {
   getDiagnosticEventDetailMessage,
   getDiagnosticEventMessage,
+  getManualAppInhibitDetail,
   shouldShowLastProcessScan,
 } from './diagnosticEvents'
 import { Diagnostics } from './diagnostics'
@@ -554,6 +555,11 @@ const formatDiagnosticEventType = (type: string) => {
 
 const formatDiagnosticEventDetail = (detail: string | undefined) => {
   if (!detail) return undefined;
+  const manualAppDetail = getManualAppInhibitDetail(detail);
+  if (manualAppDetail) {
+    const application = APP_NAMES[manualAppDetail.application] ?? manualAppDetail.application;
+    return `${application} ${t(manualAppDetail.action === 'inhibiting' ? 'Disabled Sleep' : 'Restored Sleep')}`;
+  }
   const message = getDiagnosticEventDetailMessage(detail);
   return 'key' in message ? t(message.key) : message.fallback;
 };

@@ -373,17 +373,17 @@ async def emit_manual_apps_changed():
         decky.logger.warning(f"Could not emit settings_changed: {e}")
 
 
-async def emit_inhibit_state_changed():
+async def emit_inhibit_state_changed(detail=None):
     try:
         await decky.emit("inhibit_state_changed")
-        record_diagnostic_event("inhibit_state_changed")
+        record_diagnostic_event("inhibit_state_changed", detail)
     except Exception as e:
         decky.logger.warning(f"Could not emit inhibit_state_changed: {e}")
 
 
-def schedule_inhibit_state_changed():
+def schedule_inhibit_state_changed(detail=None):
     try:
-        inhibit_state_changed_task.schedule(emit_inhibit_state_changed)
+        inhibit_state_changed_task.schedule(lambda: emit_inhibit_state_changed(detail))
     except RuntimeError as e:
         decky.logger.warning(f"Could not schedule inhibit_state_changed: {e}")
 
@@ -395,13 +395,13 @@ async def cancel_inhibit_state_changed_task():
         decky.logger.warning(f"Could not stop inhibit_state_changed task: {error}")
 
 
-def sync_inhibit_state():
+def sync_inhibit_state(detail=None):
     global inhibit_active
     active = manual_inhibiting or len(BaseInterface.request_map) > 0
     if active == inhibit_active:
         return
     inhibit_active = active
-    schedule_inhibit_state_changed()
+    schedule_inhibit_state_changed(detail)
 
 class AppRequest:
     def __init__(self, sender, cookie, application, reason):
@@ -692,11 +692,14 @@ class Plugin:
         else:
             Plugin._stop_manual_inhibitor(self)
 
+        inhibit_detail = None
         if changed:
             if manual_active:
                 decky.logger.info(f"Manual Inhibit triggered by process: {running_app}")
+                inhibit_detail = f"manual_app_inhibiting:{running_app}"
             else:
                 decky.logger.info("Manual UnInhibit: no monitored processes running")
+                inhibit_detail = f"manual_app_released:{previous_running_app}"
             if running_app == "DeckyMusic":
                 record_diagnostic_event("decky_music_playback", "decky_music_playing")
             elif previous_running_app == "DeckyMusic":
@@ -706,7 +709,7 @@ class Plugin:
         self.manual_running_app = running_app
         manual_inhibiting = manual_active
         if emit_events:
-            sync_inhibit_state()
+            sync_inhibit_state(inhibit_detail)
 
     async def _manual_watch_loop(self):
         decky.logger.info("Manual process watcher started")

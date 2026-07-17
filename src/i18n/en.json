@@ -35,6 +35,8 @@
     "Manual Inhibit Source": "Matched manual rule",
     "DBus Inhibit Source": "D-Bus request",
     "DeckyMusic Inhibit Source": "Audio playback",
+    "Disabled Sleep": "disabled sleep",
+    "Restored Sleep": "restored sleep",
     "Active": "Active",
     "Settings Save Failed": "Settings Save Failed",
     "Settings Save Failed Body": "The previous value has been restored. Please try again.",

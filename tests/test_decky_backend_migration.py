@@ -69,6 +69,11 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertNotIn('event = {"type": "Inhibit" if active else "UnInhibit"}', self.main_source)
         self.assertNotIn('queue_event({"type": "UnInhibit", "reason": "monitor_stopped"})', self.main_source)
 
+    def test_manual_application_state_changes_include_action_and_application_details(self):
+        self.assertIn('f"manual_app_inhibiting:{running_app}"', self.main_source)
+        self.assertIn('f"manual_app_released:{previous_running_app}"', self.main_source)
+        self.assertIn('sync_inhibit_state(inhibit_detail)', self.main_source)
+
     def test_stage_4_4_removes_long_polling_but_keeps_connection_reconciliation(self):
         self.assertNotIn("event_queue", self.main_source)
         self.assertNotIn("event_signal", self.main_source)
