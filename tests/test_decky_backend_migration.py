@@ -35,6 +35,24 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn("logger", decky_attributes)
         self.assertIn("DECKY_PLUGIN_SETTINGS_DIR", decky_attributes)
 
+    def test_settings_reads_reject_private_keys(self):
+        plugin_class = next(
+            node for node in self.main_tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "Plugin"
+        )
+        get_settings = next(
+            node for node in plugin_class.body
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "get_settings"
+        )
+        guard = get_settings.body[0]
+
+        self.assertIsInstance(guard, ast.If)
+        self.assertEqual(
+            ast.unparse(guard.test),
+            "not plugin_contract.validate_setting_key(key)",
+        )
+        self.assertEqual(ast.unparse(guard.body[-1].value), "defaults")
+
     def test_type_stub_is_kept_for_development_but_excluded_from_release(self):
         build_source = (ROOT / "build.py").read_text(encoding="utf-8")
 

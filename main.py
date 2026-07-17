@@ -1230,6 +1230,9 @@ class Plugin:
         }
 
     async def get_settings(self, key: str, defaults):
+        if not plugin_contract.validate_setting_key(key):
+            decky.logger.warning("Rejected non-public setting read")
+            return defaults
         if key != "manual_apps":
             decky.logger.info('[settings] get {}'.format(key))
         return settings.getSetting(key, defaults)
