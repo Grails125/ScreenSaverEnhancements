@@ -27,6 +27,18 @@ POWER_TIMEOUT_SETTING_KEYS = frozenset({
 })
 MAX_MANUAL_APPS = 100
 MAX_MANUAL_APP_LENGTH = 256
+DEFAULT_PUBLIC_SETTINGS = {
+    "ac_dim_timeout": 300,
+    "ac_suspend_timeout": 600,
+    "battery_dim_timeout": 300,
+    "battery_suspend_timeout": 600,
+    "black_background_close_on_any_key": False,
+    "black_background_enabled": False,
+    "black_background_opacity": 1.0,
+    "manual_apps": [],
+    "run_on_login": True,
+    "show_notify": False,
+}
 
 
 def validate_setting_key(key):
@@ -80,6 +92,21 @@ def normalize_settings_batch(values):
             return None
         normalized[key] = normalized_value
     return normalized
+
+
+def normalize_persisted_settings(values):
+    if not isinstance(values, dict):
+        return {}
+
+    updates = {}
+    for key in PUBLIC_SETTING_KEYS:
+        if key not in values:
+            continue
+        normalized = normalize_setting_value(key, values[key])
+        expected = DEFAULT_PUBLIC_SETTINGS[key] if normalized is None else normalized
+        if values[key] != expected:
+            updates[key] = expected
+    return updates
 
 
 def validate_settings_batch(values):

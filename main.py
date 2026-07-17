@@ -345,6 +345,9 @@ decky.logger.info("Main.py Loading...")
 decky.logger.info("Environment setup complete")
 settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
 settings = SettingsManager(name="settings", settings_directory=settings_dir)
+persisted_setting_updates = plugin_contract.normalize_persisted_settings(settings.settings)
+if persisted_setting_updates and not settings.setSettings(persisted_setting_updates):
+    decky.logger.warning("Could not normalize persisted plugin settings")
 if settings.getSetting("manual_apps", None) is None:
     settings.setSetting("manual_apps", ["chrome", "mpv", "wiliwili"])
 recent_diagnostic_events = deque(maxlen=40)

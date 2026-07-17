@@ -2,6 +2,7 @@ import unittest
 
 from plugin_contract import (
     PUBLIC_SETTING_KEYS,
+    normalize_persisted_settings,
     normalize_settings_batch,
     validate_setting_key,
     validate_settings_batch,
@@ -55,6 +56,19 @@ class PluginContractTests(unittest.TestCase):
         self.assertIsNone(normalize_settings_batch({"run_on_login": "true"}))
         self.assertIsNone(normalize_settings_batch({"black_background_opacity": 1.5}))
         self.assertIsNone(normalize_settings_batch({"battery_dim_timeout": -1}))
+
+    def test_normalizes_existing_settings_and_resets_invalid_values(self):
+        updates = normalize_persisted_settings({
+            "manual_apps": ["  MPV ", "mpv"],
+            "run_on_login": "false",
+            "show_notify": False,
+            "private_recovery_state": {"active": True},
+        })
+
+        self.assertEqual(updates, {
+            "manual_apps": ["MPV"],
+            "run_on_login": True,
+        })
 
 
 if __name__ == "__main__":

@@ -53,6 +53,12 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         )
         self.assertEqual(ast.unparse(guard.body[-1].value), "defaults")
 
+    def test_startup_normalizes_existing_public_settings(self):
+        self.assertIn(
+            "plugin_contract.normalize_persisted_settings(settings.settings)",
+            self.main_source,
+        )
+
     def test_type_stub_is_kept_for_development_but_excluded_from_release(self):
         build_source = (ROOT / "build.py").read_text(encoding="utf-8")
 
