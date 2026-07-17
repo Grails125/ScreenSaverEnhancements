@@ -1,6 +1,16 @@
 import os
 import shutil
 import subprocess
+import zipfile
+
+
+REQUIRED_PACKAGE_ENTRIES = (
+    "main.py",
+    "plugin.json",
+    "dist/index.js",
+    "dbus_next/__init__.py",
+    "lib/x/__init__.py",
+)
 
 def ignore_build_artifacts(_dir, names):
     ignored = []
@@ -8,6 +18,26 @@ def ignore_build_artifacts(_dir, names):
         if name == "__pycache__" or name.endswith((".pyc", ".pyo")):
             ignored.append(name)
     return ignored
+
+
+def verify_package(archive_path, plugin_name):
+    package_prefix = f"{plugin_name}/"
+    with zipfile.ZipFile(archive_path) as archive:
+        entries = set(archive.namelist())
+
+    missing = [
+        entry for entry in REQUIRED_PACKAGE_ENTRIES
+        if f"{package_prefix}{entry}" not in entries
+    ]
+    if missing:
+        raise ValueError(f"package is missing required entries: {', '.join(missing)}")
+
+    cache_entries = [
+        entry for entry in entries
+        if "__pycache__/" in entry or entry.endswith((".pyc", ".pyo"))
+    ]
+    if cache_entries:
+        raise ValueError("package contains Python cache files")
 
 def build():
     plugin_name = "ScreenSaverEnhancements"
@@ -72,10 +102,16 @@ def build():
     # 7. Zip the result
     print(f"Creating zip...")
     # Ensure the first-level folder in zip is ScreenSaverEnhancements
-    shutil.make_archive(os.path.join(build_dir, plugin_name), 'zip', root_dir=build_dir, base_dir=plugin_name)
+    archive_path = shutil.make_archive(
+        os.path.join(build_dir, plugin_name),
+        'zip',
+        root_dir=build_dir,
+        base_dir=plugin_name,
+    )
+    verify_package(archive_path, plugin_name)
     
     print(f"Build complete! Output in {out_dir}")
-    print(f"Zip created at {os.path.join(build_dir, plugin_name)}.zip")
+    print(f"Zip created and verified at {archive_path}")
 
 if __name__ == "__main__":
     build()
