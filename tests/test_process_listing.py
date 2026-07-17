@@ -22,12 +22,14 @@ class ProcessListingTests(unittest.TestCase):
                 "parse_process_listing_line",
                 "is_decky_music_name",
                 "get_decky_music_rule",
+                "get_decky_music_rule_source",
             }
         ]
         exec(compile(ast.Module(body=functions, type_ignores=[]), "main.py", "exec"), namespace)
         self.parse_line = namespace["parse_process_listing_line"]
         self.is_decky_music_name = namespace["is_decky_music_name"]
         self.get_decky_music_rule = namespace["get_decky_music_rule"]
+        self.get_decky_music_rule_source = namespace["get_decky_music_rule_source"]
 
     def test_preserves_a_process_name_containing_spaces(self):
         line = f"{'deck':<16}{'Decky Music':<32}Decky Music (/home/deck/homebrew/plugins/Decky Music/main.py)"
@@ -45,3 +47,5 @@ class ProcessListingTests(unittest.TestCase):
             self.get_decky_music_rule(["chrome", "Decky Music", "wiliwili"]),
             "Decky Music",
         )
+        self.assertEqual(self.get_decky_music_rule_source("DeckyMusic"), "legacy_cdp")
+        self.assertEqual(self.get_decky_music_rule_source("Decky Music"), "mpris")

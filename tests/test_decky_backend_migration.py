@@ -90,13 +90,15 @@ class DeckyBackendMigrationTests(unittest.TestCase):
 
     def test_decky_music_background_detection_is_rule_gated_and_prefers_mpris(self):
         self.assertIn('DECKY_CDP_TARGET_TITLE = "SharedJSContext"', self.main_source)
-        self.assertIn('async def is_decky_music_playing():', self.main_source)
+        self.assertIn('async def is_decky_music_playing_mpris():', self.main_source)
+        self.assertIn('async def is_decky_music_playing_legacy():', self.main_source)
         self.assertIn('DECKY_MUSIC_MPRIS_PREFIX = "org.mpris.MediaPlayer2.decky_music."', self.main_source)
         self.assertIn('async def _is_decky_music_playing_mpris():', self.main_source)
         self.assertIn('def _is_decky_music_playing_cdp():', self.main_source)
         self.assertIn('"Runtime.queryObjects"', self.main_source)
         self.assertIn('if has_decky_music_rule:', self.main_source)
-        self.assertIn('await is_decky_music_playing()', self.main_source)
+        self.assertIn('await is_decky_music_playing_mpris()', self.main_source)
+        self.assertIn('await is_decky_music_playing_legacy()', self.main_source)
         self.assertIn('fallback_interval = 5 if has_decky_music_rule', self.main_source)
 
     def test_decky_music_uses_a_persistent_tracker_after_one_bootstrap_heap_scan(self):
