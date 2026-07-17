@@ -83,6 +83,7 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn('"process_events.py"', build_source)
         self.assertIn('"process_utils.py"', build_source)
         self.assertIn('"power_settings.py"', build_source)
+        self.assertIn('"decky_music_cdp.py"', build_source)
         self.assertIn('"update_checker.py"', build_source)
         self.assertIn('"task_lifecycle.py"', build_source)
 
@@ -115,13 +116,13 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertNotIn("record_decky_music_playback_state", self.main_source)
 
     def test_decky_music_background_detection_is_rule_gated_and_prefers_mpris(self):
-        self.assertIn('DECKY_CDP_TARGET_TITLE = "SharedJSContext"', self.main_source)
         self.assertIn('async def is_decky_music_playing_mpris():', self.main_source)
         self.assertIn('async def is_decky_music_playing_legacy():', self.main_source)
         self.assertIn('DECKY_MUSIC_MPRIS_PREFIX = "org.mpris.MediaPlayer2.decky_music."', self.main_source)
         self.assertIn('async def _is_decky_music_playing_mpris():', self.main_source)
-        self.assertIn('def _is_decky_music_playing_cdp():', self.main_source)
-        self.assertIn('"Runtime.queryObjects"', self.main_source)
+        self.assertIn('is_decky_music_playing_cdp = decky_music_cdp.is_playing', self.main_source)
+        cdp_source = (ROOT / "decky_music_cdp.py").read_text(encoding="utf-8")
+        self.assertIn('"Runtime.queryObjects"', cdp_source)
         self.assertIn('if has_decky_music_rule:', self.main_source)
         self.assertIn('await is_decky_music_playing_mpris()', self.main_source)
         self.assertIn('await is_decky_music_playing_legacy()', self.main_source)
@@ -131,15 +132,16 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn('fallback_interval = 5 if has_legacy_decky_music_rule', self.main_source)
 
     def test_decky_music_uses_a_persistent_tracker_after_one_bootstrap_heap_scan(self):
-        self.assertIn('DECKY_MUSIC_TRACKER_KEY = "__screenSaverEnhancementsDeckyMusicTrackerV1"', self.main_source)
-        self.assertIn('def _install_decky_music_tracker(sock):', self.main_source)
-        self.assertIn('def _read_decky_music_tracker(sock):', self.main_source)
-        self.assertIn('playback_state = _read_decky_music_tracker(sock)', self.main_source)
+        cdp_source = (ROOT / "decky_music_cdp.py").read_text(encoding="utf-8")
+        self.assertIn('DECKY_MUSIC_TRACKER_KEY = "__screenSaverEnhancementsDeckyMusicTrackerV1"', cdp_source)
+        self.assertIn('def _install_decky_music_tracker(sock):', cdp_source)
+        self.assertIn('def _read_decky_music_tracker(sock):', cdp_source)
+        self.assertIn('playback_state = _read_decky_music_tracker(sock)', cdp_source)
         self.assertIn(
             'return _install_decky_music_tracker(sock) if playback_state is None else playback_state',
-            self.main_source,
+            cdp_source,
         )
-        self.assertEqual(self.main_source.count('"Runtime.queryObjects"'), 1)
+        self.assertEqual(cdp_source.count('"Runtime.queryObjects"'), 1)
 
     def test_decky_music_polling_does_not_force_normal_process_scans(self):
         function_node = next(

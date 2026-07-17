@@ -96,6 +96,7 @@ def build():
         "process_events.py",
         "process_utils.py",
         "power_settings.py",
+        "decky_music_cdp.py",
         "task_lifecycle.py",
         "update_checker.py",
     ]
