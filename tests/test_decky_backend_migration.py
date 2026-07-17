@@ -81,6 +81,7 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn('"settings.py"', build_source)
         self.assertIn('"plugin_contract.py"', build_source)
         self.assertIn('"process_events.py"', build_source)
+        self.assertIn('"process_utils.py"', build_source)
         self.assertIn('"update_checker.py"', build_source)
         self.assertIn('"task_lifecycle.py"', build_source)
 
