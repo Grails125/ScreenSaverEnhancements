@@ -365,7 +365,7 @@ const RUN_ON_LOGIN = "run_on_login"
 const SHOW_NOTIFY  = "show_notify"
 const DECKY_MUSIC_APP = "DeckyMusic"
 const isDeckyMusicSource = (application: string | null | undefined) => (
-  application?.toLowerCase() === DECKY_MUSIC_APP.toLowerCase()
+  application?.toLowerCase().replace(/[\s_-]/g, "") === DECKY_MUSIC_APP.toLowerCase()
 )
 
 type InhibitAppsPageProps = {
@@ -469,7 +469,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
         <PanelSectionRow>
           <div style={PANEL_STYLES.processItem}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-              <span style={PANEL_STYLES.processName}>{DECKY_MUSIC_APP}</span>
+              <span style={PANEL_STYLES.processName}>{inhibitStatus.manual_active_app || DECKY_MUSIC_APP}</span>
               <span style={PANEL_STYLES.sectionHint}>{t('DeckyMusic Inhibit Source')}</span>
             </div>
             <span style={PANEL_STYLES.badge('app')}>{t('Active')}</span>

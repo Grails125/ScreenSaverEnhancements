@@ -246,8 +246,8 @@ def _install_decky_music_tracker(sock):
     return result["result"].get("value") is True
 
 
-def is_decky_music_playing():
-    """Read the lightweight DeckyMusic tracker in Decky's CEF context."""
+def _is_decky_music_playing_cdp():
+    """Fallback playback detection for older Decky Music releases without MPRIS."""
     with urlopen("http://127.0.0.1:8080/json", timeout=2) as response:
         targets = json.load(response)
     target = next(
@@ -281,7 +281,8 @@ def should_scan_manual_processes(
 ):
     if not has_manual_process_rules or decky_music_active:
         return False
-    if wakeup_received or current_manual_app == "DeckyMusic":
+    current_name = str(current_manual_app or "").lower().replace(" ", "").replace("-", "").replace("_", "")
+    if wakeup_received or current_name == "deckymusic":
         return True
     if last_scan_monotonic is None:
         return True
@@ -356,6 +357,50 @@ from dbus_next import Message, MessageType
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
 bus = None
 inhibit_state_changed_task = ManagedTask()
+DECKY_MUSIC_MPRIS_PREFIX = "org.mpris.MediaPlayer2.decky_music."
+
+
+async def _is_decky_music_playing_mpris():
+    """Read MPRIS from every active Decky Music instance on the user session bus."""
+    if bus is None:
+        return None
+    names_reply = await bus.call(Message(
+        destination="org.freedesktop.DBus",
+        path="/org/freedesktop/DBus",
+        interface="org.freedesktop.DBus",
+        member="ListNames",
+    ))
+    if names_reply.message_type == MessageType.ERROR:
+        return None
+    services = [
+        name for name in names_reply.body[0]
+        if name.startswith(DECKY_MUSIC_MPRIS_PREFIX)
+    ]
+    for service in services:
+        status_reply = await bus.call(Message(
+            destination=service,
+            path="/org/mpris/MediaPlayer2",
+            interface="org.freedesktop.DBus.Properties",
+            member="Get",
+            signature="ss",
+            body=["org.mpris.MediaPlayer2.Player", "PlaybackStatus"],
+        ))
+        if status_reply.message_type == MessageType.ERROR or not status_reply.body:
+            continue
+        if status_reply.body[0].value == "Playing":
+            return True
+    return False
+
+
+async def is_decky_music_playing():
+    """Prefer Decky Music's MPRIS status and retain CEF support as a fallback."""
+    try:
+        mpris_state = await _is_decky_music_playing_mpris()
+        if mpris_state is not None:
+            return mpris_state
+    except Exception as error:
+        decky.logger.debug(f"DeckyMusic MPRIS playback detection unavailable: {error}")
+    return await asyncio.to_thread(_is_decky_music_playing_cdp)
 
 
 def record_diagnostic_event(event_type, detail=None):
@@ -602,7 +647,12 @@ def parse_process_listing_line(line):
 
 
 def is_decky_music_name(name):
-    return normalize_process_name(name) == "deckymusic"
+    normalized = normalize_process_name(name)
+    return normalized.replace(" ", "").replace("-", "").replace("_", "") == "deckymusic"
+
+
+def get_decky_music_rule(manual_apps):
+    return next((app for app in manual_apps if is_decky_music_name(app)), None)
 
 
 def get_process_lines(command):
@@ -708,9 +758,9 @@ class Plugin:
             else:
                 decky.logger.info("Manual UnInhibit: no monitored processes running")
                 inhibit_detail = f"manual_app_released:{previous_running_app}"
-            if running_app == "DeckyMusic":
+            if is_decky_music_name(running_app):
                 record_diagnostic_event("decky_music_playback", "decky_music_playing")
-            elif previous_running_app == "DeckyMusic":
+            elif is_decky_music_name(previous_running_app):
                 record_diagnostic_event("decky_music_playback", "decky_music_stopped")
 
         self.manual_active = manual_active
@@ -725,22 +775,20 @@ class Plugin:
         while True:
             self.manual_watch_wakeup.clear()
             has_manual_process_rules = False
-            has_decky_music_rule = False
+            decky_music_rule = None
             try:
                 manual_apps = settings.getSetting("manual_apps", [])
                 has_manual_process_rules = any(
                     not is_decky_music_name(app)
                     for app in manual_apps
                 )
-                has_decky_music_rule = any(
-                    is_decky_music_name(app)
-                    for app in manual_apps
-                )
+                decky_music_rule = get_decky_music_rule(manual_apps)
+                has_decky_music_rule = decky_music_rule is not None
                 decky_music_playing = False
                 decky_music_detection_succeeded = False
                 if has_decky_music_rule:
                     try:
-                        decky_music_playing = await asyncio.to_thread(is_decky_music_playing)
+                        decky_music_playing = await is_decky_music_playing()
                         decky_music_detection_succeeded = True
                         self.decky_music_detection_error_logged = False
                     except Exception as error:
@@ -749,7 +797,7 @@ class Plugin:
                             self.decky_music_detection_error_logged = True
                 if has_decky_music_rule:
                     if decky_music_detection_succeeded:
-                        was_decky_music_active = self.manual_running_app == "DeckyMusic"
+                        was_decky_music_active = is_decky_music_name(self.manual_running_app)
                         self.decky_music_missing_checks, decky_music_active = update_decky_music_detection_state(
                             was_decky_music_active,
                             decky_music_playing,
@@ -762,7 +810,7 @@ class Plugin:
                                 "decky_music_audio_temporarily_missing",
                             )
                     else:
-                        decky_music_active = self.manual_running_app == "DeckyMusic"
+                        decky_music_active = is_decky_music_name(self.manual_running_app)
                 else:
                     self.decky_music_missing_checks = 0
                     decky_music_active = False
@@ -775,7 +823,7 @@ class Plugin:
                     time.monotonic(),
                 )
                 if decky_music_active:
-                    running_app = "DeckyMusic"
+                    running_app = decky_music_rule
                 elif not has_manual_process_rules:
                     running_app = None
                 elif scan_manual_processes:

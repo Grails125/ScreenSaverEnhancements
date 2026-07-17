@@ -32,3 +32,10 @@ test("uses one sleep-inhibition notification path for every application source",
   assert.match(indexSource, /openAppMenu\(event\.currentTarget\)/);
   assert.match(indexSource, /openDiagnostics\(event\.currentTarget\)/);
 });
+
+test("recognizes the preserved Decky Music rule name as the playback source", () => {
+  const indexSource = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
+
+  assert.match(indexSource, /replace\(\/\[\\s_-\]\/g, ""\)/);
+  assert.match(indexSource, /manual_active_app \|\| DECKY_MUSIC_APP/);
+});
