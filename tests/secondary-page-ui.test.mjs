@@ -36,7 +36,7 @@ test("removes the unused secondary page back icon style", () => {
 
 test("contains running-process scrolls within the app rules page", () => {
   assert.match(indexSource, /aria-label=\{t\('Running Processes'\)\}/);
-  assert.match(indexSource, /maxHeight: 'min\(400px, 45vh\)'/);
+  assert.match(indexSource, /maxHeight: '400px'/);
   assert.match(indexSource, /overscrollBehaviorY: 'contain'/);
   assert.match(indexSource, /onWheelCapture=\{\(event\) => event\.stopPropagation\(\)\}/);
 });
