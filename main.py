@@ -26,6 +26,7 @@ process_events = load_local_module("process_events", "process_events.py")
 process_utils = load_local_module("process_utils", "process_utils.py")
 power_settings = load_local_module("power_settings", "power_settings.py")
 decky_music_cdp = load_local_module("decky_music_cdp", "decky_music_cdp.py")
+manual_watch_utils = load_local_module("manual_watch_utils", "manual_watch_utils.py")
 update_checker = load_local_module("update_checker", "update_checker.py")
 task_lifecycle = load_local_module("task_lifecycle", "task_lifecycle.py")
 ProcessEventSource = process_events.ProcessEventSource
@@ -33,6 +34,9 @@ ManagedTask = task_lifecycle.ManagedTask
 normalize_power_settings = power_settings.normalize_power_settings
 read_steam_power_settings = power_settings.read_steam_power_settings
 is_decky_music_playing_cdp = decky_music_cdp.is_playing
+update_decky_music_detection_state = manual_watch_utils.update_decky_music_detection_state
+should_scan_manual_processes = manual_watch_utils.should_scan_manual_processes
+get_manual_app_rule_change_details = manual_watch_utils.get_manual_app_rule_change_details
 POWER_OVERRIDE_ACTIVE = "power_override_active"
 POWER_OVERRIDE_SNAPSHOT = "power_override_snapshot"
 LEGACY_SETTING_KEYS = (
@@ -42,31 +46,6 @@ LEGACY_SETTING_KEYS = (
     "mute_notifications",
     "system_power_settings_snapshot",
 )
-def update_decky_music_detection_state(was_active, is_playing, missing_checks):
-    if is_playing:
-        return 0, True
-    missing_checks = min(missing_checks + 1, 2)
-    return missing_checks, was_active and missing_checks < 2
-
-
-def should_scan_manual_processes(
-    has_manual_process_rules,
-    decky_music_active,
-    current_manual_app,
-    wakeup_received,
-    last_scan_monotonic,
-    now_monotonic,
-):
-    if not has_manual_process_rules or decky_music_active:
-        return False
-    current_name = str(current_manual_app or "").lower().replace(" ", "").replace("-", "").replace("_", "")
-    if wakeup_received or current_name == "deckymusic":
-        return True
-    if last_scan_monotonic is None:
-        return True
-    return now_monotonic - last_scan_monotonic >= 120
-
-
 def import_third_party_lib():
     import sys
     from pathlib import Path
@@ -205,15 +184,6 @@ def record_diagnostic_event(event_type, detail=None):
     if detail:
         entry["detail"] = str(detail)[:256]
     recent_diagnostic_events.append(entry)
-
-
-def get_manual_app_rule_change_details(previous, current):
-    previous_set = set(previous if isinstance(previous, list) else [])
-    current_set = set(current if isinstance(current, list) else [])
-    return (
-        [f"manual_app_rule_added:{app}" for app in current if app not in previous_set]
-        + [f"manual_app_rule_removed:{app}" for app in previous if app not in current_set]
-    )
 
 
 async def emit_manual_apps_changed(details=None):

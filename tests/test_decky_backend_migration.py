@@ -84,6 +84,7 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn('"process_utils.py"', build_source)
         self.assertIn('"power_settings.py"', build_source)
         self.assertIn('"decky_music_cdp.py"', build_source)
+        self.assertIn('"manual_watch_utils.py"', build_source)
         self.assertIn('"update_checker.py"', build_source)
         self.assertIn('"task_lifecycle.py"', build_source)
 
@@ -144,38 +145,22 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertEqual(cdp_source.count('"Runtime.queryObjects"'), 1)
 
     def test_decky_music_polling_does_not_force_normal_process_scans(self):
-        function_node = next(
-            node
-            for node in self.main_tree.body
-            if isinstance(node, ast.FunctionDef)
-            and node.name == "should_scan_manual_processes"
-        )
-        namespace = {}
-        exec(compile(ast.Module(body=[function_node], type_ignores=[]), "main.py", "exec"), namespace)
-        should_scan = namespace["should_scan_manual_processes"]
+        from manual_watch_utils import should_scan_manual_processes
 
-        self.assertFalse(should_scan(True, True, "DeckyMusic", False, 0, 120))
-        self.assertFalse(should_scan(True, False, "mpv", False, 100, 104))
-        self.assertTrue(should_scan(True, False, "mpv", True, 100, 104))
-        self.assertTrue(should_scan(True, False, "mpv", False, 100, 220))
-        self.assertTrue(should_scan(True, False, "DeckyMusic", False, 100, 104))
-        self.assertFalse(should_scan(False, False, None, True, None, 0))
+        self.assertFalse(should_scan_manual_processes(True, True, "DeckyMusic", False, 0, 120))
+        self.assertFalse(should_scan_manual_processes(True, False, "mpv", False, 100, 104))
+        self.assertTrue(should_scan_manual_processes(True, False, "mpv", True, 100, 104))
+        self.assertTrue(should_scan_manual_processes(True, False, "mpv", False, 100, 220))
+        self.assertTrue(should_scan_manual_processes(True, False, "DeckyMusic", False, 100, 104))
+        self.assertFalse(should_scan_manual_processes(False, False, None, True, None, 0))
 
     def test_decky_music_requires_two_consecutive_missing_audio_checks_before_release(self):
-        function_node = next(
-            node
-            for node in self.main_tree.body
-            if isinstance(node, ast.FunctionDef)
-            and node.name == "update_decky_music_detection_state"
-        )
-        namespace = {}
-        exec(compile(ast.Module(body=[function_node], type_ignores=[]), "main.py", "exec"), namespace)
-        update_state = namespace["update_decky_music_detection_state"]
+        from manual_watch_utils import update_decky_music_detection_state
 
-        self.assertEqual(update_state(True, False, 0), (1, True))
-        self.assertEqual(update_state(True, False, 1), (2, False))
-        self.assertEqual(update_state(True, True, 1), (0, True))
-        self.assertEqual(update_state(False, False, 0), (1, False))
+        self.assertEqual(update_decky_music_detection_state(True, False, 0), (1, True))
+        self.assertEqual(update_decky_music_detection_state(True, False, 1), (2, False))
+        self.assertEqual(update_decky_music_detection_state(True, True, 1), (0, True))
+        self.assertEqual(update_decky_music_detection_state(False, False, 0), (1, False))
 
     def test_first_missing_decky_music_audio_check_records_a_diagnostic_event(self):
         self.assertIn('"decky_music_audio_temporarily_missing"', self.main_source)
