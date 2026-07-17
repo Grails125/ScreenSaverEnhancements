@@ -23,6 +23,8 @@
     "Apps Enabled": "个应用已启用",
     "app_rules_tip": "管理禁用息屏的应用和运行进程",
     "Back": "返回",
+    "Refresh": "刷新",
+    "Refreshing": "正在刷新",
     "Manual Software": "手动添加软件",
     "Software Name": "软件进程名",
     "Add": "添加",

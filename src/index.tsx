@@ -19,6 +19,7 @@ import {
   RiDeleteBinLine,
   RiInformationLine,
   RiMoonClearLine,
+  RiRefreshLine,
 } from "react-icons/ri";
 import i18n from './i18n'
 import {
@@ -391,6 +392,39 @@ const SecondaryPageBackButton: FC<{ onBack: () => void }> = ({ onBack }) => (
   </Focusable>
 );
 
+const RefreshButton: FC<{ refreshing: boolean; onRefresh: () => void }> = ({ refreshing, onRefresh }) => (
+  <Focusable
+    aria-label={t(refreshing ? 'Refreshing' : 'Refresh')}
+    aria-busy={refreshing}
+    style={{ ...PANEL_STYLES.panelAction, opacity: refreshing ? 0.75 : 1 }}
+    onClick={refreshing ? undefined : onRefresh}
+  >
+    {refreshing ? (
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <circle
+          cx="12"
+          cy="12"
+          r="8"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeDasharray="32 18"
+        >
+          <animateTransform
+            attributeName="transform"
+            type="rotate"
+            from="0 12 12"
+            to="360 12 12"
+            dur="0.8s"
+            repeatCount="indefinite"
+          />
+        </circle>
+      </svg>
+    ) : <RiRefreshLine aria-hidden="true" />}
+  </Focusable>
+);
+
 const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
   manualApps,
   inhibitStatus,
@@ -495,12 +529,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
       <PanelSectionRow>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '0 2px', boxSizing: 'border-box' }}>
           <span style={PANEL_STYLES.sectionHint}>{t('Click to add')}</span>
-          <Focusable
-            style={PANEL_STYLES.panelAction}
-            onClick={onRefresh}
-          >
-            {refreshing ? "..." : "↻"}
-          </Focusable>
+          <RefreshButton refreshing={refreshing} onRefresh={onRefresh} />
         </div>
       </PanelSectionRow>
       <Focusable style={{maxHeight: '400px', overflowY: 'scroll', padding: '2px'}}>
@@ -669,9 +698,7 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
               <span style={PANEL_STYLES.menuDescription}>{t('diagnostics_tip')}</span>
             </div>
           </div>
-          <Focusable style={PANEL_STYLES.panelAction} onClick={onRefresh}>
-            {loading ? '...' : '↻'}
-          </Focusable>
+          <RefreshButton refreshing={loading} onRefresh={onRefresh} />
         </div>
       </PanelSectionRow>
     </PanelSection>
