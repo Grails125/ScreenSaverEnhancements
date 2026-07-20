@@ -27,6 +27,12 @@ ScreenSaver Enhancements is a [Decky Loader](https://decky.xyz) plugin for Steam
 - **Diagnostics and updates** — inspect monitor mode, process activity, inhibition source, D-Bus requests, power override state, recent events, and event-channel health; copy the report or update from the plugin panel. *(v2.0.0)*
 - **Reliable lifecycle handling** — waits for pending inhibition notifications to cancel during unload/restart and packages all required backend modules with the release. *(v2.0.0)*
 
+## What's new in v2.0.1
+
+- **Decky Music MPRIS playback monitoring** — recognizes current Decky Music releases through their public MPRIS playback events while retaining the legacy DeckyMusic compatibility path. Playback changes no longer require a repeated full-process scan.
+- **Clearer diagnostics** — recent plugin events retain the latest 40 entries, can be cleared from the Diagnostics page, and now identify the application that added or removed a sleep rule or changed sleep-inhibition state.
+- **Process-list refinements** — preserves Unicode process names, avoids duplicate localized labels, and improves the refresh feedback and scrolling behavior in the app-rules page.
+
 ## Screenshots
 
 ### Main panel
