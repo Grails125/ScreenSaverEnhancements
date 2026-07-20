@@ -661,6 +661,7 @@ async def start_dbus():
 
 import shlex
 import subprocess
+import pwd
 
 
 def normalize_process_name(value):
@@ -720,6 +721,34 @@ def parse_process_listing_line(line):
     comm = line[16:48].strip()
     args = line[48:].strip()
     return comm, user, args
+
+
+def get_process_entries(proc_root="/proc", user_lookup=None):
+    """Read process fields from procfs without terminal column-width assumptions."""
+    if user_lookup is None:
+        user_lookup = lambda process_path: pwd.getpwuid(os.stat(process_path).st_uid).pw_name
+
+    entries = []
+    try:
+        proc_entries = os.scandir(proc_root)
+    except OSError:
+        return entries
+
+    with proc_entries:
+        for entry in proc_entries:
+            if not entry.name.isdigit() or not entry.is_dir():
+                continue
+            try:
+                with open(os.path.join(entry.path, "comm"), encoding="utf-8", errors="replace") as comm_file:
+                    comm = comm_file.read().strip()
+                with open(os.path.join(entry.path, "cmdline"), "rb") as cmdline_file:
+                    args = cmdline_file.read().decode("utf-8", errors="replace").replace("\0", " ").strip()
+                user = user_lookup(entry.path)
+            except (OSError, KeyError):
+                continue
+            if comm and user:
+                entries.append((comm, user, args))
+    return entries
 
 
 def get_decky_music_rule_source(name):
@@ -1126,13 +1155,9 @@ class Plugin:
         return bus is not None
 
     async def get_running_processes(self):
-        lines = await asyncio.to_thread(
-            get_process_lines,
-            ['ps', '-eo', 'user:16=,comm:32=,args='],
-        )
+        entries = await asyncio.to_thread(get_process_entries)
         proc_map = {}
-        for line in lines:
-            comm, user, args = parse_process_listing_line(line)
+        for comm, user, args in entries:
             if comm and user:
                 name = display_process_name(comm, args)
                 if name and not name.startswith('['):
