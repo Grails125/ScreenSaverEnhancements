@@ -97,6 +97,13 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertNotIn('event = {"type": "Inhibit" if active else "UnInhibit"}', self.main_source)
         self.assertNotIn('queue_event({"type": "UnInhibit", "reason": "monitor_stopped"})', self.main_source)
 
+    def test_dbus_requests_are_recorded_with_application_reason_and_cookie(self):
+        self.assertIn('"dbus_request"', self.main_source)
+        self.assertIn('application=application', self.main_source)
+        self.assertIn('reason=reason', self.main_source)
+        self.assertIn('cookie=BaseInterface.cookie', self.main_source)
+        self.assertIn('cookie=cookie', self.main_source)
+
     def test_manual_application_state_changes_include_action_and_application_details(self):
         self.assertIn('f"manual_app_inhibiting:{running_app}"', self.main_source)
         self.assertIn('f"manual_app_released:{previous_running_app}"', self.main_source)

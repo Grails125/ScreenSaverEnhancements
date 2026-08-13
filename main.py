@@ -179,10 +179,13 @@ async def is_decky_music_playing_legacy():
     return await asyncio.to_thread(is_decky_music_playing_cdp)
 
 
-def record_diagnostic_event(event_type, detail=None):
+def record_diagnostic_event(event_type, detail=None, **fields):
     entry = {"timestamp": int(time.time()), "type": str(event_type)[:64]}
     if detail:
         entry["detail"] = str(detail)[:256]
+    for key, value in fields.items():
+        if value is not None:
+            entry[str(key)[:32]] = value
     recent_diagnostic_events.append(entry)
 
 
@@ -266,14 +269,29 @@ class BaseInterface(ServiceInterface):
         sender = ServiceInterface.last_msg.sender
         BaseInterface.cookie += 1
         BaseInterface.request_map[BaseInterface.cookie] = AppRequest(sender, BaseInterface.cookie, application, reason)
+        record_diagnostic_event(
+            "dbus_request",
+            "inhibit",
+            application=application,
+            reason=reason,
+            cookie=BaseInterface.cookie,
+        )
         sync_inhibit_state()
         return BaseInterface.cookie
 
     async def _un_inhibit_impl(self, cookie):
         if cookie == 0: return
         decky.logger.info(f'called UnInhibit with cookie={cookie}')
-        if BaseInterface.request_map.pop(cookie, None) is None:
+        request = BaseInterface.request_map.pop(cookie, None)
+        if request is None:
             decky.logger.info(f'cannot find cookie={cookie}')
+        record_diagnostic_event(
+            "dbus_request",
+            "uninhibit",
+            application=request.application if request else None,
+            reason=request.reason if request else None,
+            cookie=cookie,
+        )
         sync_inhibit_state()
 
 class InhibitInterface(BaseInterface):

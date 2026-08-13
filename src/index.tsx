@@ -615,6 +615,15 @@ const formatDiagnosticEventDetail = (detail: string | undefined) => {
   return 'key' in message ? t(message.key) : message.fallback;
 };
 
+const formatDbusDiagnosticEvent = (event: { type: string; detail?: string; application?: string; reason?: string; cookie?: number }) => {
+  if (event.type !== 'dbus_request') return undefined;
+  const action = event.detail === 'uninhibit' ? t('UnInhibit') : t('Inhibit');
+  const application = event.application ?? t('Unknown Application');
+  const cookie = event.cookie === undefined ? '' : ` #${event.cookie}`;
+  const reason = event.reason ? ` — ${event.reason}` : '';
+  return `${action} ${application}${cookie}${reason}`;
+};
+
 const DiagnosticRow: FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <PanelSectionRow>
     <div style={PANEL_STYLES.processItem}>
@@ -818,7 +827,8 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
           {diagnostics.recentEvents.length === 0 ? (
             <PanelSectionRow><div style={PANEL_STYLES.emptyState}>{t('No Recent Events')}</div></PanelSectionRow>
           ) : diagnostics.recentEvents.slice().reverse().map((event, index) => {
-            const eventDetail = formatDiagnosticEventDetail(event.detail);
+            const eventDetail = formatDbusDiagnosticEvent(event)
+              ?? formatDiagnosticEventDetail(event.detail);
             return (
               <PanelSectionRow key={`${event.timestamp}-${event.type}-${index}`}>
                 <div style={PANEL_STYLES.processItem}>
@@ -1717,10 +1727,30 @@ export default definePlugin(() => {
     }
   }
 
+  const cancelPendingRestoreNotification = () => {
+    if (restoreNotificationTimeoutRef.current !== null) {
+      clearTimeout(restoreNotificationTimeoutRef.current);
+      restoreNotificationTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleRestoreNotification = () => {
+    cancelPendingRestoreNotification();
+    restoreNotificationTimeoutRef.current = setTimeout(() => {
+      restoreNotificationTimeoutRef.current = null;
+      void serverApi.getInhibitStatus().then((latestStatus) => {
+        if (!latestStatus.is_inhibiting) notifyInhibitState(undefined, false);
+      }).catch((error) => {
+        console.error("[ScreenSaverEnhancements] Delayed restore check failed", error);
+      });
+    }, 1500);
+  };
+
   let pluginActive = true;
   let unsubscribeSettingsChanged: (() => void) | null = null;
   let unsubscribeInhibitStateChanged: (() => void) | null = null;
   const pushListenerHealth = createPushListenerHealth();
+  const restoreNotificationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const eventChannelDiagnostics: Pick<
     EventChannelDiagnostics,
     'lastFullSyncAt' | 'lastFullSyncSuccessful'
@@ -1753,6 +1783,7 @@ export default definePlugin(() => {
 
       backendState.SetState(running ? 1 : 0);
       backendInhibiting = running && inhibitStatus.is_inhibiting;
+      if (backendInhibiting) cancelPendingRestoreNotification();
 
       if (overrideState.active && overrideState.snapshot) {
         setConfiguredPowerSettings(overrideState.snapshot);
@@ -1767,7 +1798,8 @@ export default definePlugin(() => {
       } else if (action === "reapply") {
         await updateSetting(0, 0, 0, 0);
       } else if (action === "restore") {
-        await stopInhibit(notifyStateChange, overrideState);
+        await stopInhibit(false, overrideState);
+        if (notifyStateChange) scheduleRestoreNotification();
       }
       eventChannelDiagnostics.lastFullSyncAt = Math.floor(Date.now() / 1000);
       eventChannelDiagnostics.lastFullSyncSuccessful = true;

@@ -294,8 +294,15 @@ test("monitor switching uses dedicated notifications instead of restore-sleep co
   assert.equal(en.notify_tip, "Show notifications when monitoring or sleep-inhibition status changes");
   assert.match(frontend, /notifyMonitorStatus\(checked\)/);
   assert.match(frontend, /const notifyStateChange = showStateNotification && running/);
-  assert.match(frontend, /await stopInhibit\(notifyStateChange, overrideState\)/);
-  assert.doesNotMatch(frontend, /event\.reason/);
+  assert.match(frontend, /await stopInhibit\(false, overrideState\)/);
+  assert.match(frontend, /event\.reason/);
+});
+
+test("restore notifications are delayed and revalidated after all inhibit sources disappear", () => {
+  const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
+  assert.match(source, /restoreNotificationTimeoutRef/);
+  assert.match(source, /setTimeout\([\s\S]*getInhibitStatus\(\)/);
+  assert.match(source, /stopInhibit\(false, overrideState\)/);
 });
 
 test("diagnostics merge monitor state and process mode behind an accessible detail button", () => {
@@ -358,7 +365,7 @@ test("Stage 4.3 treats critical pushes as full-state refresh signals", () => {
   assert.match(source, /const synchronizeRuntimeState = async \(showStateNotification = false\) =>/);
   assert.match(source, /enqueuePowerOperation\(\(\) => synchronizeRuntimeState\(true\)\)/);
   assert.doesNotMatch(source, /startInhibit\(event\.application\)/);
-  assert.doesNotMatch(source, /event\.reason/);
+  assert.match(source, /event\.reason/);
 });
 
 test("monitor lifecycle is synchronized from backend inhibit state", () => {

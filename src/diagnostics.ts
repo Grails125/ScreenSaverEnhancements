@@ -4,6 +4,9 @@ export type DiagnosticEvent = {
   timestamp: number;
   type: string;
   detail?: string;
+  application?: string;
+  reason?: string;
+  cookie?: number;
 };
 
 export type Diagnostics = {
@@ -49,6 +52,9 @@ export const parseDiagnostics = (value: unknown): Diagnostics | null => {
         timestamp: finiteNumber(event.timestamp),
         type: event.type.slice(0, 64),
         detail: typeof event.detail === "string" ? event.detail.slice(0, 256) : undefined,
+        application: typeof event.application === "string" ? event.application.slice(0, 256) : undefined,
+        reason: typeof event.reason === "string" ? event.reason.slice(0, 256) : undefined,
+        cookie: typeof event.cookie === "number" ? event.cookie : undefined,
       }];
     })
     : [];
