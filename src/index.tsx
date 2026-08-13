@@ -1728,16 +1728,16 @@ export default definePlugin(() => {
   }
 
   const cancelPendingRestoreNotification = () => {
-    if (restoreNotificationTimeoutRef.current !== null) {
-      clearTimeout(restoreNotificationTimeoutRef.current);
-      restoreNotificationTimeoutRef.current = null;
+    if (restoreNotificationTimeout !== null) {
+      clearTimeout(restoreNotificationTimeout);
+      restoreNotificationTimeout = null;
     }
   };
 
   const scheduleRestoreNotification = () => {
     cancelPendingRestoreNotification();
-    restoreNotificationTimeoutRef.current = setTimeout(() => {
-      restoreNotificationTimeoutRef.current = null;
+    restoreNotificationTimeout = setTimeout(() => {
+      restoreNotificationTimeout = null;
       void serverApi.getInhibitStatus().then((latestStatus) => {
         if (!latestStatus.is_inhibiting) notifyInhibitState(undefined, false);
       }).catch((error) => {
@@ -1750,7 +1750,7 @@ export default definePlugin(() => {
   let unsubscribeSettingsChanged: (() => void) | null = null;
   let unsubscribeInhibitStateChanged: (() => void) | null = null;
   const pushListenerHealth = createPushListenerHealth();
-  const restoreNotificationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  let restoreNotificationTimeout: ReturnType<typeof setTimeout> | null = null;
   const eventChannelDiagnostics: Pick<
     EventChannelDiagnostics,
     'lastFullSyncAt' | 'lastFullSyncSuccessful'

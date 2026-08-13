@@ -300,7 +300,7 @@ test("monitor switching uses dedicated notifications instead of restore-sleep co
 
 test("restore notifications are delayed and revalidated after all inhibit sources disappear", () => {
   const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
-  assert.match(source, /restoreNotificationTimeoutRef/);
+  assert.match(source, /restoreNotificationTimeout/);
   assert.match(source, /setTimeout\([\s\S]*getInhibitStatus\(\)/);
   assert.match(source, /stopInhibit\(false, overrideState\)/);
 });
