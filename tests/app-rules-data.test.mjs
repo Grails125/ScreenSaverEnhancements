@@ -11,3 +11,13 @@ test("keeps application-rule process and inhibit data outside the root panel com
   assert.match(appRulesHookSource, /serverApi\.getInhibitStatus\(\)/);
   assert.match(appRulesHookSource, /const refreshAppMenuData = async/);
 });
+
+
+test("normalizes Nested Desktop MPRIS inhibit sources", () => {
+  assert.match(appRulesHookSource, /nested_mpris_sources: \[\]/);
+  assert.match(
+    appRulesHookSource,
+    /Array\.isArray\(result\.nested_mpris_sources\)/,
+  );
+  assert.match(indexSource, /Nested MPRIS Inhibit Source/);
+});

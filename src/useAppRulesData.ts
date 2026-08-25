@@ -8,6 +8,8 @@ export const EMPTY_INHIBIT_STATUS: InhibitStatus = {
   manual_active: false,
   dbus_requests: [],
   dbus_active: false,
+  nested_mpris_sources: [],
+  nested_mpris_active: false,
   is_inhibiting: false,
 };
 
@@ -50,6 +52,9 @@ export const useAppRulesData = (
           ...result,
           manual_apps: normalizeManualApps(result.manual_apps),
           dbus_requests: Array.isArray(result.dbus_requests) ? result.dbus_requests : [],
+          nested_mpris_sources: Array.isArray(result.nested_mpris_sources)
+            ? result.nested_mpris_sources
+            : [],
         });
       }
     } catch (error) {

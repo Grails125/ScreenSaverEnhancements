@@ -55,6 +55,13 @@ LEGACY_SETTING_KEYS = (
     "mute_notifications",
     "system_power_settings_snapshot",
 )
+NESTED_DESKTOP_RUNTIME_MARKER = "/nested-desktop."
+NESTED_MPRIS_PREFIX = "org.mpris.MediaPlayer2."
+NESTED_MPRIS_EXCLUDED_MARKERS = ("kdeconnect", "playerctld")
+NESTED_MPRIS_POLL_SECONDS = 2.0
+LEGACY_DEFAULT_MANUAL_APPS = frozenset({"chrome", "mpv", "wiliwili"})
+DEFAULT_MANUAL_APPS = ("mpv", "wiliwili")
+NESTED_MPRIS_MIGRATION_KEY = "nested_mpris_auto_v1_migrated"
 DECKY_CDP_ADDRESS = ("127.0.0.1", 8080)
 DECKY_CDP_TARGET_TITLE = "SharedJSContext"
 DECKY_MUSIC_TRACKER_KEY = "__screenSaverEnhancementsDeckyMusicTrackerV1"
@@ -346,9 +353,31 @@ decky.logger.info("Environment setup complete")
 settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
 settings = SettingsManager(name="settings", settings_directory=settings_dir)
 if settings.getSetting("manual_apps", None) is None:
-    settings.setSetting("manual_apps", ["chrome", "mpv", "wiliwili"])
+    settings.setSetting("manual_apps", list(DEFAULT_MANUAL_APPS))
+
+# v2.0.1 seeded chrome/mpv/wiliwili as default manual rules.
+# Chrome can now be handled automatically through D-Bus in Gaming Mode
+# and MPRIS inside Nested Desktop. Only migrate the exact old default
+# set; customized user rules are preserved unchanged.
+if settings.getSetting(NESTED_MPRIS_MIGRATION_KEY, False) is not True:
+    current_manual_apps = settings.getSetting("manual_apps", [])
+    normalized_manual_apps = {
+        str(app).strip().lower()
+        for app in current_manual_apps
+        if str(app).strip()
+    }
+    migration_values = {NESTED_MPRIS_MIGRATION_KEY: True}
+    if normalized_manual_apps == LEGACY_DEFAULT_MANUAL_APPS:
+        migration_values["manual_apps"] = [
+            app
+            for app in current_manual_apps
+            if str(app).strip().lower() != "chrome"
+        ]
+    settings.setSettings(migration_values)
+
 recent_diagnostic_events = deque(maxlen=40)
 manual_inhibiting = False
+nested_media_inhibiting = False
 inhibit_active = False
 decky.logger.info(f"Settings directory: {settings_dir}")
 
@@ -500,10 +529,16 @@ async def cancel_inhibit_state_changed_task():
         decky.logger.warning(f"Could not stop inhibit_state_changed task: {error}")
 
 
-def sync_inhibit_state(detail=None):
+def sync_inhibit_state(detail=None, force_emit=False):
     global inhibit_active
-    active = manual_inhibiting or len(BaseInterface.request_map) > 0
+    active = (
+        manual_inhibiting
+        or nested_media_inhibiting
+        or len(BaseInterface.request_map) > 0
+    )
     if active == inhibit_active:
+        if force_emit:
+            schedule_inhibit_state_changed(detail)
         return
     inhibit_active = active
     schedule_inhibit_state_changed(detail)
@@ -659,6 +694,186 @@ async def start_dbus():
         clear_dbus_requests()
         return False
 
+def _read_process_environment(process_path):
+    try:
+        with open(os.path.join(process_path, "environ"), "rb") as environ_file:
+            raw = environ_file.read().decode("utf-8", errors="replace")
+    except OSError:
+        return {}
+
+    result = {}
+    for item in raw.split("\0"):
+        if "=" not in item:
+            continue
+        key, value = item.split("=", 1)
+        result[key] = value
+    return result
+
+
+def discover_nested_desktop_bus_addresses(proc_root="/proc"):
+    """Return live D-Bus session addresses for Nested Desktop Plasma shells."""
+    discovered = []
+
+    try:
+        proc_entries = os.scandir(proc_root)
+    except OSError:
+        return []
+
+    with proc_entries:
+        for entry in proc_entries:
+            try:
+                if not entry.name.isdigit() or not entry.is_dir():
+                    continue
+
+                with open(
+                    os.path.join(entry.path, "comm"),
+                    encoding="utf-8",
+                    errors="replace",
+                ) as comm_file:
+                    if comm_file.read().strip() != "plasmashell":
+                        continue
+
+                environ = _read_process_environment(entry.path)
+            except OSError:
+                continue
+
+            runtime_dir = environ.get("XDG_RUNTIME_DIR", "")
+            bus_address = environ.get("DBUS_SESSION_BUS_ADDRESS", "")
+
+            if NESTED_DESKTOP_RUNTIME_MARKER not in runtime_dir:
+                continue
+            if not bus_address:
+                continue
+
+            try:
+                pid = int(entry.name)
+            except ValueError:
+                continue
+
+            discovered.append((pid, bus_address))
+
+    # Newer Nested Desktop sessions first, while keeping every live bus.
+    seen = set()
+    result = []
+
+    for _, address in sorted(discovered, reverse=True):
+        if address in seen:
+            continue
+        seen.add(address)
+        result.append(address)
+
+    return result
+
+
+def is_nested_mpris_service(service):
+    service = str(service)
+    lowered = service.lower()
+
+    return (
+        service.startswith(NESTED_MPRIS_PREFIX)
+        and not any(
+            marker in lowered
+            for marker in NESTED_MPRIS_EXCLUDED_MARKERS
+        )
+    )
+
+
+async def _dbus_get_property(
+    target_bus,
+    service,
+    interface,
+    property_name,
+):
+    reply = await target_bus.call(Message(
+        destination=service,
+        path="/org/mpris/MediaPlayer2",
+        interface="org.freedesktop.DBus.Properties",
+        member="Get",
+        signature="ss",
+        body=[interface, property_name],
+    ))
+
+    if reply.message_type == MessageType.ERROR or not reply.body:
+        return None
+
+    return reply.body[0].value
+
+
+async def query_nested_mpris_sources(bus_address):
+    """Return currently Playing MPRIS sources on one Nested Desktop bus."""
+    nested_bus = None
+
+    try:
+        nested_bus = await MessageBus(
+            bus_address=bus_address,
+        ).connect()
+
+        names_reply = await nested_bus.call(Message(
+            destination="org.freedesktop.DBus",
+            path="/org/freedesktop/DBus",
+            interface="org.freedesktop.DBus",
+            member="ListNames",
+        ))
+
+        if (
+            names_reply.message_type == MessageType.ERROR
+            or not names_reply.body
+        ):
+            return []
+
+        sources = []
+
+        for service in names_reply.body[0]:
+            if not is_nested_mpris_service(service):
+                continue
+
+            try:
+                status = await _dbus_get_property(
+                    nested_bus,
+                    service,
+                    "org.mpris.MediaPlayer2.Player",
+                    "PlaybackStatus",
+                )
+
+                if status != "Playing":
+                    continue
+
+                identity = await _dbus_get_property(
+                    nested_bus,
+                    service,
+                    "org.mpris.MediaPlayer2",
+                    "Identity",
+                )
+
+            except Exception as error:
+                decky.logger.debug(
+                    "Could not read Nested Desktop MPRIS service "
+                    f"{service}: {error}"
+                )
+                continue
+
+            application = (
+                str(identity).strip()
+                if identity
+                else str(service).removeprefix(NESTED_MPRIS_PREFIX)
+            )
+
+            sources.append({
+                "application": application or "Media Player",
+                "service": str(service),
+                "reason": "MPRIS · Nested Desktop",
+            })
+
+        return sources
+
+    finally:
+        if nested_bus is not None:
+            try:
+                nested_bus.disconnect()
+            except Exception:
+                pass
+
+
 import shlex
 import subprocess
 import pwd
@@ -811,6 +1026,18 @@ class Plugin:
             self.decky_music_detection_error_logged = False
         if not hasattr(self, 'decky_music_missing_checks'):
             self.decky_music_missing_checks = 0
+        if not hasattr(self, 'nested_media_watch_task'):
+            self.nested_media_watch_task = None
+        if not hasattr(self, 'nested_media_active'):
+            self.nested_media_active = False
+        if not hasattr(self, 'nested_media_sources'):
+            self.nested_media_sources = []
+        if not hasattr(self, 'nested_media_scan_count'):
+            self.nested_media_scan_count = 0
+        if not hasattr(self, 'nested_media_last_scan_at'):
+            self.nested_media_last_scan_at = None
+        if not hasattr(self, 'nested_media_last_bus_count'):
+            self.nested_media_last_bus_count = 0
 
     async def _get_all_process_lines(self):
         self.process_scan_count += 1
@@ -979,6 +1206,169 @@ class Plugin:
             except asyncio.TimeoutError:
                 process_scan_wakeup = False
 
+    def _set_nested_media_sources(self, sources):
+        global nested_media_inhibiting
+
+        unique = []
+        seen = set()
+
+        for source in sources or []:
+            key = (
+                source.get("service"),
+                source.get("application"),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(source)
+
+        unique.sort(
+            key=lambda item: (
+                str(item.get("application", "")).lower(),
+                str(item.get("service", "")),
+            )
+        )
+
+        previous = self.nested_media_sources
+        previous_active = self.nested_media_active
+        changed = previous != unique
+        active = bool(unique)
+
+        self.nested_media_sources = unique
+        self.nested_media_active = active
+        nested_media_inhibiting = active
+
+        if not changed:
+            return
+
+        if active and not previous_active:
+            names = ", ".join(
+                source.get("application", "Media Player")
+                for source in unique
+            )
+            decky.logger.info(
+                f"Nested Desktop media playback detected: {names}"
+            )
+            detail = f"nested_mpris_playing:{names}"
+
+        elif not active and previous_active:
+            decky.logger.info(
+                "Nested Desktop media playback stopped"
+            )
+            detail = "nested_mpris_stopped"
+
+        else:
+            detail = "nested_mpris_sources_changed"
+
+        sync_inhibit_state(detail, force_emit=True)
+
+
+    async def _nested_media_watch_loop(self):
+        decky.logger.info(
+            "Nested Desktop MPRIS watcher started"
+        )
+
+        while True:
+            try:
+                addresses = await asyncio.to_thread(
+                    discover_nested_desktop_bus_addresses
+                )
+
+                self.nested_media_scan_count += 1
+                self.nested_media_last_scan_at = int(time.time())
+                self.nested_media_last_bus_count = len(addresses)
+
+                sources = []
+
+                if addresses:
+                    results = await asyncio.gather(
+                        *(
+                            asyncio.wait_for(
+                                query_nested_mpris_sources(address),
+                                timeout=1.5,
+                            )
+                            for address in addresses
+                        ),
+                        return_exceptions=True,
+                    )
+
+                    for address, result in zip(
+                        addresses,
+                        results,
+                    ):
+                        if isinstance(result, Exception):
+                            decky.logger.debug(
+                                "Nested Desktop MPRIS bus unavailable "
+                                f"({address}): {result}"
+                            )
+                            continue
+
+                        sources.extend(result)
+
+                Plugin._set_nested_media_sources(
+                    self,
+                    sources,
+                )
+
+            except asyncio.CancelledError:
+                raise
+
+            except Exception as error:
+                decky.logger.warning(
+                    "Nested Desktop MPRIS watcher error: "
+                    f"{error}"
+                )
+
+            await asyncio.sleep(
+                NESTED_MPRIS_POLL_SECONDS
+            )
+
+
+    def _start_nested_media_watch(self):
+        Plugin._init_runtime_state(self)
+
+        if (
+            self.nested_media_watch_task
+            and not self.nested_media_watch_task.done()
+        ):
+            return
+
+        self.nested_media_watch_task = asyncio.create_task(
+            Plugin._nested_media_watch_loop(self)
+        )
+
+
+    async def _stop_nested_media_watch(self):
+        global nested_media_inhibiting
+
+        Plugin._init_runtime_state(self)
+
+        task = self.nested_media_watch_task
+        self.nested_media_watch_task = None
+
+        if task and not task.done():
+            task.cancel()
+
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as error:
+                decky.logger.error(
+                    "Error stopping Nested Desktop MPRIS watcher: "
+                    f"{error}"
+                )
+
+        self.nested_media_sources = []
+        self.nested_media_active = False
+        nested_media_inhibiting = False
+
+        sync_inhibit_state(
+            "nested_mpris_watcher_stopped",
+            force_emit=True,
+        )
+
+
     async def _process_event_loop(self):
         decky.logger.info("Kernel process event listener started")
         while True:
@@ -1137,11 +1527,13 @@ class Plugin:
                 raise RuntimeError("Could not register D-Bus inhibit services")
         Plugin._start_manual_watch(self)
         Plugin._start_dbus_connection_watch(self)
+        Plugin._start_nested_media_watch(self)
         record_diagnostic_event("backend_started")
         return True
 
     async def stop_backend(self):
         decky.logger.info("Stop backend server")
+        await Plugin._stop_nested_media_watch(self)
         await Plugin._stop_manual_watch(self)
         await stop_dbus()
         clear_dbus_requests()
@@ -1228,6 +1620,11 @@ class Plugin:
             "manualRuleCount": len(settings.getSetting("manual_apps", [])),
             "manualActiveApp": self.manual_running_app,
             "dbusRequestCount": len(BaseInterface.request_map),
+            "nestedMprisActive": self.nested_media_active,
+            "nestedMprisSources": list(self.nested_media_sources),
+            "nestedMprisScanCount": self.nested_media_scan_count,
+            "nestedMprisLastScanAt": self.nested_media_last_scan_at,
+            "nestedMprisBusCount": self.nested_media_last_bus_count,
             "powerOverrideActive": override_state["active"],
             "powerOverrideSnapshot": override_state["snapshot"],
             "systemPowerSettings": system_power_settings,
@@ -1251,7 +1648,13 @@ class Plugin:
             "manual_active": self.manual_active,
             "dbus_requests": dbus_requests,
             "dbus_active": len(dbus_requests) > 0,
-            "is_inhibiting": self.manual_active or len(dbus_requests) > 0,
+            "nested_mpris_sources": list(self.nested_media_sources),
+            "nested_mpris_active": self.nested_media_active,
+            "is_inhibiting": (
+                self.manual_active
+                or self.nested_media_active
+                or len(dbus_requests) > 0
+            ),
         }
 
     async def get_settings(self, key: str, defaults):

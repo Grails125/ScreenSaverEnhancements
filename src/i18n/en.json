@@ -37,6 +37,7 @@
     "Manual Inhibit Source": "Matched manual rule",
     "DBus Inhibit Source": "D-Bus request",
     "DeckyMusic Inhibit Source": "Audio playback",
+    "Nested MPRIS Inhibit Source": "Nested Desktop media",
     "Disabled Sleep": "disabled sleep",
     "Restored Sleep": "restored sleep",
     "Active": "Active",

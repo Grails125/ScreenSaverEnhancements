@@ -339,24 +339,24 @@ const PANEL_STYLES = {
 }
 
 const APP_NAMES: Record<string, string> = {
-  "DeckyMusic": "DeckyMusic(1.0以下)",
-  "vlc": "VLC 播放器",
-  "mpv": "MPV 播放器",
-  "chrome": "谷歌浏览器",
-  "firefox-bin": "火狐浏览器",
-  "wiliwili": "Wiliwili (B站)",
-  "steam": "Steam 客户端",
-  "gamescope": "游戏窗口管理器",
+  "DeckyMusic": "DeckyMusic",
+  "vlc": "VLC",
+  "mpv": "MPV",
+  "chrome": "Google Chrome",
+  "firefox-bin": "Firefox",
+  "wiliwili": "Wiliwili (Bilibili)",
+  "steam": "Steam",
+  "gamescope": "Gamescope",
   "discord": "Discord",
-  "obs": "OBS 录屏软件",
-  "retroarch": "RetroArch 模拟器",
-  "dolphin-emu": "Dolphin 模拟器",
-  "pcsx2": "PCSX2 模拟器",
-  "kodi": "Kodi 媒体中心",
-  "bash": "终端 (Bash)",
-  "python": "Python 脚本",
-  "node": "Node.js 应用",
-  "flatpak": "Flatpak 管理器",
+  "obs": "OBS Studio",
+  "retroarch": "RetroArch",
+  "dolphin-emu": "Dolphin",
+  "pcsx2": "PCSX2",
+  "kodi": "Kodi",
+  "bash": "Bash",
+  "python": "Python",
+  "node": "Node.js",
+  "flatpak": "Flatpak",
 };
 
 const getAppDisplayName = (application?: string) => {
@@ -483,7 +483,9 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
     </PanelSection>
 
     <PanelSection title={t('Active Inhibit Sources')}>
-      {!inhibitStatus.manual_active && inhibitStatus.dbus_requests.length === 0 && (
+      {!inhibitStatus.manual_active
+        && inhibitStatus.dbus_requests.length === 0
+        && inhibitStatus.nested_mpris_sources.length === 0 && (
         <PanelSectionRow>
           <div style={PANEL_STYLES.emptyState}>
             {t('No Active Inhibit')}
@@ -512,6 +514,21 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
           </div>
         </PanelSectionRow>
       )}
+      {inhibitStatus.nested_mpris_sources.map((source) => (
+        <PanelSectionRow key={source.service || source.application}>
+          <div style={PANEL_STYLES.processItem}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+              <span style={PANEL_STYLES.processName}>
+                {APP_NAMES[source.application] || source.application}
+              </span>
+              <span style={PANEL_STYLES.sectionHint}>
+                {t('Nested MPRIS Inhibit Source')}
+              </span>
+            </div>
+            <span style={PANEL_STYLES.badge('app')}>{t('Active')}</span>
+          </div>
+        </PanelSectionRow>
+      ))}
       {inhibitStatus.dbus_requests.map((request) => (
         <PanelSectionRow key={request.cookie}>
           <div style={PANEL_STYLES.processItem}>
@@ -556,7 +573,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={PANEL_STYLES.processName}>{displayName}</span>
                     <span style={PANEL_STYLES.badge(proc.type)}>
-                      {proc.type === 'app' ? "应用" : "系统"}
+                      {proc.type === 'app' ? "APP" : "SYS"}
                     </span>
                   </div>
                   {displayName !== proc.name && (

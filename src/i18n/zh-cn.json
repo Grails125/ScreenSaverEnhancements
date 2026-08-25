@@ -37,6 +37,7 @@
     "Manual Inhibit Source": "手动配置命中",
     "DBus Inhibit Source": "D-Bus 请求",
     "DeckyMusic Inhibit Source": "正在播放音频",
+    "Nested MPRIS Inhibit Source": "Nested Desktop 媒体播放",
     "Disabled Sleep": "禁用息屏",
     "Restored Sleep": "恢复息屏",
     "Active": "生效中",
