@@ -483,7 +483,9 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
     </PanelSection>
 
     <PanelSection title={t('Active Inhibit Sources')}>
-      {!inhibitStatus.manual_active && inhibitStatus.dbus_requests.length === 0 && (
+      {!inhibitStatus.manual_active
+        && inhibitStatus.dbus_requests.length === 0
+        && inhibitStatus.nested_mpris_sources.length === 0 && (
         <PanelSectionRow>
           <div style={PANEL_STYLES.emptyState}>
             {t('No Active Inhibit')}
@@ -512,6 +514,21 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
           </div>
         </PanelSectionRow>
       )}
+      {inhibitStatus.nested_mpris_sources.map((source) => (
+        <PanelSectionRow key={source.service || source.application}>
+          <div style={PANEL_STYLES.processItem}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+              <span style={PANEL_STYLES.processName}>
+                {APP_NAMES[source.application] || source.application}
+              </span>
+              <span style={PANEL_STYLES.sectionHint}>
+                {t('Nested MPRIS Inhibit Source')}
+              </span>
+            </div>
+            <span style={PANEL_STYLES.badge('app')}>{t('Active')}</span>
+          </div>
+        </PanelSectionRow>
+      ))}
       {inhibitStatus.dbus_requests.map((request) => (
         <PanelSectionRow key={request.cookie}>
           <div style={PANEL_STYLES.processItem}>

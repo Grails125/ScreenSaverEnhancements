@@ -37,6 +37,7 @@
     "Manual Inhibit Source": "Ручне правило",
     "DBus Inhibit Source": "Запит D-Bus",
     "DeckyMusic Inhibit Source": "Відтворення аудіо",
+    "Nested MPRIS Inhibit Source": "Медіа у Nested Desktop",
     "Disabled Sleep": "заблокував сон",
     "Restored Sleep": "дозволив сон",
     "Active": "Активно",

@@ -10,7 +10,7 @@
       "media",
       "power-management"
     ],
-    "description": "Keep Steam Deck awake for D-Bus media apps, selected processes, and DeckyMusic playback.",
+    "description": "Keep Steam Deck awake for Gaming Mode D-Bus apps, Nested Desktop MPRIS playback, selected processes, and DeckyMusic.",
     "image": "https://raw.githubusercontent.com/Grails125/ScreenSaverEnhancements/main/docs/release-cover-zh-v2.0.1.png"
   }
 }
