@@ -42,9 +42,15 @@ test("allows running-process scrolls to hand off at list boundaries", () => {
 });
 
 test("only shows the raw process name when it differs from the display name", () => {
-  assert.match(indexSource, /const displayName = APP_NAMES\[proc\.name\] \|\| proc\.name;/);
+  assert.match(indexSource, /const displayName = getAppDisplayName\(proc\.name\);/);
   assert.match(indexSource, /\{displayName !== proc\.name && \(/);
   assert.doesNotMatch(indexSource, /\{APP_NAMES\[proc\.name\] && \(/);
+});
+
+test("shows the Edge DBus application path as Microsoft Edge", () => {
+  assert.match(indexSource, /"msedge": "Microsoft Edge 浏览器"/);
+  assert.ok(indexSource.includes("normalized.split(/[/.]/).pop() || normalized"));
+  assert.match(indexSource, /\{getAppDisplayName\(request\.application\)\}/);
 });
 
 test("cleans up the diagnostics export status timer on dismount", () => {

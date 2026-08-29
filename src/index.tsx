@@ -343,6 +343,7 @@ const APP_NAMES: Record<string, string> = {
   "vlc": "VLC 播放器",
   "mpv": "MPV 播放器",
   "chrome": "谷歌浏览器",
+  "msedge": "Microsoft Edge 浏览器",
   "firefox-bin": "火狐浏览器",
   "wiliwili": "Wiliwili (B站)",
   "steam": "Steam 客户端",
@@ -361,7 +362,7 @@ const APP_NAMES: Record<string, string> = {
 
 const getAppDisplayName = (application?: string) => {
   const normalized = application?.trim() || "";
-  const shortName = normalized.split('.').pop() || normalized;
+  const shortName = normalized.split(/[/.]/).pop() || normalized;
   return APP_NAMES[normalized] || APP_NAMES[shortName] || normalized;
 }
 const RUN_ON_LOGIN = "run_on_login"
@@ -469,7 +470,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
           <div style={PANEL_STYLES.processItem}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
               <span style={{color: '#5db9ff', fontWeight: 'bold'}}>●</span>
-              <span style={PANEL_STYLES.processName}>{APP_NAMES[app] || app}</span>
+              <span style={PANEL_STYLES.processName}>{getAppDisplayName(app)}</span>
             </div>
             <Focusable
               style={PANEL_STYLES.panelAction}
@@ -494,7 +495,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
         <PanelSectionRow>
           <div style={PANEL_STYLES.processItem}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-              <span style={PANEL_STYLES.processName}>{APP_NAMES[inhibitStatus.manual_active_app] || inhibitStatus.manual_active_app}</span>
+              <span style={PANEL_STYLES.processName}>{getAppDisplayName(inhibitStatus.manual_active_app)}</span>
               <span style={PANEL_STYLES.sectionHint}>{t('Manual Inhibit Source')}</span>
             </div>
             <span style={PANEL_STYLES.badge('app')}>{t('Active')}</span>
@@ -516,7 +517,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
         <PanelSectionRow key={request.cookie}>
           <div style={PANEL_STYLES.processItem}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-              <span style={PANEL_STYLES.processName}>{APP_NAMES[request.application] || request.application}</span>
+              <span style={PANEL_STYLES.processName}>{getAppDisplayName(request.application)}</span>
               <span style={PANEL_STYLES.sectionHint}>{request.reason || t('DBus Inhibit Source')}</span>
             </div>
             <span style={PANEL_STYLES.badge('system')}>{t('Active')}</span>
@@ -548,7 +549,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
         {runningProcesses
           .filter(p => !manualApps.includes(p.name))
           .map(proc => {
-            const displayName = APP_NAMES[proc.name] || proc.name;
+            const displayName = getAppDisplayName(proc.name);
             return (
               <PanelSectionRow key={proc.name}>
               <div style={PANEL_STYLES.processItem}>
@@ -603,12 +604,12 @@ const formatDiagnosticEventDetail = (detail: string | undefined) => {
   if (!detail) return undefined;
   const ruleChange = /^(manual_app_rule_added|manual_app_rule_removed):(.+)$/.exec(detail);
   if (ruleChange) {
-    const application = APP_NAMES[ruleChange[2]] ?? ruleChange[2];
+    const application = getAppDisplayName(ruleChange[2]);
     return `${t(ruleChange[1] === 'manual_app_rule_added' ? 'Added Rule' : 'Removed Rule')} ${application} ${t('Sleep Rule')}`;
   }
   const manualAppDetail = getManualAppInhibitDetail(detail);
   if (manualAppDetail) {
-    const application = APP_NAMES[manualAppDetail.application] ?? manualAppDetail.application;
+    const application = getAppDisplayName(manualAppDetail.application);
     return `${application} ${t(manualAppDetail.action === 'inhibiting' ? 'Disabled Sleep' : 'Restored Sleep')}`;
   }
   const message = getDiagnosticEventDetailMessage(detail);

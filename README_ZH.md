@@ -1,17 +1,3 @@
-<div align="center">
-
-# 屏幕保护增强
-
-[![Release](https://img.shields.io/github/v/release/Grails125/ScreenSaverEnhancements?display_name=tag&sort=semver)](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/Grails125/ScreenSaverEnhancements/total)](https://github.com/Grails125/ScreenSaverEnhancements/releases)
-[![License](https://img.shields.io/github/license/Grails125/ScreenSaverEnhancements)](./LICENSE)
-
-在媒体播放或指定应用运行时，让 Steam Deck 保持亮屏。
-
-中文 | [English](./README.md)
-
-</div>
-
 ScreenSaver Enhancements 是一个用于 Steam Deck 的 [Decky Loader](https://decky.xyz) 插件。它可以处理受支持媒体应用发出的标准 D-Bus 息屏抑制请求，也可以监控你手动选择的应用。
 
 ## 功能
@@ -26,31 +12,28 @@ ScreenSaver Enhancements 是一个用于 Steam Deck 的 [Decky Loader](https://d
 - **V2 类型化接口与状态同步**：使用 Decky 现代类型化 RPC 和状态推送处理设置、息屏抑制状态；监听恢复后会进行完整状态同步。*（v2.0.0）*
 - **诊断与更新**：可查看监控模式、进程活动、禁用来源、D-Bus 请求、电源覆盖状态、最近事件与事件通道健康度；支持复制诊断报告，并可在插件面板内检查更新。*（v2.0.0）*
 - **可靠的生命周期处理**：卸载或重启时会等待待处理的息屏状态通知取消完成，并确保发布包包含全部后端模块。*（v2.0.0）*
-
-## v2.0.1 更新说明
-
-- **Decky Music MPRIS 播放监听**：通过公开的 MPRIS 播放状态事件识别新版 Decky Music，同时保留旧版 DeckyMusic 的兼容路径；播放状态变化不再需要反复进行完整进程扫描。
-- **更清晰的诊断信息**：最近插件事件仅保留最新 40 条，可在诊断页清空；现在会标明增加/减少息屏规则，以及禁用/恢复息屏的具体应用。
-- **运行中应用列表优化**：保留 Unicode 进程名称，避免本地化名称重复显示，并改善应用规则页的刷新反馈与滚动体验。
+- **Decky Music MPRIS 播放监听**：通过公开的 MPRIS 播放状态事件识别新版 Decky Music，同时保留旧版 DeckyMusic 的兼容路径；播放状态变化不再需要反复进行完整进程扫描。*（v2.0.1）*
+- **更清晰的诊断信息**：最近插件事件仅保留最新 40 条，可在诊断页清空；现在会标明增加/减少息屏规则，以及禁用/恢复息屏的具体应用。*（v2.0.1）*
+- **运行中应用列表优化**：保留 Unicode 进程名称，避免本地化名称重复显示，并改善应用规则页的刷新反馈与滚动体验。*（v2.0.1）*
 
 ## 截图
 
 ### 主面板
 
-| 监控与主要控制 | 遮罩开关与设置 | 应用规则、诊断与更新入口 |
-| --- | --- | --- |
+| 监控与主要控制                                         | 遮罩开关与设置                                         | 应用规则、诊断与更新入口                                         |
+| ------------------------------------------------------ | ------------------------------------------------------ | ---------------------------------------------------------------- |
 | ![监控与主要控制](./docs/Screenshot/mainPage_zh_1.jpg) | ![遮罩开关与设置](./docs/Screenshot/mainPage_zh_2.jpg) | ![应用规则、诊断与更新入口](./docs/Screenshot/mainPage_zh_3.jpg) |
 
 ### 禁用息屏应用
 
-| 已配置的禁用列表 | 运行中进程选择 |
-| --- | --- |
+| 已配置的禁用列表                                            | 运行中进程选择                                            |
+| ----------------------------------------------------------- | --------------------------------------------------------- |
 | ![已配置的禁用列表](./docs/Screenshot/inhibitApps_zh_1.jpg) | ![运行中进程选择](./docs/Screenshot/inhibitApps_zh_2.jpg) |
 
 ### 诊断与电源策略
 
-| 运行时诊断 | 最近诊断事件 |
-| --- | --- |
+| 运行时诊断                                            | 最近诊断事件                                            |
+| ----------------------------------------------------- | ------------------------------------------------------- |
 | ![运行时诊断](./docs/Screenshot/diagnostics_zh_1.jpg) | ![最近诊断事件](./docs/Screenshot/diagnostics_zh_2.jpg) |
 
 ![电池与外接电源策略配置](./docs/Screenshot/powerProfiles_zh.jpg)
@@ -106,12 +89,12 @@ DeckyMusic 属于专用的手动规则：只有配置该规则后才会每 5 秒
 
 ## 开发
 
-| 命令 | 说明 |
-| --- | --- |
-| `npm.cmd install` | 安装前端依赖。 |
-| `npm.cmd test` | 运行 TypeScript 校验，以及已发现的 JavaScript 和 Python 测试。 |
-| `npm.cmd run build` | 构建前端包。 |
-| `python build.py` | 构建可安装的插件目录和 ZIP 包。 |
+| 命令                  | 说明                                                           |
+| --------------------- | -------------------------------------------------------------- |
+| `npm.cmd install`   | 安装前端依赖。                                                 |
+| `npm.cmd test`      | 运行 TypeScript 校验，以及已发现的 JavaScript 和 Python 测试。 |
+| `npm.cmd run build` | 构建前端包。                                                   |
+| `python build.py`   | 构建可安装的插件目录和 ZIP 包。                                |
 
 ## 致谢
 
