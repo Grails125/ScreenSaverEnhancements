@@ -345,6 +345,11 @@ decky.logger.info("Main.py Loading...")
 decky.logger.info("Environment setup complete")
 settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
 settings = SettingsManager(name="settings", settings_directory=settings_dir)
+if settings.recovery_file:
+    decky.logger.warning("Recovered from an invalid plugin settings file")
+persisted_setting_updates = plugin_contract.normalize_persisted_settings(settings.settings)
+if persisted_setting_updates and not settings.setSettings(persisted_setting_updates):
+    decky.logger.warning("Could not normalize persisted plugin settings")
 if settings.getSetting("manual_apps", None) is None:
     settings.setSetting("manual_apps", ["chrome", "mpv", "wiliwili"])
 recent_diagnostic_events = deque(maxlen=40)
@@ -1282,9 +1287,11 @@ class Plugin:
         return settings.unsetSettings((POWER_OVERRIDE_ACTIVE, POWER_OVERRIDE_SNAPSHOT))
 
     async def set_settings(self, key: str, value):
-        if not plugin_contract.validate_setting_key(key):
-            decky.logger.warning(f"Rejected unknown setting key: {key!r}")
+        normalized = plugin_contract.normalize_settings_batch({key: value})
+        if normalized is None:
+            decky.logger.warning(f"Rejected invalid setting: {key!r}")
             return False
+        value = normalized[key]
         previous_manual_apps = settings.getSetting("manual_apps", []) if key == "manual_apps" else []
         decky.logger.info('[settings] set {}: {}'.format(key, value))
         saved = settings.setSetting(key, value)
@@ -1294,9 +1301,11 @@ class Plugin:
         return saved
 
     async def set_settings_batch(self, values: dict):
-        if not plugin_contract.validate_settings_batch(values):
+        normalized = plugin_contract.normalize_settings_batch(values)
+        if normalized is None:
             decky.logger.warning("Rejected invalid settings batch")
             return False
+        values = normalized
         previous_manual_apps = settings.getSetting("manual_apps", []) if "manual_apps" in values else []
         decky.logger.info('[settings] batch set keys: {}'.format(list(values.keys())))
         saved = settings.setSettings(values)
