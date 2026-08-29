@@ -1,6 +1,6 @@
 {
   "name": "screensaver-enhancements",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Disable screen hibernation",
   "type": "module",
   "scripts": {

@@ -23,7 +23,7 @@ test("pins the Decky 3.2.6 compatible modern frontend toolchain", () => {
   assert.equal(pluginJson.api_version, 1);
 });
 
-test("release metadata identifies the 2.0.1 release", () => {
+test("release metadata identifies the 2.0.2 release", () => {
   const pnpmLock = readFileSync(
     new URL("../pnpm-lock.yaml", import.meta.url),
     "utf8",
@@ -33,9 +33,9 @@ test("release metadata identifies the 2.0.1 release", () => {
     "utf8",
   );
 
-  assert.equal(packageJson.version, "2.0.1");
-  assert.equal(packageLock.version, "2.0.1");
-  assert.equal(packageLock.packages[""].version, "2.0.1");
+  assert.equal(packageJson.version, "2.0.2");
+  assert.equal(packageLock.version, "2.0.2");
+  assert.equal(packageLock.packages[""].version, "2.0.2");
   assert.match(pnpmLock, /'@decky\/api':/);
   assert.doesNotMatch(pnpmLock, /decky-frontend-lib:/);
   assert.match(deckyStub, /async def emit\(event: str, \*args: Any\) -> None:/);
