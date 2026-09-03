@@ -2,6 +2,23 @@ import { useCallback, useRef } from "react";
 
 type ReleaseHandle = (() => void) | null;
 
+type SteamReleaseHandle = {
+  unregister?: () => void;
+  Unregister?: () => void;
+};
+
+const normalizeReleaseHandle = (releaseHandle: unknown): ReleaseHandle => {
+  if (typeof releaseHandle === "function") return releaseHandle as () => void;
+
+  if (releaseHandle && typeof releaseHandle === "object") {
+    const handle = releaseHandle as SteamReleaseHandle;
+    if (typeof handle.Unregister === "function") return () => handle.Unregister?.();
+    if (typeof handle.unregister === "function") return () => handle.unregister?.();
+  }
+
+  return null;
+};
+
 export const useCatchAllGamepad = () => {
   const releaseRef = useRef<ReleaseHandle>(null);
   const navManagerRef = useRef<any>(null);
@@ -12,11 +29,7 @@ export const useCatchAllGamepad = () => {
       return;
     }
 
-    if (releaseRef.current) {
-      releaseRef.current();
-    } else if (navManagerRef.current?.SetCatchAllGamepadInput) {
-      navManagerRef.current.SetCatchAllGamepadInput(null);
-    }
+    releaseRef.current?.();
 
     navManagerRef.current = null;
     releaseRef.current = null;
@@ -29,11 +42,9 @@ export const useCatchAllGamepad = () => {
     if (!navManager?.SetCatchAllGamepadInput) return;
 
     navManagerRef.current = navManager;
-    const releaseHandle = navManager.SetCatchAllGamepadInput(handler);
-
-    releaseRef.current = typeof releaseHandle === "function"
-      ? releaseHandle
-      : () => navManager.SetCatchAllGamepadInput(null);
+    releaseRef.current = normalizeReleaseHandle(
+      navManager.SetCatchAllGamepadInput(handler),
+    );
   }, []);
 
   return { subscribe, release };
