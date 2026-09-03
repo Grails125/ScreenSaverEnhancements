@@ -30,6 +30,12 @@ ScreenSaver Enhancements is a [Decky Loader](https://decky.xyz) plugin for Steam
 - **Clearer diagnostics** — recent plugin events retain the latest 40 entries, can be cleared from the Diagnostics page, and now identify the application that added or removed a sleep rule or changed sleep-inhibition state. *(v2.0.1)*
 - **Process-list refinements** — preserves Unicode process names, avoids duplicate localized labels, and improves the refresh feedback and scrolling behavior in the app-rules page. *(v2.0.1)*
 - **Safer settings persistence** — validates setting values before saving, normalizes persisted values, and preserves malformed settings files for recovery instead of silently discarding them. *(v2.0.2)*
+- **Steam menu input compatibility** — supports current object-style `Unregister`/`unregister` handles alongside legacy function handles, and cleans up only valid handles without registering a null listener. *(v2.0.3)*
+
+## What's new in v2.0.3
+
+- Supports current object-style `Unregister`/`unregister` handles while retaining compatibility with legacy function handles.
+- Cleans up only valid listener handles and does not register a null listener, preventing Steam and Quick Access Menu short presses from failing after suspend and resume.
 
 ## What's new in v2.0.2
 
