@@ -35,6 +35,30 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn("logger", decky_attributes)
         self.assertIn("DECKY_PLUGIN_SETTINGS_DIR", decky_attributes)
 
+    def test_settings_reads_reject_private_keys(self):
+        plugin_class = next(
+            node for node in self.main_tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "Plugin"
+        )
+        get_settings = next(
+            node for node in plugin_class.body
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "get_settings"
+        )
+        guard = get_settings.body[0]
+
+        self.assertIsInstance(guard, ast.If)
+        self.assertEqual(
+            ast.unparse(guard.test),
+            "not plugin_contract.validate_setting_key(key)",
+        )
+        self.assertEqual(ast.unparse(guard.body[-1].value), "defaults")
+
+    def test_startup_normalizes_existing_public_settings(self):
+        self.assertIn(
+            "plugin_contract.normalize_persisted_settings(settings.settings)",
+            self.main_source,
+        )
+
     def test_type_stub_is_kept_for_development_but_excluded_from_release(self):
         build_source = (ROOT / "build.py").read_text(encoding="utf-8")
 
@@ -57,6 +81,10 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn('"settings.py"', build_source)
         self.assertIn('"plugin_contract.py"', build_source)
         self.assertIn('"process_events.py"', build_source)
+        self.assertIn('"process_utils.py"', build_source)
+        self.assertIn('"power_settings.py"', build_source)
+        self.assertIn('"decky_music_cdp.py"', build_source)
+        self.assertIn('"manual_watch_utils.py"', build_source)
         self.assertIn('"update_checker.py"', build_source)
         self.assertIn('"task_lifecycle.py"', build_source)
 
@@ -68,6 +96,13 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn('await decky.emit("inhibit_state_changed")', self.main_source)
         self.assertNotIn('event = {"type": "Inhibit" if active else "UnInhibit"}', self.main_source)
         self.assertNotIn('queue_event({"type": "UnInhibit", "reason": "monitor_stopped"})', self.main_source)
+
+    def test_dbus_requests_are_recorded_with_application_reason_and_cookie(self):
+        self.assertIn('"dbus_request"', self.main_source)
+        self.assertIn('application=application', self.main_source)
+        self.assertIn('reason=reason', self.main_source)
+        self.assertIn('cookie=BaseInterface.cookie', self.main_source)
+        self.assertIn('cookie=cookie', self.main_source)
 
     def test_manual_application_state_changes_include_action_and_application_details(self):
         self.assertIn('f"manual_app_inhibiting:{running_app}"', self.main_source)
@@ -89,13 +124,13 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertNotIn("record_decky_music_playback_state", self.main_source)
 
     def test_decky_music_background_detection_is_rule_gated_and_prefers_mpris(self):
-        self.assertIn('DECKY_CDP_TARGET_TITLE = "SharedJSContext"', self.main_source)
         self.assertIn('async def is_decky_music_playing_mpris():', self.main_source)
         self.assertIn('async def is_decky_music_playing_legacy():', self.main_source)
         self.assertIn('DECKY_MUSIC_MPRIS_PREFIX = "org.mpris.MediaPlayer2.decky_music."', self.main_source)
         self.assertIn('async def _is_decky_music_playing_mpris():', self.main_source)
-        self.assertIn('def _is_decky_music_playing_cdp():', self.main_source)
-        self.assertIn('"Runtime.queryObjects"', self.main_source)
+        self.assertIn('is_decky_music_playing_cdp = decky_music_cdp.is_playing', self.main_source)
+        cdp_source = (ROOT / "decky_music_cdp.py").read_text(encoding="utf-8")
+        self.assertIn('"Runtime.queryObjects"', cdp_source)
         self.assertIn('if has_decky_music_rule:', self.main_source)
         self.assertIn('await is_decky_music_playing_mpris()', self.main_source)
         self.assertIn('await is_decky_music_playing_legacy()', self.main_source)
@@ -105,49 +140,34 @@ class DeckyBackendMigrationTests(unittest.TestCase):
         self.assertIn('fallback_interval = 5 if has_legacy_decky_music_rule', self.main_source)
 
     def test_decky_music_uses_a_persistent_tracker_after_one_bootstrap_heap_scan(self):
-        self.assertIn('DECKY_MUSIC_TRACKER_KEY = "__screenSaverEnhancementsDeckyMusicTrackerV1"', self.main_source)
-        self.assertIn('def _install_decky_music_tracker(sock):', self.main_source)
-        self.assertIn('def _read_decky_music_tracker(sock):', self.main_source)
-        self.assertIn('playback_state = _read_decky_music_tracker(sock)', self.main_source)
+        cdp_source = (ROOT / "decky_music_cdp.py").read_text(encoding="utf-8")
+        self.assertIn('DECKY_MUSIC_TRACKER_KEY = "__screenSaverEnhancementsDeckyMusicTrackerV1"', cdp_source)
+        self.assertIn('def _install_decky_music_tracker(sock):', cdp_source)
+        self.assertIn('def _read_decky_music_tracker(sock):', cdp_source)
+        self.assertIn('playback_state = _read_decky_music_tracker(sock)', cdp_source)
         self.assertIn(
             'return _install_decky_music_tracker(sock) if playback_state is None else playback_state',
-            self.main_source,
+            cdp_source,
         )
-        self.assertEqual(self.main_source.count('"Runtime.queryObjects"'), 1)
+        self.assertEqual(cdp_source.count('"Runtime.queryObjects"'), 1)
 
     def test_decky_music_polling_does_not_force_normal_process_scans(self):
-        function_node = next(
-            node
-            for node in self.main_tree.body
-            if isinstance(node, ast.FunctionDef)
-            and node.name == "should_scan_manual_processes"
-        )
-        namespace = {}
-        exec(compile(ast.Module(body=[function_node], type_ignores=[]), "main.py", "exec"), namespace)
-        should_scan = namespace["should_scan_manual_processes"]
+        from manual_watch_utils import should_scan_manual_processes
 
-        self.assertFalse(should_scan(True, True, "DeckyMusic", False, 0, 120))
-        self.assertFalse(should_scan(True, False, "mpv", False, 100, 104))
-        self.assertTrue(should_scan(True, False, "mpv", True, 100, 104))
-        self.assertTrue(should_scan(True, False, "mpv", False, 100, 220))
-        self.assertTrue(should_scan(True, False, "DeckyMusic", False, 100, 104))
-        self.assertFalse(should_scan(False, False, None, True, None, 0))
+        self.assertFalse(should_scan_manual_processes(True, True, "DeckyMusic", False, 0, 120))
+        self.assertFalse(should_scan_manual_processes(True, False, "mpv", False, 100, 104))
+        self.assertTrue(should_scan_manual_processes(True, False, "mpv", True, 100, 104))
+        self.assertTrue(should_scan_manual_processes(True, False, "mpv", False, 100, 220))
+        self.assertTrue(should_scan_manual_processes(True, False, "DeckyMusic", False, 100, 104))
+        self.assertFalse(should_scan_manual_processes(False, False, None, True, None, 0))
 
     def test_decky_music_requires_two_consecutive_missing_audio_checks_before_release(self):
-        function_node = next(
-            node
-            for node in self.main_tree.body
-            if isinstance(node, ast.FunctionDef)
-            and node.name == "update_decky_music_detection_state"
-        )
-        namespace = {}
-        exec(compile(ast.Module(body=[function_node], type_ignores=[]), "main.py", "exec"), namespace)
-        update_state = namespace["update_decky_music_detection_state"]
+        from manual_watch_utils import update_decky_music_detection_state
 
-        self.assertEqual(update_state(True, False, 0), (1, True))
-        self.assertEqual(update_state(True, False, 1), (2, False))
-        self.assertEqual(update_state(True, True, 1), (0, True))
-        self.assertEqual(update_state(False, False, 0), (1, False))
+        self.assertEqual(update_decky_music_detection_state(True, False, 0), (1, True))
+        self.assertEqual(update_decky_music_detection_state(True, False, 1), (2, False))
+        self.assertEqual(update_decky_music_detection_state(True, True, 1), (0, True))
+        self.assertEqual(update_decky_music_detection_state(False, False, 0), (1, False))
 
     def test_first_missing_decky_music_audio_check_records_a_diagnostic_event(self):
         self.assertIn('"decky_music_audio_temporarily_missing"', self.main_source)

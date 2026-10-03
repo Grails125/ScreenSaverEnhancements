@@ -8,6 +8,34 @@ from settings import SettingsManager
 
 
 class SettingsManagerTests(unittest.TestCase):
+    def test_invalid_json_is_preserved_for_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings_file = os.path.join(directory, "settings.json")
+            with open(settings_file, "w", encoding="utf-8") as output:
+                output.write("{invalid json")
+
+            manager = SettingsManager("settings", directory)
+
+            self.assertEqual(manager.settings, {})
+            self.assertEqual(manager.recovery_file, f"{settings_file}.corrupt")
+            self.assertFalse(os.path.exists(settings_file))
+            with open(manager.recovery_file, "r", encoding="utf-8") as recovery:
+                self.assertEqual(recovery.read(), "{invalid json")
+
+    def test_non_object_json_is_preserved_with_a_unique_recovery_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings_file = os.path.join(directory, "settings.json")
+            with open(f"{settings_file}.corrupt", "w", encoding="utf-8") as existing:
+                existing.write("existing")
+            with open(settings_file, "w", encoding="utf-8") as output:
+                json.dump(["not", "an", "object"], output)
+
+            manager = SettingsManager("settings", directory)
+
+            self.assertEqual(manager.settings, {})
+            self.assertEqual(manager.recovery_file, f"{settings_file}.corrupt.1")
+            self.assertTrue(os.path.exists(manager.recovery_file))
+
     def test_batch_update_is_saved_as_one_complete_document(self):
         with tempfile.TemporaryDirectory() as directory:
             manager = SettingsManager("settings", directory)

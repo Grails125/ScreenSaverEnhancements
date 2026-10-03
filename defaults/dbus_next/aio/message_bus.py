@@ -301,10 +301,16 @@ class MessageBus(BaseMessageBus):
                     _future_set_result(future, reply)
 
         self._call(msg, reply_handler)
-
-        await future
-
-        return future.result()
+        # Base._call registers its wrapper synchronously, before send completes.
+        # Cancelling this await (including wait_for timeouts) must release that
+        # wrapper, without deleting a different call's handler at the same serial.
+        serial = msg.serial
+        handler = self._method_return_handlers.get(serial)
+        try:
+            return await future
+        finally:
+            if handler is not None and self._method_return_handlers.get(serial) is handler:
+                del self._method_return_handlers[serial]
 
     def send(self, msg: Message):
         """Asynchronously send a message on the message bus.
@@ -354,7 +360,12 @@ class MessageBus(BaseMessageBus):
                     send_reply(Message.new_method_return(msg, method.out_signature, body, unix_fds))
 
             args = ServiceInterface._msg_body_to_args(msg)
-            fut = asyncio.ensure_future(method.fn(interface, *args))
+
+            async def invoke():
+                with ServiceInterface._message_context(msg):
+                    return await method.fn(interface, *args)
+
+            fut = asyncio.ensure_future(invoke())
             fut.add_done_callback(done)
 
         return handler

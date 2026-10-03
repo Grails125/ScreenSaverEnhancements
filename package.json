@@ -1,11 +1,11 @@
 {
   "name": "screensaver-enhancements",
-  "version": "2.0.1",
+  "version": "2.0.4",
   "description": "Disable screen hibernation",
   "type": "module",
   "scripts": {
     "build": "rollup -c",
-    "build:v2-probe": "shx rm -rf build/v2-probe && rollup -c rollup.v2-probe.config.js",
+    "build:v2-probe": "rollup -c rollup.v2-probe.config.js",
     "watch": "rollup -c -w",
     "test": "tsc --noEmit && node --test tests/**/*.test.mjs && node tests/run-python-tests.mjs"
   },
@@ -27,14 +27,16 @@
   },
   "homepage": "https://github.com/Grails125/ScreenSaverEnhancements#readme",
   "devDependencies": {
-    "@decky/rollup": "1.0.2",
     "@decky/ui": "4.11.6",
+    "@rollup/plugin-commonjs": "26.0.3",
+    "@rollup/plugin-json": "6.1.0",
+    "@rollup/plugin-node-resolve": "15.3.1",
+    "@rollup/plugin-replace": "5.0.7",
     "@rollup/plugin-typescript": "11.1.6",
     "@types/react": "19.1.1",
     "@types/react-dom": "19.1.1",
-    "@types/webpack": "^5.28.0",
-    "rollup": "4.53.3",
-    "shx": "^0.3.4",
+    "rollup": "4.64.0",
+    "rollup-plugin-external-globals": "0.11.0",
     "tslib": "^2.4.0",
     "typescript": "5.6.2"
   },

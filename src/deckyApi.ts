@@ -67,14 +67,16 @@ export interface PluginBackendClient {
   getDiagnostics(): Promise<unknown>;
   clearDiagnosticEvents(): Promise<boolean>;
   getPluginVersion(): Promise<string>;
-  getInstalledPluginVersion(): Promise<string>;
   checkUpdate(): Promise<UpdateCheckResult>;
   installPluginUpdate(request: UpdateInstallRequest): Promise<void>;
-  restartDecky(): Promise<void>;
   getSystemPowerSettings(): Promise<unknown>;
   getPowerOverrideState(): Promise<unknown>;
-  beginPowerOverride(snapshot: PowerSettings): Promise<boolean>;
-  endPowerOverride(): Promise<boolean>;
+  beginPowerOverride(snapshot: PowerSettings, owner?: string, expectedOwner?: string | null): Promise<boolean>;
+  endPowerOverride(owner?: string | null, nextOwner?: string): Promise<boolean>;
+  savePowerSettings(profile: PowerSettings, owner: string, expectedOwner: string | null): Promise<boolean>;
+  startDisplayWakeGuard(): Promise<string>;
+  heartbeatDisplayWakeGuard(token: string): Promise<boolean>;
+  stopDisplayWakeGuard(token: string): Promise<boolean>;
   getSetting<T>(key: string, defaults: T): Promise<T>;
   setSetting(key: string, value: unknown): Promise<boolean>;
   setSettings(values: Record<string, unknown>): Promise<boolean>;
@@ -111,17 +113,19 @@ export const createPluginServerApi = (
   const getDiagnostics = callableFactory<[], unknown>("get_diagnostics");
   const clearDiagnosticEvents = callableFactory<[], boolean>("clear_diagnostic_events");
   const getPluginVersion = callableFactory<[], string>("get_plugin_version");
-  const getInstalledPluginVersion = callableFactory<[], string>("get_installed_plugin_version");
   const checkUpdate = callableFactory<[], UpdateCheckResult>("check_update");
   const installPlugin = loaderCallableFactory<
     [artifact: string, name: string, version: string, hash: string, installType: number],
     void
   >("utilities/install_plugin");
-  const restartDecky = loaderCallableFactory<[], void>("updater/do_restart");
   const getSystemPowerSettings = callableFactory<[], unknown>("get_system_power_settings");
   const getPowerOverrideState = callableFactory<[], unknown>("get_power_override_state");
-  const beginPowerOverride = callableFactory<[snapshot: PowerSettings], boolean>("begin_power_override");
-  const endPowerOverride = callableFactory<[], boolean>("end_power_override");
+  const beginPowerOverrideRpc = callableFactory<[snapshot: PowerSettings, owner?: string, expectedOwner?: string | null], boolean>("begin_power_override");
+  const endPowerOverrideRpc = callableFactory<[owner?: string | null, nextOwner?: string], boolean>("end_power_override");
+  const savePowerSettings = callableFactory<[profile: PowerSettings, owner: string, expectedOwner: string | null], boolean>("save_power_settings");
+  const startDisplayWakeGuard = callableFactory<[], string>("start_display_wake_guard");
+  const heartbeatDisplayWakeGuard = callableFactory<[token: string], boolean>("heartbeat_display_wake_guard");
+  const stopDisplayWakeGuard = callableFactory<[token: string], boolean>("stop_display_wake_guard");
   const getSetting = callableFactory<[key: string, defaults: unknown], unknown>("get_settings");
   const setSetting = callableFactory<[key: string, value: unknown], boolean>("set_settings");
   const setSettings = callableFactory<[values: Record<string, unknown>], boolean>("set_settings_batch");
@@ -135,15 +139,19 @@ export const createPluginServerApi = (
     getDiagnostics,
     clearDiagnosticEvents,
     getPluginVersion,
-    getInstalledPluginVersion,
     checkUpdate,
     installPluginUpdate: ({ downloadUrl, version, sha256 }: UpdateInstallRequest) =>
       installPlugin(downloadUrl, "screensaver-enhancements", version, sha256, 2),
-    restartDecky,
     getSystemPowerSettings,
     getPowerOverrideState,
-    beginPowerOverride,
-    endPowerOverride,
+    savePowerSettings,
+    beginPowerOverride: (snapshot, owner, expectedOwner) => owner === undefined
+      ? beginPowerOverrideRpc(snapshot) : beginPowerOverrideRpc(snapshot, owner, expectedOwner ?? null),
+    endPowerOverride: (owner, nextOwner) => owner === undefined
+      ? endPowerOverrideRpc() : nextOwner === undefined ? endPowerOverrideRpc(owner) : endPowerOverrideRpc(owner, nextOwner),
+    startDisplayWakeGuard,
+    heartbeatDisplayWakeGuard,
+    stopDisplayWakeGuard,
     getSetting: <T,>(key: string, defaults: T) => getSetting(key, defaults) as Promise<T>,
     setSetting,
     setSettings,

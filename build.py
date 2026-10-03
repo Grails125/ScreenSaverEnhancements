@@ -1,6 +1,33 @@
+import json
 import os
+import re
 import shutil
 import subprocess
+import zipfile
+
+
+PACKAGE_SOURCE_FILES = (
+    "main.py",
+    "plugin.json",
+    "package.json",
+    "settings.py",
+    "plugin_contract.py",
+    "process_events.py",
+    "process_utils.py",
+    "power_settings.py",
+    "decky_music_cdp.py",
+    "manual_watch_utils.py",
+    "task_lifecycle.py",
+    "gamescope_display.py",
+    "display_wake_guard.py",
+    "update_checker.py",
+)
+REQUIRED_PACKAGE_ENTRIES = PACKAGE_SOURCE_FILES + (
+    "dist/index.js",
+    "dbus_next/__init__.py",
+    "lib/x/__init__.py",
+)
+VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 
 def ignore_build_artifacts(_dir, names):
     ignored = []
@@ -8,6 +35,43 @@ def ignore_build_artifacts(_dir, names):
         if name == "__pycache__" or name.endswith((".pyc", ".pyo")):
             ignored.append(name)
     return ignored
+
+
+def verify_package(archive_path, plugin_name):
+    package_prefix = f"{plugin_name}/"
+    with zipfile.ZipFile(archive_path) as archive:
+        entries = set(archive.namelist())
+
+    missing = [
+        entry for entry in REQUIRED_PACKAGE_ENTRIES
+        if f"{package_prefix}{entry}" not in entries
+    ]
+    if missing:
+        raise ValueError(f"package is missing required entries: {', '.join(missing)}")
+
+    cache_entries = [
+        entry for entry in entries
+        if "__pycache__/" in entry or entry.endswith((".pyc", ".pyo"))
+    ]
+    if cache_entries:
+        raise ValueError("package contains Python cache files")
+
+    with zipfile.ZipFile(archive_path) as archive:
+        try:
+            plugin_metadata = json.loads(
+                archive.read(f"{package_prefix}plugin.json").decode("utf-8")
+            )
+            package_metadata = json.loads(
+                archive.read(f"{package_prefix}package.json").decode("utf-8")
+            )
+        except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("package contains invalid JSON metadata") from error
+
+    if not isinstance(plugin_metadata, dict) or plugin_metadata.get("api_version") != 1:
+        raise ValueError("package has an invalid Decky API version")
+    version = package_metadata.get("version") if isinstance(package_metadata, dict) else None
+    if not isinstance(version, str) or VERSION_PATTERN.fullmatch(version) is None:
+        raise ValueError("package has an invalid semantic version")
 
 def build():
     plugin_name = "ScreenSaverEnhancements"
@@ -33,23 +97,19 @@ def build():
     os.makedirs(os.path.join(out_dir, "dist"), exist_ok=True)
     
     # 4. Copy files
-    files_to_copy = [
-        "main.py",
-        "plugin.json",
-        "package.json",
+    optional_files_to_copy = (
         "README_ZH.md",
         "README.md",
         "LICENSE",
-        "settings.py",
-        "plugin_contract.py",
-        "process_events.py",
-        "task_lifecycle.py",
-        "update_checker.py",
-    ]
-    
-    for f in files_to_copy:
-        if os.path.exists(f):
-            shutil.copy(f, out_dir)
+    )
+
+    for file_name in PACKAGE_SOURCE_FILES:
+        if not os.path.isfile(file_name):
+            raise FileNotFoundError(f"required package source file is missing: {file_name}")
+        shutil.copy(file_name, out_dir)
+    for file_name in optional_files_to_copy:
+        if os.path.isfile(file_name):
+            shutil.copy(file_name, out_dir)
             
     # 5. Bundle the Python dependencies required by Decky's restricted runtime.
     bundled_directories = (
@@ -72,10 +132,16 @@ def build():
     # 7. Zip the result
     print(f"Creating zip...")
     # Ensure the first-level folder in zip is ScreenSaverEnhancements
-    shutil.make_archive(os.path.join(build_dir, plugin_name), 'zip', root_dir=build_dir, base_dir=plugin_name)
+    archive_path = shutil.make_archive(
+        os.path.join(build_dir, plugin_name),
+        'zip',
+        root_dir=build_dir,
+        base_dir=plugin_name,
+    )
+    verify_package(archive_path, plugin_name)
     
     print(f"Build complete! Output in {out_dir}")
-    print(f"Zip created at {os.path.join(build_dir, plugin_name)}.zip")
+    print(f"Zip created and verified at {archive_path}")
 
 if __name__ == "__main__":
     build()

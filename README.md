@@ -22,16 +22,40 @@ ScreenSaver Enhancements is a [Decky Loader](https://decky.xyz) plugin for Steam
 - **DeckyMusic-aware playback detection** — detects actual audio playback from the backend only when a DeckyMusic rule is configured. It tolerates one short missed check before restoring normal sleep behavior, preventing false restores during track changes or brief stalls. *(v1.1.0, optimized in v2.0.0)*
 - **Event-driven application monitoring** — listens for kernel process events when available and uses a 120-second fallback scan when necessary. DeckyMusic's 5-second audio check is independent, so it does not force repeated full process scans. *(v1.3.0, optimized in v2.0.0)*
 - **Black display overlay** — optionally show a black overlay with adjustable opacity. *(v1.3.0)*
+- **Display-off mode** — turn off the internal display while music, downloads, and other background applications keep running. Shares the overlay's Close on any key setting; when disabled, Quick Access wakes the display and opens the panel. The power button still suspends normally. Requires Steam's internal-display power API and reports failure when unavailable. Waking or exiting restores the previous power configuration; an independent guard wakes the display if the frontend loses contact.
 - **Separate battery and AC settings** — customize screen-dim and system-suspend timeouts for battery and external power, with two-way synchronization to the system settings. *(v2.0.0)*
 - **V2 typed API and state synchronization** — uses Decky's modern typed RPC and push events for settings and inhibition state, with full-state reconciliation after a listener reconnect. *(v2.0.0)*
 - **Diagnostics and updates** — inspect monitor mode, process activity, inhibition source, D-Bus requests, power override state, recent events, and event-channel health; copy the report or update from the plugin panel. *(v2.0.0)*
 - **Reliable lifecycle handling** — waits for pending inhibition notifications to cancel during unload/restart and packages all required backend modules with the release. *(v2.0.0)*
+- **Decky Music MPRIS playback monitoring** — recognizes current Decky Music releases through their public MPRIS playback events while retaining the legacy DeckyMusic compatibility path. Playback changes no longer require a repeated full-process scan. *(v2.0.1)*
+- **Nested Desktop playback monitoring** — automatically detects MPRIS playback on Nested Desktop session buses. Pausing, stopping, or exiting releases this playback inhibitor; configured manual rules remain unchanged. *(v2.0.4)*
+- **Ukrainian localization** — supports Steam's Ukrainian language setting alongside English and Simplified Chinese. *(v2.0.4)*
+- **Clearer diagnostics** — recent plugin events retain the latest 40 entries, can be cleared from the Diagnostics page, and now identify the application that added or removed a sleep rule or changed sleep-inhibition state. *(v2.0.1)*
+- **Process-list refinements** — preserves Unicode process names, avoids duplicate localized labels, and improves the refresh feedback and scrolling behavior in the app-rules page. *(v2.0.1)*
+- **Safer settings persistence** — validates setting values before saving, normalizes persisted values, and preserves malformed settings files for recovery instead of silently discarding them. *(v2.0.2)*
+- **Steam menu input compatibility** — supports current object-style `Unregister`/`unregister` handles alongside legacy function handles, and cleans up only valid handles without registering a null listener. *(v2.0.3)*
 
-## What's new in v2.0.1
+## What's new in v2.0.4
 
-- **Decky Music MPRIS playback monitoring** — recognizes current Decky Music releases through their public MPRIS playback events while retaining the legacy DeckyMusic compatibility path. Playback changes no longer require a repeated full-process scan.
-- **Clearer diagnostics** — recent plugin events retain the latest 40 entries, can be cleared from the Diagnostics page, and now identify the application that added or removed a sleep rule or changed sleep-inhibition state.
-- **Process-list refinements** — preserves Unicode process names, avoids duplicate localized labels, and improves the refresh feedback and scrolling behavior in the app-rules page.
+- Add Nested Desktop MPRIS playback detection and Ukrainian localization, preserving existing application rules and Chinese labels.
+- Add internal display power control while retaining the black overlay and shared input-wake setting.
+- Improve wake-request response and fix touch presses that scroll the action without activating it.
+- Strengthen display and power-profile recovery, isolating timed-out requests and retired plugin instances.
+- Refresh the panel when Decky reloads this plugin after an update, and prevent stale settings and query results from replacing newer state.
+- Improve D-Bus reconnection, request ownership checks, and listener cleanup.
+- Shorten UI descriptions, explain display wake delay, and clarify automatic suspend timeout labels.
+- Update build dependencies to remove known vulnerabilities and verify all required backend modules are packaged.
+
+## What's new in v2.0.3
+
+- Supports current object-style `Unregister`/`unregister` handles while retaining compatibility with legacy function handles.
+- Cleans up only valid listener handles and does not register a null listener, preventing Steam and Quick Access Menu short presses from failing after suspend and resume.
+
+## What's new in v2.0.2
+
+- Rejects invalid setting values and normalizes valid application rules before persistence.
+- Restores invalid persisted public settings to safe defaults during startup.
+- Preserves malformed settings files with a `.corrupt` suffix for troubleshooting and recovery.
 
 ## Screenshots
 
@@ -85,6 +109,8 @@ The package is created at `build/ScreenSaverEnhancements.zip`. Install it using 
 
 The plugin can check for updates from the bottom of its panel. When a newer release is available, open the update section, review the version and release notes, then start the upgrade there.
 
+Decky automatically reloads this plugin after installation; restarting the whole Decky Loader is unnecessary.
+
 To upgrade manually, download the latest release package, then select it through **Decky Settings** → **Developer** → **Install Plugin from ZIP**.
 
 ## Uninstall
@@ -95,14 +121,15 @@ To upgrade manually, download the latest release package, then select it through
 
 ## How it works
 
-The plugin uses two complementary sources of inhibition:
+The plugin uses three complementary sources of inhibition:
 
 - **D-Bus mode** registers standard sleep-inhibition services. When an application calls `Inhibit`, the backend pushes a state update and the frontend applies the configured SteamOS power behavior.
 - **Manual mode** watches the configured process rules. It prefers process events and automatically switches to low-frequency scanning when the event source is unavailable.
+- **Nested Desktop MPRIS** watches players on separate Nested Desktop session buses. Only active playback adds an inhibitor; a brief query failure retains the last confirmed playback state for a bounded grace period. Existing manual rules still apply independently, so a configured browser rule can keep inhibiting after media pauses.
 
 DeckyMusic is a specialized manual rule: its audio state is checked every five seconds only while the rule is configured. Normal manual application rules remain event-driven, with a 120-second fallback scan, so the two paths do not multiply process-scanning work.
 
-Both sources share the same state synchronization and power-control path. Before overriding power behavior, the plugin records the current settings; once every inhibitor ends, it restores that saved configuration instead of writing fixed defaults.
+All sources share the same state synchronization and power-control path. Before overriding power behavior, the plugin records the current settings; once every inhibitor ends, it restores that saved configuration instead of writing fixed defaults.
 
 ## Development
 

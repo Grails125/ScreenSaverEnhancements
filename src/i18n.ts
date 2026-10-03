@@ -2,11 +2,12 @@ import en from './i18n/en.json'
 import uk from './i18n/uk.json'
 import zhCn from './i18n/zh-cn.json'
 
-const languages = {
+type TranslationKey = keyof typeof en
+const languages: Record<'en' | 'uk' | 'zhCn', Partial<Record<TranslationKey, string>>> = {
   en,
   uk,
   zhCn,
-} as const
+}
 
 function getCurrentLanguage(): keyof typeof languages {
   const steamLang = String(
@@ -30,14 +31,9 @@ function getCurrentLanguage(): keyof typeof languages {
 }
 
 function useTranslations(lang: keyof typeof languages) {
-  return function (key: keyof (typeof languages)['en']): string {
-    if (languages[lang]?.[key]?.length) {
-      return languages[lang][key]
-    } else if (languages.en?.[key]?.length) {
-      return languages.en[key]
-    } else {
-      return key.toString()
-    }
+  return function (key: TranslationKey): string {
+    const translated = languages[lang][key]
+    return translated?.length ? translated : en[key] || key
   }
 }
 

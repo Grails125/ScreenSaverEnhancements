@@ -2,6 +2,7 @@ type Listener<T> = (value: T) => void;
 
 class BaseState<T> {
   private state: T;
+  private revision = 0;
   private listeners: Listener<T>[] = [];
 
   constructor(initialValue: T) {
@@ -20,6 +21,7 @@ class BaseState<T> {
   }
 
   SetState(value: T) {
+    this.revision++;
     if (this.state === value) return;
     this.state = value;
     this.listeners.forEach(listener => listener(value));
@@ -27,6 +29,10 @@ class BaseState<T> {
 
   GetState(): T {
     return this.state;
+  }
+
+  GetRevision(): number {
+    return this.revision;
   }
 }
 

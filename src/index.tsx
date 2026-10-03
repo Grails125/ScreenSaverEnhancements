@@ -38,12 +38,21 @@ import {
 import { Diagnostics } from './diagnostics'
 import { InhibitStatus, PluginServerApi, RunningProcess, serverApi } from './deckyApi'
 import { createPushListenerHealth } from './pushListenerHealth'
+import { createRuntimeSyncScheduler } from './runtimeSync'
 import { resetSecondaryPageScroll } from './panelNavigation'
 import { StateNumber } from './state'
+import { DisplayOffSession } from './displayOffSession'
+import { DisplayOffSection } from './displayOffSection'
+import { DisplayOffSurface } from './displayOffSurface'
+import { getDisplayPower, setDisplayPower } from './displayPower'
+import { subscribeDisplayWake } from './displayWakeInput'
+import { createNativePowerWriter, createPowerLifecycle, withPowerTimeout } from './powerLifecycle'
+import { createPowerEditor, PowerEditor } from './powerEditing'
+import { createHotReloadContent } from './hotReloadContent'
 import { usePluginUpdate } from './usePluginUpdate'
 import { EventChannelDiagnostics, useDiagnosticsData } from './useDiagnosticsData'
 import { useAppRulesData } from './useAppRulesData'
-import { usePluginSettings } from './usePluginSettings'
+import { disposePluginSettings, usePluginSettings } from './usePluginSettings'
 import {
   DEFAULT_POWER_SETTINGS,
   getPowerSyncAction,
@@ -59,18 +68,17 @@ import {
 } from './powerSettings'
 
 import {
-  areStringArraysEqual,
   clampOpacity,
   getPluginBooleanSetting,
   getPluginNumberSetting,
   getPluginSetting,
-  isPluginSettingSaveSuccessful,
   normalizeManualApps,
+  parseBooleanSetting,
   setPluginSetting,
-  setPluginSettings,
 } from './settingsClient'
 
 let showNotify     = false;
+const showNotifyState = new StateNumber(0);
 let language = i18n.getCurrentLanguage()
 const t = i18n.useTranslations(language)
 const POWER_SETTING_KEYS = {
@@ -339,30 +347,54 @@ const PANEL_STYLES = {
 }
 
 const APP_NAMES: Record<string, string> = {
-  "DeckyMusic": "DeckyMusic",
-  "vlc": "VLC",
-  "mpv": "MPV",
-  "chrome": "Google Chrome",
-  "firefox-bin": "Firefox",
-  "wiliwili": "Wiliwili (Bilibili)",
-  "steam": "Steam",
-  "gamescope": "Gamescope",
+  "DeckyMusic": "DeckyMusic(1.0以下)",
+  "vlc": "VLC 播放器",
+  "mpv": "MPV 播放器",
+  "chrome": "谷歌浏览器",
+  "msedge": "Microsoft Edge 浏览器",
+  "firefox-bin": "火狐浏览器",
+  "wiliwili": "Wiliwili (B站)",
+  "steam": "Steam 客户端",
+  "gamescope": "游戏窗口管理器",
   "discord": "Discord",
-  "obs": "OBS Studio",
-  "retroarch": "RetroArch",
-  "dolphin-emu": "Dolphin",
-  "pcsx2": "PCSX2",
-  "kodi": "Kodi",
-  "bash": "Bash",
-  "python": "Python",
-  "node": "Node.js",
-  "flatpak": "Flatpak",
+  "obs": "OBS 录屏软件",
+  "retroarch": "RetroArch 模拟器",
+  "dolphin-emu": "Dolphin 模拟器",
+  "pcsx2": "PCSX2 模拟器",
+  "kodi": "Kodi 媒体中心",
+  "bash": "终端 (Bash)",
+  "python": "Python 脚本",
+  "node": "Node.js 应用",
+  "flatpak": "Flatpak 管理器",
+};
+
+const APP_NAME_KEYS: Record<string, Parameters<typeof t>[0]> = {
+  "DeckyMusic": "App Name DeckyMusic",
+  "vlc": "App Name vlc",
+  "mpv": "App Name mpv",
+  "chrome": "App Name chrome",
+  "msedge": "App Name msedge",
+  "firefox-bin": "App Name firefox-bin",
+  "wiliwili": "App Name wiliwili",
+  "steam": "App Name steam",
+  "gamescope": "App Name gamescope",
+  "discord": "App Name discord",
+  "obs": "App Name obs",
+  "retroarch": "App Name retroarch",
+  "dolphin-emu": "App Name dolphin-emu",
+  "pcsx2": "App Name pcsx2",
+  "kodi": "App Name kodi",
+  "bash": "App Name bash",
+  "python": "App Name python",
+  "node": "App Name node",
+  "flatpak": "App Name flatpak",
 };
 
 const getAppDisplayName = (application?: string) => {
   const normalized = application?.trim() || "";
-  const shortName = normalized.split('.').pop() || normalized;
-  return APP_NAMES[normalized] || APP_NAMES[shortName] || normalized;
+  const shortName = normalized.split(/[/.]/).pop() || normalized;
+  const key = APP_NAME_KEYS[normalized] || APP_NAME_KEYS[shortName];
+  return key ? t(key) : APP_NAMES[normalized] || APP_NAMES[shortName] || normalized;
 }
 const RUN_ON_LOGIN = "run_on_login"
 const SHOW_NOTIFY  = "show_notify"
@@ -469,7 +501,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
           <div style={PANEL_STYLES.processItem}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
               <span style={{color: '#5db9ff', fontWeight: 'bold'}}>●</span>
-              <span style={PANEL_STYLES.processName}>{APP_NAMES[app] || app}</span>
+              <span style={PANEL_STYLES.processName}>{getAppDisplayName(app)}</span>
             </div>
             <Focusable
               style={PANEL_STYLES.panelAction}
@@ -496,7 +528,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
         <PanelSectionRow>
           <div style={PANEL_STYLES.processItem}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-              <span style={PANEL_STYLES.processName}>{APP_NAMES[inhibitStatus.manual_active_app] || inhibitStatus.manual_active_app}</span>
+              <span style={PANEL_STYLES.processName}>{getAppDisplayName(inhibitStatus.manual_active_app)}</span>
               <span style={PANEL_STYLES.sectionHint}>{t('Manual Inhibit Source')}</span>
             </div>
             <span style={PANEL_STYLES.badge('app')}>{t('Active')}</span>
@@ -514,12 +546,12 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
           </div>
         </PanelSectionRow>
       )}
-      {inhibitStatus.nested_mpris_sources.map((source) => (
-        <PanelSectionRow key={source.service || source.application}>
+      {inhibitStatus.nested_mpris_sources.map((source, index) => (
+        <PanelSectionRow key={`${source.service}:${source.application}:${index}`}>
           <div style={PANEL_STYLES.processItem}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
               <span style={PANEL_STYLES.processName}>
-                {APP_NAMES[source.application] || source.application}
+                {getAppDisplayName(source.application)}
               </span>
               <span style={PANEL_STYLES.sectionHint}>
                 {t('Nested MPRIS Inhibit Source')}
@@ -533,7 +565,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
         <PanelSectionRow key={request.cookie}>
           <div style={PANEL_STYLES.processItem}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-              <span style={PANEL_STYLES.processName}>{APP_NAMES[request.application] || request.application}</span>
+              <span style={PANEL_STYLES.processName}>{getAppDisplayName(request.application)}</span>
               <span style={PANEL_STYLES.sectionHint}>{request.reason || t('DBus Inhibit Source')}</span>
             </div>
             <span style={PANEL_STYLES.badge('system')}>{t('Active')}</span>
@@ -565,7 +597,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
         {runningProcesses
           .filter(p => !manualApps.includes(p.name))
           .map(proc => {
-            const displayName = APP_NAMES[proc.name] || proc.name;
+            const displayName = getAppDisplayName(proc.name);
             return (
               <PanelSectionRow key={proc.name}>
               <div style={PANEL_STYLES.processItem}>
@@ -573,7 +605,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={PANEL_STYLES.processName}>{displayName}</span>
                     <span style={PANEL_STYLES.badge(proc.type)}>
-                      {proc.type === 'app' ? "APP" : "SYS"}
+                      {t(proc.type === 'app' ? 'Application Type' : 'System Type')}
                     </span>
                   </div>
                   {displayName !== proc.name && (
@@ -618,18 +650,31 @@ const formatDiagnosticEventType = (type: string) => {
 
 const formatDiagnosticEventDetail = (detail: string | undefined) => {
   if (!detail) return undefined;
+  if (detail.startsWith('nested_mpris_playing:')) {
+    const applications = detail.slice('nested_mpris_playing:'.length).split(',').map(getAppDisplayName);
+    return `${t('nested_mpris_playing')}: ${applications.join(', ')}`;
+  }
   const ruleChange = /^(manual_app_rule_added|manual_app_rule_removed):(.+)$/.exec(detail);
   if (ruleChange) {
-    const application = APP_NAMES[ruleChange[2]] ?? ruleChange[2];
+    const application = getAppDisplayName(ruleChange[2]);
     return `${t(ruleChange[1] === 'manual_app_rule_added' ? 'Added Rule' : 'Removed Rule')} ${application} ${t('Sleep Rule')}`;
   }
   const manualAppDetail = getManualAppInhibitDetail(detail);
   if (manualAppDetail) {
-    const application = APP_NAMES[manualAppDetail.application] ?? manualAppDetail.application;
+    const application = getAppDisplayName(manualAppDetail.application);
     return `${application} ${t(manualAppDetail.action === 'inhibiting' ? 'Disabled Sleep' : 'Restored Sleep')}`;
   }
   const message = getDiagnosticEventDetailMessage(detail);
   return 'key' in message ? t(message.key) : message.fallback;
+};
+
+const formatDbusDiagnosticEvent = (event: { type: string; detail?: string; application?: string; reason?: string; cookie?: number }) => {
+  if (event.type !== 'dbus_request') return undefined;
+  const action = event.detail === 'uninhibit' ? t('UnInhibit') : t('Inhibit');
+  const application = event.application ?? t('Unknown Application');
+  const cookie = event.cookie === undefined ? '' : ` #${event.cookie}`;
+  const reason = event.reason ? ` — ${event.reason}` : '';
+  return `${action} ${application}${cookie}${reason}`;
 };
 
 const DiagnosticRow: FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
@@ -756,6 +801,10 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
           <DiagnosticRow label={t('Manual Rule Count')} value={diagnostics.manualRuleCount} />
           <DiagnosticRow label={t('Active Application')} value={diagnostics.manualActiveApp || t('None')} />
           <DiagnosticRow label={t('Active D-Bus Inhibit Requests')} value={diagnostics.dbusRequestCount} />
+          <DiagnosticRow label={t('Nested MPRIS Inhibit Source')} value={diagnostics.nestedMprisActive ? diagnostics.nestedMprisSources.map(source => getAppDisplayName(source.application)).join(', ') || t('Active') : t('None')} />
+          <DiagnosticRow label={t('Nested MPRIS Bus Count')} value={diagnostics.nestedMprisBusCount} />
+          <DiagnosticRow label={t('Nested MPRIS Scan Count')} value={diagnostics.nestedMprisScanCount} />
+          <DiagnosticRow label={t('Nested MPRIS Last Scan')} value={formatDiagnosticTime(diagnostics.nestedMprisLastScanAt)} />
           <DiagnosticRow label={t('Power Recovery Active')} value={diagnostics.powerOverrideActive ? t('Yes') : t('No')} />
         </PanelSection>
 
@@ -835,7 +884,8 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
           {diagnostics.recentEvents.length === 0 ? (
             <PanelSectionRow><div style={PANEL_STYLES.emptyState}>{t('No Recent Events')}</div></PanelSectionRow>
           ) : diagnostics.recentEvents.slice().reverse().map((event, index) => {
-            const eventDetail = formatDiagnosticEventDetail(event.detail);
+            const eventDetail = formatDbusDiagnosticEvent(event)
+              ?? formatDiagnosticEventDetail(event.detail);
             return (
               <PanelSectionRow key={`${event.timestamp}-${event.type}-${index}`}>
                 <div style={PANEL_STYLES.processItem}>
@@ -873,19 +923,20 @@ const Content: FC<{
   backendState: StateNumber;
   overlayState: StateNumber;
   opacityState: StateNumber;
-  onPowerSettingsLoaded: (settings: PowerSettings) => void;
-  onPowerSettingsApply: (settings: PowerSettings) => Promise<void>;
+  displayOffState: StateNumber;
+  onDisplayOff: () => Promise<void>;
+  powerEditor: PowerEditor;
   readSystemPowerSettings: () => Promise<PowerSettings | null>;
   onMonitorChanged: () => Promise<void>;
   getEventChannelDiagnostics: () => EventChannelDiagnostics;
-}> = ({serverApi, backendState, overlayState, opacityState, onPowerSettingsLoaded, onPowerSettingsApply, readSystemPowerSettings, onMonitorChanged, getEventChannelDiagnostics}) => {
+}> = ({serverApi, backendState, overlayState, opacityState, displayOffState, onDisplayOff, powerEditor, readSystemPowerSettings, onMonitorChanged, getEventChannelDiagnostics}) => {
   const [running, setRunning] = useState<boolean>(backendState.GetState() === 1);
   const [notify, setNotify] = useState<boolean>(showNotify);
   const [blackBackground, setBlackBackground] = useState<boolean>(overlayState.GetState() === 1);
   const [blackBackgroundOpacity, setBlackBackgroundOpacity] = useState<number>(opacityState.GetState());
   const [closeOnAnyKey, setCloseOnAnyKey] = useState<boolean>(false);
   const [closeOnAnyKeyLoaded, setCloseOnAnyKeyLoaded] = useState<boolean>(false);
-  const [powerSettings, setPowerSettings] = useState<PowerSettings>(DEFAULT_POWER_SETTINGS);
+  const [powerSettings, setPowerSettings] = useState<PowerSettings>(() => powerEditor.getSettings());
   const [powerConfigCollapsed, setPowerConfigCollapsed] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(POWER_CONFIG_COLLAPSED_KEY);
@@ -904,13 +955,78 @@ const Content: FC<{
   const requestTokenRef = useRef(0);
   const opacitySaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingOpacityRef = useRef<number | null>(null);
-  const persistedOpacityRef = useRef(opacityState.GetState());
 
   const isCurrentRequest = (token: number) => {
     return panelVisible.current && requestTokenRef.current === token;
   }
 
-  const { saveSetting } = usePluginSettings(serverApi, t);
+  const { saveSetting, getEditor, reportSaveFailure, isActive } = usePluginSettings(serverApi, t);
+  const notifyEditor = getEditor(SHOW_NOTIFY, showNotify, undefined, {
+    publish: enabled => { showNotify = enabled; showNotifyState.SetState(enabled ? 1 : 0); },
+    subscribe: listener => {
+      const changed = (mode: number) => listener(mode === 1);
+      showNotifyState.onStateChanged(changed);
+      return () => showNotifyState.offStateChanged(changed);
+    },
+  });
+  const closeOnAnyKeyEditor = getEditor(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false);
+  const manualAppsEditor = getEditor<string[]>("manual_apps", []);
+  const blackBackgroundEditor = getEditor(BLACK_BACKGROUND_ENABLED, overlayState.GetState() === 1, undefined, {
+    publish: enabled => overlayState.SetState(enabled ? 1 : 0),
+    subscribe: listener => {
+      const changed = (mode: number) => listener(mode === 1);
+      overlayState.onStateChanged(changed);
+      return () => overlayState.offStateChanged(changed);
+    },
+  });
+  const opacityEditor = getEditor(BLACK_BACKGROUND_OPACITY, opacityState.GetState(), undefined, {
+    publish: opacity => { if (pendingOpacityRef.current === null) opacityState.SetState(opacity); },
+    subscribe: listener => {
+      const changed = (value: number) => listener(clampOpacity(value));
+      opacityState.onStateChanged(changed);
+      return () => opacityState.offStateChanged(changed);
+    },
+    shouldAcceptExternal: () => pendingOpacityRef.current === null,
+  });
+  const monitorEditor = getEditor(RUN_ON_LOGIN, backendState.GetState() === 1, async (checked, previous) => {
+    if (!await saveSetting(RUN_ON_LOGIN, checked, () => undefined)) return false;
+    if (!isActive()) return false;
+    try {
+      const succeeded = checked ? await serverApi.startBackend() : await serverApi.stopBackend();
+      if (!isActive()) return false;
+      if (succeeded !== true) throw new Error("backend lifecycle RPC failed");
+      await onMonitorChanged();
+      if (!isActive()) return false;
+      notifyMonitorStatus(checked);
+      return true;
+    } catch {
+      if (!isActive()) return false;
+      await setPluginSetting(serverApi, RUN_ON_LOGIN, previous);
+      if (!isActive()) return false;
+      try {
+        if (previous) await serverApi.startBackend(); else await serverApi.stopBackend();
+        if (!isActive()) return false;
+        await onMonitorChanged();
+        if (!isActive()) return false;
+      } catch (error) {
+        console.warn("[ScreenSaverEnhancements] Could not restore background monitor", error);
+      }
+      if (!isActive()) return false;
+      serverApi.toaster.toast({
+        title: t("Background Monitor Failed"), body: t("Settings Save Failed Body"),
+        icon: <GiNightSleep />, critical: true, duration: 4000,
+      });
+      return false;
+    }
+  }, {
+    publish: enabled => backendState.SetState(enabled ? 1 : 0),
+    subscribe: listener => {
+      const changed = (mode: number) => listener(mode === 1);
+      backendState.onStateChanged(changed);
+      return () => backendState.offStateChanged(changed);
+    },
+    shouldAcceptExternal: (): boolean => !monitorEditor.isPending(),
+  });
 
   const {
     pluginVersion,
@@ -950,19 +1066,7 @@ const Content: FC<{
 
   const applySystemPowerSettings = async () => {
     try {
-      const systemSettings = await readSystemPowerSettings();
-      if (!systemSettings) return;
-
-      setPowerSettings(systemSettings);
-      onPowerSettingsLoaded(systemSettings);
-      const response = await setPluginSettings(serverApi, Object.fromEntries(
-        (Object.keys(POWER_SETTING_KEYS) as Array<keyof PowerSettings>).map(
-          key => [POWER_SETTING_KEYS[key], systemSettings[key]],
-        ),
-      ));
-      if (!isPluginSettingSaveSuccessful(response)) {
-        console.warn("[ScreenSaverEnhancements] Could not persist synchronized power settings");
-      }
+      await powerEditor.synchronize(readSystemPowerSettings);
     } catch (error) {
       console.warn("[ScreenSaverEnhancements] Could not synchronize system power settings", error);
     }
@@ -985,27 +1089,7 @@ const Content: FC<{
     opacitySaveTimeoutRef.current = null;
     if (opacity === null) return;
 
-    try {
-      const response = await setPluginSetting(serverApi, BLACK_BACKGROUND_OPACITY, opacity);
-      if (isPluginSettingSaveSuccessful(response)) {
-        persistedOpacityRef.current = opacity;
-        return;
-      }
-    } catch (error) {
-      console.warn("[ScreenSaverEnhancements] Could not save black background opacity", error);
-    }
-
-    if (pendingOpacityRef.current !== null) return;
-    const previous = persistedOpacityRef.current;
-    setBlackBackgroundOpacity(previous);
-    opacityState.SetState(previous);
-    serverApi.toaster.toast({
-      title: t("Settings Save Failed"),
-      body: t("Settings Save Failed Body"),
-      icon: <GiNightSleep />,
-      critical: true,
-      duration: 4000,
-    });
+    if (!await opacityEditor.edit(() => opacity) && panelVisible.current) reportSaveFailure();
   }
 
   const scheduleOpacitySave = (opacity: number) => {
@@ -1022,20 +1106,10 @@ const Content: FC<{
     field: keyof PowerSettings,
     value: unknown,
   ) => {
-    const previous = powerSettings;
-    const next = normalizePowerSettings({ ...powerSettings, [field]: value });
-    setPowerSettings(next);
-    const saved = await saveSetting(POWER_SETTING_KEYS[field], next[field], () => {
-      setPowerSettings(previous);
-    });
-    if (!saved) return;
-
     try {
-      await onPowerSettingsApply(next);
+      await powerEditor.edit(field, value);
     } catch (error) {
       console.error("[ScreenSaverEnhancements] Could not apply power settings", error);
-      setPowerSettings(previous);
-      void setPluginSetting(serverApi, POWER_SETTING_KEYS[field], previous[field]);
       serverApi.toaster.toast({
         title: t("Power Settings Apply Failed"),
         body: t("Power Settings Apply Failed Body"),
@@ -1046,27 +1120,38 @@ const Content: FC<{
     }
   }
 
+  useEffect(() => powerEditor.subscribe(setPowerSettings), [powerEditor]);
+
+  useEffect(() => {
+    const releaseNotify = notifyEditor.subscribe(setNotify);
+    const releaseAnyKey = closeOnAnyKeyEditor.subscribe(setCloseOnAnyKey);
+    const releaseMonitor = monitorEditor.subscribe(setRunning);
+    const releaseApps = manualAppsEditor.subscribe(setManualApps);
+    const releaseBlack = blackBackgroundEditor.subscribe(setBlackBackground);
+    const releaseOpacity = opacityEditor.subscribe(opacity => {
+      // A newer slider preview may still be waiting for its debounce timer.
+      if (pendingOpacityRef.current !== null) return;
+      setBlackBackgroundOpacity(opacity);
+    });
+    return () => { releaseNotify(); releaseAnyKey(); releaseMonitor(); releaseApps(); releaseBlack(); releaseOpacity(); };
+  }, [notifyEditor, closeOnAnyKeyEditor, monitorEditor, manualAppsEditor, blackBackgroundEditor, opacityEditor, backendState, overlayState, opacityState]);
+
   useEffect(() => {
     panelVisible.current = true;
     const token = requestTokenRef.current + 1;
     requestTokenRef.current = token;
     const fetchManualApps = async () => {
-      const storedApps = await getPluginSetting(serverApi, "manual_apps", []);
-      if (!isCurrentRequest(token)) return;
-
-      const normalizedApps = normalizeManualApps(storedApps);
-      setManualApps(normalizedApps);
-      if (Array.isArray(storedApps) && !areStringArraysEqual(normalizedApps, storedApps)) {
-        await setPluginSetting(serverApi, "manual_apps", normalizedApps);
-      }
+      await manualAppsEditor.synchronize(async () =>
+        normalizeManualApps(await getPluginSetting(serverApi, "manual_apps", [])));
     };
     fetchManualApps();
     refreshInhibitStatus();
 
     const loadBackendState = async () => {
+      const revision = backendState.GetRevision();
       try {
         const isRunning = await serverApi.isRunning();
-        if (!isCurrentRequest(token)) return;
+        if (!isCurrentRequest(token) || backendState.GetRevision() !== revision) return;
         backendState.SetState(isRunning ? 1 : 0);
         setRunning(isRunning);
       } catch (error) {
@@ -1075,54 +1160,35 @@ const Content: FC<{
     };
     loadBackendState();
 
+    const loadNotifySettings = async () => {
+      try {
+        await notifyEditor.synchronize(async () => parseBooleanSetting(
+          await serverApi.getSetting(SHOW_NOTIFY, false), false));
+      } catch (error) {
+        console.warn('[ScreenSaverEnhancements] Could not load notification setting', error);
+      }
+    };
+    void loadNotifySettings();
+
     const loadBlackBackgroundSettings = async () => {
-      const [enabled, opacityValue, closeOnAnyKey] = await Promise.all([
-        getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_ENABLED, false),
-        getPluginNumberSetting(serverApi, BLACK_BACKGROUND_OPACITY, 1),
-        getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false),
+      await Promise.all([
+        blackBackgroundEditor.synchronize(() =>
+          getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_ENABLED, false)),
+        opacityEditor.synchronize(async () => clampOpacity(
+          await getPluginNumberSetting(serverApi, BLACK_BACKGROUND_OPACITY, 1))),
+        closeOnAnyKeyEditor.synchronize(async () => parseBooleanSetting(
+          await serverApi.getSetting(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false), false))
+          .catch(error => console.warn('[ScreenSaverEnhancements] Could not load any-key setting', error)),
       ]);
       if (!isCurrentRequest(token)) return;
 
-      const opacity = clampOpacity(opacityValue);
-      persistedOpacityRef.current = opacity;
-      setBlackBackground(enabled);
-      overlayState.SetState(enabled ? 1 : 0);
-      setBlackBackgroundOpacity(opacity);
-      opacityState.SetState(opacity);
-      setCloseOnAnyKey(closeOnAnyKey);
       setCloseOnAnyKeyLoaded(true);
     };
     loadBlackBackgroundSettings();
 
     void loadPluginVersion(token);
 
-    const loadPowerSettings = async () => {
-      const [batteryDim, acDim, batterySuspend, acSuspend] = await Promise.all([
-        getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batteryDim, DEFAULT_POWER_SETTINGS.batteryDim),
-        getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acDim, DEFAULT_POWER_SETTINGS.acDim),
-        getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batterySuspend, DEFAULT_POWER_SETTINGS.batterySuspend),
-        getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acSuspend, DEFAULT_POWER_SETTINGS.acSuspend),
-      ]);
-      if (!isCurrentRequest(token)) return;
-      const next = normalizePowerSettings({ batteryDim, acDim, batterySuspend, acSuspend });
-      setPowerSettings(next);
-      onPowerSettingsLoaded(next);
-      await applySystemPowerSettings();
-    };
-    loadPowerSettings();
-
-    const onOverlayChanged = (mode: number) => {
-      setBlackBackground(mode === 1);
-    };
-    const onBackendChanged = (mode: number) => {
-      setRunning(mode === 1);
-    };
-    const onOpacityChanged = (value: number) => {
-      setBlackBackgroundOpacity(Math.min(1, Math.max(0, value)));
-    };
-    backendState.onStateChanged(onBackendChanged);
-    overlayState.onStateChanged(onOverlayChanged);
-    opacityState.onStateChanged(onOpacityChanged);
+    void applySystemPowerSettings();
 
     return () => {
       panelVisible.current = false;
@@ -1131,12 +1197,10 @@ const Content: FC<{
         clearTimeout(opacitySaveTimeoutRef.current);
       }
       if (pendingOpacityRef.current !== null) {
-        void setPluginSetting(serverApi, BLACK_BACKGROUND_OPACITY, pendingOpacityRef.current);
+        const opacity = pendingOpacityRef.current;
         pendingOpacityRef.current = null;
+        void opacityEditor.edit(() => opacity);
       }
-      backendState.offStateChanged(onBackendChanged);
-      overlayState.offStateChanged(onOverlayChanged);
-      opacityState.offStateChanged(onOpacityChanged);
     };
   }, [backendState, overlayState, opacityState]);
 
@@ -1162,17 +1226,16 @@ const Content: FC<{
   }, [powerConfigCollapsed]);
 
   const addApp = async (appName: string) => {
-    const newList = normalizeManualApps([...manualApps, appName]);
-    if (areStringArraysEqual(newList, manualApps)) return;
-    setManualApps(newList);
-    await saveSetting("manual_apps", newList, () => setManualApps(manualApps));
+    if (!await manualAppsEditor.edit(apps => normalizeManualApps([...apps, appName])) && panelVisible.current) {
+      reportSaveFailure();
+    }
   }
 
   const removeApp = async (app: string) => {
     const normalizedApp = String(app).trim();
-    const newList = normalizeManualApps(manualApps.filter(a => a !== normalizedApp));
-    setManualApps(newList);
-    await saveSetting("manual_apps", newList, () => setManualApps(manualApps));
+    if (!await manualAppsEditor.edit(apps => apps.filter(a => a !== normalizedApp)) && panelVisible.current) {
+      reportSaveFailure();
+    }
   }
 
   const openAppMenu = (trigger: HTMLElement) => {
@@ -1225,33 +1288,7 @@ const Content: FC<{
           <ToggleField
             label={t('Background Monitor')}
             description={t('plugin_switch_tip')}
-            onChange={async (checked) => {
-              const previous = running;
-              setRunning(checked)
-              backendState.SetState(checked ? 1 : 0)
-              if (!await saveSetting(RUN_ON_LOGIN, checked, () => {
-                setRunning(previous)
-                backendState.SetState(previous ? 1 : 0)
-              })) return;
-
-              try {
-                const succeeded = checked ? await serverApi.startBackend() : await serverApi.stopBackend();
-                if (succeeded !== true) throw new Error("backend lifecycle RPC failed");
-                await onMonitorChanged();
-                notifyMonitorStatus(checked);
-              } catch {
-                setRunning(previous)
-                backendState.SetState(previous ? 1 : 0)
-                await setPluginSetting(serverApi, RUN_ON_LOGIN, previous);
-                serverApi.toaster.toast({
-                  title: t("Background Monitor Failed"),
-                  body: t("Settings Save Failed Body"),
-                  icon: <GiNightSleep />,
-                  critical: true,
-                  duration: 4000,
-                });
-              }
-            }}
+            onChange={(checked) => { void monitorEditor.edit(() => checked); }}
             checked={running}
           />
         </PanelSectionRow>
@@ -1260,13 +1297,7 @@ const Content: FC<{
             label={t('Show Notify')}
             description={t('notify_tip')}
             onChange={async (checked) => {
-              const previous = notify;
-              setNotify(checked)
-              showNotify = checked
-              await saveSetting(SHOW_NOTIFY, checked, () => {
-                setNotify(previous)
-                showNotify = previous
-              });
+              if (!await notifyEditor.edit(() => checked) && panelVisible.current) reportSaveFailure();
             }}
             checked={notify}
           />
@@ -1362,20 +1393,19 @@ const Content: FC<{
         </>}
       </PanelSection>
 
+      <DisplayOffSection state={displayOffState} onActivate={onDisplayOff} />
+
       <PanelSection title={t('Black Background Section')}>
         <PanelSectionRow>
           <ToggleField
             label={t('Black Background')}
             description={renderBlackBackgroundTip()}
             onChange={async (checked) => {
-              const previous = blackBackground;
-              setBlackBackground(checked)
-              overlayState.SetState(checked ? 1 : 0)
-              if (!await saveSetting(BLACK_BACKGROUND_ENABLED, checked, () => {
-                setBlackBackground(previous)
-                overlayState.SetState(previous ? 1 : 0)
-              })) return;
-              if (checked) {
+              if (!await blackBackgroundEditor.edit(() => checked)) {
+                if (panelVisible.current) reportSaveFailure();
+                return;
+              }
+              if (checked && blackBackgroundEditor.getValue() && panelVisible.current) {
                 Navigation.CloseSideMenus()
               }
             }}
@@ -1394,9 +1424,9 @@ const Content: FC<{
             description={t('black_opacity_tip')}
             onChange={(value) => {
               const normalizedOpacity = Math.min(1, Math.max(0, value / 100));
+              scheduleOpacitySave(normalizedOpacity);
               setBlackBackgroundOpacity(normalizedOpacity);
               opacityState.SetState(normalizedOpacity);
-              scheduleOpacitySave(normalizedOpacity);
             }}
           />
         </PanelSectionRow>
@@ -1406,11 +1436,7 @@ const Content: FC<{
               label={t('Close On Any Key')}
               description={t('close_anykey_tip')}
               onChange={async (checked) => {
-                const previous = closeOnAnyKey;
-                setCloseOnAnyKey(checked)
-                await saveSetting(BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, checked, () => {
-                  setCloseOnAnyKey(previous)
-                });
+                if (!await closeOnAnyKeyEditor.edit(() => checked) && panelVisible.current) reportSaveFailure();
               }}
               checked={closeOnAnyKey}
             />
@@ -1504,11 +1530,33 @@ const Content: FC<{
 
 
 export default definePlugin(() => {
+  const powerLifecycle = createPowerLifecycle(window);
+  const nativePowerWriter = createNativePowerWriter(window, {
+    onComplete: settings => powerLifecycle.recordPowerWrite(settings),
+    onError: async error => {
+      console.warn('[ScreenSaverEnhancements] Late native power recovery failed', error);
+      if (!await initialConfiguredProfileLoaded || !pluginActive) return;
+      // A successful newer transaction may already have cleared its snapshot.
+      // Preserve the user profile if compensating a late write now fails too.
+      await enqueuePowerOperation(async () => {
+        const state = await getPowerOverrideState();
+        if (!pluginActive || state.owner !== powerOwner) return;
+        if (!state.active && !await beginPowerOverride(configuredPowerSettings, state.owner ?? null)) {
+          throw new Error('Could not preserve the late native recovery profile');
+        }
+      });
+    },
+  });
+  const newPowerOwner = () => `sse:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  let powerOwner = newPowerOwner();
+  let ownershipUncertain = false;
   const backendState = new StateNumber(0);
   const overlayState = new StateNumber(0);
   const opacityState = new StateNumber(1);
+  const displayOffState = new StateNumber(0);
   let configuredPowerSettings: PowerSettings = { ...DEFAULT_POWER_SETTINGS };
   let backendInhibiting = false;
+  let displayOffInhibiting = false;
 
   const setConfiguredPowerSettings = (settings: PowerSettings) => {
     configuredPowerSettings = { ...settings };
@@ -1589,23 +1637,46 @@ export default definePlugin(() => {
   }
 
   async function updateSetting(battery_idle: number, ac_idle: number, battery_suspend: number, ac_suspend: number) {
-    let _battery_idle = genSettings(SettingDef.battery_idle, battery_idle);
-    let _ac_idle = genSettings(SettingDef.ac_idle, ac_idle);
-    let _battery_suspend = genSettings(SettingDef.battery_suspend, battery_suspend);
-    let _ac_suspend = genSettings(SettingDef.ac_suspend, ac_suspend);
-    await updateIdleSetting(_battery_idle+_ac_idle);
-    await updateSuspendSetting(_battery_suspend+_ac_suspend);
+    await nativePowerWriter.write({ batteryDim: battery_idle, acDim: ac_idle,
+      batterySuspend: battery_suspend, acSuspend: ac_suspend },
+    settings => updateIdleSetting(genSettings(SettingDef.battery_idle, settings.batteryDim)
+      + genSettings(SettingDef.ac_idle, settings.acDim)),
+    settings => updateSuspendSetting(genSettings(SettingDef.battery_suspend, settings.batterySuspend)
+      + genSettings(SettingDef.ac_suspend, settings.acSuspend)));
   }
 
   const readSystemPowerSettings = async (): Promise<PowerSettings | null> => {
+    let profile: PowerSettings | null = null;
     try {
-      const inhibitStatus = await serverApi.getInhibitStatus();
-      const result = await serverApi.getSystemPowerSettings();
-      const systemSettings = parseSteamPowerSettings(result);
-      if (!systemSettings) return null;
-
-      const isInhibiting = Boolean(inhibitStatus.is_inhibiting);
-      return shouldSyncSystemPowerSettings(systemSettings, isInhibiting) ? systemSettings : null;
+      await enqueuePowerOperation(async () => {
+        const [inhibitStatus, rawOverride, result] = await withPowerTimeout(Promise.all([
+          serverApi.getInhibitStatus(), serverApi.getPowerOverrideState(), serverApi.getSystemPowerSettings(),
+        ]), 'Read user power profile');
+        if (!pluginActive) return;
+        const override = parsePowerOverrideState(rawOverride);
+        if (override.active && override.snapshot) {
+          profile = override.snapshot;
+          return;
+        }
+        const systemSettings = parseSteamPowerSettings(result);
+        if (!systemSettings) return;
+        // Steam may flush config.vdf after the native write has already completed.
+        const lastSystemPowerWrite = powerLifecycle.getLastPowerWrite();
+        if (lastSystemPowerWrite) {
+          const matches = (Object.keys(systemSettings) as Array<keyof PowerSettings>).every(
+            key => systemSettings[key] === lastSystemPowerWrite.settings[key],
+          );
+          if (matches || Date.now() - lastSystemPowerWrite.at >= 5000) powerLifecycle.clearPowerWrite(lastSystemPowerWrite);
+          else {
+            profile = backendInhibiting || displayOffInhibiting || inhibitStatus.is_inhibiting
+              ? null : lastSystemPowerWrite.settings;
+            return;
+          }
+        }
+        const isInhibiting = backendInhibiting || displayOffInhibiting || Boolean(inhibitStatus.is_inhibiting);
+        profile = shouldSyncSystemPowerSettings(systemSettings, isInhibiting) ? systemSettings : null;
+      });
+      return profile;
     } catch (error) {
       console.warn("[ScreenSaverEnhancements] Could not read current power settings", error);
       return null;
@@ -1613,34 +1684,54 @@ export default definePlugin(() => {
   }
 
   const getPowerOverrideState = async (): Promise<PowerOverrideState> => {
-    try {
-      return parsePowerOverrideState(await serverApi.getPowerOverrideState());
-    } catch (error) {
-      console.warn("[ScreenSaverEnhancements] Could not read power recovery state", error);
-      return { active: false, snapshot: null };
-    }
+    return parsePowerOverrideState(await withPowerTimeout(serverApi.getPowerOverrideState(), 'Read power recovery state'));
   }
 
-  const beginPowerOverride = async (snapshot: PowerSettings) => {
+  const beginPowerOverride = async (snapshot: PowerSettings, expectedOwner: string | null = powerOwner) => {
+    const owner = newPowerOwner();
     try {
-      return await serverApi.beginPowerOverride(snapshot) === true;
+      const saved = await withPowerTimeout(serverApi.beginPowerOverride(snapshot, owner, expectedOwner), 'Save power recovery state') === true;
+      if (saved) {
+        powerOwner = owner;
+        ownershipUncertain = false;
+      }
+      return saved;
     } catch (error) {
+      ownershipUncertain = true;
       console.warn("[ScreenSaverEnhancements] Could not save power recovery state", error);
       return false;
     }
   }
 
-  const endPowerOverride = async () => {
+  const endPowerOverride = async (expectedOwner: string | null = powerOwner) => {
+    const owner = newPowerOwner();
     try {
-      return await serverApi.endPowerOverride() === true;
+      const cleared = await withPowerTimeout(serverApi.endPowerOverride(expectedOwner, owner), 'Clear power recovery state') === true;
+      if (cleared) {
+        powerOwner = owner;
+        ownershipUncertain = false;
+      }
+      return cleared;
     } catch (error) {
+      ownershipUncertain = true;
       console.warn("[ScreenSaverEnhancements] Could not clear power recovery state", error);
       return false;
     }
   }
 
+  const claimPowerOverride = async (state: PowerOverrideState): Promise<PowerOverrideState> => {
+    if (state.owner === powerOwner && !ownershipUncertain) return state;
+    const claimed = state.active && state.snapshot
+      ? await beginPowerOverride(state.snapshot, state.owner ?? null)
+      : await endPowerOverride(state.owner ?? null);
+    if (!claimed) {
+      throw new Error('Power recovery ownership changed');
+    }
+    return { ...state, owner: powerOwner };
+  };
+
   const restorePendingPowerOverride = async () => {
-    const state = await getPowerOverrideState();
+    const state = await claimPowerOverride(await getPowerOverrideState());
     if (!state.active || !state.snapshot) return false;
 
     await updateSetting(
@@ -1657,24 +1748,48 @@ export default definePlugin(() => {
     return cleared;
   }
 
-  const applyConfiguredPowerSettings = async (settings: PowerSettings) => {
-    const isInhibiting = !shouldApplyPowerSettingsImmediately(backendInhibiting);
-    if (!isInhibiting) {
-      await updateSetting(
-        settings.batteryDim,
-        settings.acDim,
-        settings.batterySuspend,
-        settings.acSuspend,
-      );
-    }
-    setConfiguredPowerSettings(settings);
+  const applyConfiguredPowerSettings = async (settings: PowerSettings, allowInactive = false) => {
+    await enqueuePowerOperation(async () => {
+      const isInhibiting = !shouldApplyPowerSettingsImmediately(backendInhibiting || displayOffInhibiting);
+      const state = await claimPowerOverride(await getPowerOverrideState());
+      if (isInhibiting) {
+        if (!await beginPowerOverride(settings, state.owner ?? null)) {
+          throw new Error('Could not update the power override recovery snapshot');
+        }
+      } else {
+        const previous = state.snapshot ?? configuredPowerSettings;
+        if (!state.active && !await beginPowerOverride(previous, state.owner ?? null)) {
+          throw new Error('Could not save the profile before editing power settings');
+        }
+        await updateSetting(
+          settings.batteryDim,
+          settings.acDim,
+          settings.batterySuspend,
+          settings.acSuspend,
+        );
+        {
+          if (!await beginPowerOverride(settings)) {
+            try {
+              await updateSetting(previous.batteryDim, previous.acDim,
+                previous.batterySuspend, previous.acSuspend);
+            } catch (error) {
+              console.warn('[ScreenSaverEnhancements] Profile rollback failed; keeping recovery state', error);
+            }
+            throw new Error('Could not update the pending power recovery snapshot');
+          }
+          await endPowerOverride();
+        }
+      }
+      setConfiguredPowerSettings(settings);
+    }, allowInactive);
   }
 
-  let timeout:NodeJS.Timeout;
-  const notify = (title: string, body: string) => {
-    if (!showNotify) return
+  let timeout: ReturnType<typeof setTimeout>;
+  const notify = (title: string, body: string, isCurrent: () => boolean = () => true) => {
+    if (!pluginActive || !showNotify || !isCurrent()) return
     clearTimeout(timeout)
     timeout = setTimeout(()=>{
+      if (!pluginActive || !showNotify || !isCurrent()) return;
       serverApi.toaster.toast({
         title: title,
         body: body,
@@ -1685,12 +1800,12 @@ export default definePlugin(() => {
     }, 2000)
   }
 
-  const notifyInhibitState = (application: string | undefined, active: boolean) => {
+  const notifyInhibitState = (application: string | undefined, active: boolean, isCurrent?: () => boolean) => {
     const displayName = getAppDisplayName(application);
     const body = active
       ? (displayName ? `${displayName} ${t("Inhibit")}` : t("Inhibit"))
       : t("UnInhibit");
-    notify(t("ScreenSaver"), body);
+    notify(t("ScreenSaver"), body, isCurrent);
   }
 
   const activateInhibit = async (
@@ -1708,7 +1823,12 @@ export default definePlugin(() => {
         notifyInhibitState(application, true)
       }
     } catch (error) {
-      await endPowerOverride();
+      try {
+        await updateSetting(snapshot.batteryDim, snapshot.acDim, snapshot.batterySuspend, snapshot.acSuspend);
+        await endPowerOverride();
+      } catch (restoreError) {
+        console.warn('[ScreenSaverEnhancements] Rollback failed; keeping the power recovery snapshot', restoreError);
+      }
       throw error;
     }
   }
@@ -1717,7 +1837,7 @@ export default definePlugin(() => {
     showRestoreNotification = true,
     knownState?: PowerOverrideState,
   ) => {
-    const state = knownState ?? await getPowerOverrideState();
+    const state = await claimPowerOverride(knownState ?? await getPowerOverrideState());
     const restoreSettings = state.snapshot ?? configuredPowerSettings;
     await updateSetting(
       restoreSettings.batteryDim,
@@ -1734,10 +1854,36 @@ export default definePlugin(() => {
     }
   }
 
+  const cancelPendingRestoreNotification = () => {
+    restoreNotificationRevision += 1;
+    if (restoreNotificationTimeout !== null) {
+      clearTimeout(restoreNotificationTimeout);
+      restoreNotificationTimeout = null;
+    }
+  };
+
+  const scheduleRestoreNotification = () => {
+    cancelPendingRestoreNotification();
+    const revision = restoreNotificationRevision;
+    const isCurrent = () => pluginActive && revision === restoreNotificationRevision
+      && !backendInhibiting && !displayOffInhibiting;
+    restoreNotificationTimeout = setTimeout(() => {
+      restoreNotificationTimeout = null;
+      if (!isCurrent()) return;
+      void serverApi.getInhibitStatus().then((latestStatus) => {
+        if (isCurrent() && !latestStatus.is_inhibiting) notifyInhibitState(undefined, false, isCurrent);
+      }).catch((error) => {
+        console.error("[ScreenSaverEnhancements] Delayed restore check failed", error);
+      });
+    }, 1500);
+  };
+
   let pluginActive = true;
   let unsubscribeSettingsChanged: (() => void) | null = null;
   let unsubscribeInhibitStateChanged: (() => void) | null = null;
   const pushListenerHealth = createPushListenerHealth();
+  let restoreNotificationTimeout: ReturnType<typeof setTimeout> | null = null;
+  let restoreNotificationRevision = 0;
   const eventChannelDiagnostics: Pick<
     EventChannelDiagnostics,
     'lastFullSyncAt' | 'lastFullSyncSuccessful'
@@ -1745,10 +1891,13 @@ export default definePlugin(() => {
     lastFullSyncAt: null,
     lastFullSyncSuccessful: null,
   };
-  let powerOperation = Promise.resolve();
+  let powerOperation = powerLifecycle.ready;
 
-  const enqueuePowerOperation = (operation: () => Promise<void>) => {
-    const operationResult = powerOperation.then(operation);
+  const enqueuePowerOperation = (operation: () => Promise<void>, allowInactive = false) => {
+    const operationResult = powerOperation.then(() => {
+      if (!pluginActive && !allowInactive) return;
+      return operation();
+    });
     powerOperation = operationResult
       .catch((error) => console.error("[ScreenSaverEnhancements] Power state update failed", error));
     return operationResult;
@@ -1756,13 +1905,14 @@ export default definePlugin(() => {
 
   const synchronizeRuntimeState = async (showStateNotification = false) => {
     try {
-      const [running, inhibitStatus, rawOverrideState, rawSystemSettings] = await Promise.all([
+      const [running, inhibitStatus, rawOverrideState, rawSystemSettings] = await withPowerTimeout(Promise.all([
         serverApi.isRunning(),
         serverApi.getInhibitStatus(),
         serverApi.getPowerOverrideState(),
         serverApi.getSystemPowerSettings(),
-      ]);
-      const overrideState = parsePowerOverrideState(rawOverrideState);
+      ]), 'Synchronize power state');
+      if (!pluginActive) return;
+      const overrideState = await claimPowerOverride(parsePowerOverrideState(rawOverrideState));
       const systemSettings = parseSteamPowerSettings(rawSystemSettings);
       const activeApplication = inhibitStatus.manual_active_app
         ?? inhibitStatus.dbus_requests[0]?.application;
@@ -1770,11 +1920,12 @@ export default definePlugin(() => {
 
       backendState.SetState(running ? 1 : 0);
       backendInhibiting = running && inhibitStatus.is_inhibiting;
+      if (backendInhibiting || displayOffInhibiting) cancelPendingRestoreNotification();
 
       if (overrideState.active && overrideState.snapshot) {
         setConfiguredPowerSettings(overrideState.snapshot);
       }
-      const shouldBeInhibiting = backendInhibiting;
+      const shouldBeInhibiting = backendInhibiting || displayOffInhibiting;
       const action = getPowerSyncAction(shouldBeInhibiting, overrideState, systemSettings);
       if (action === "start") {
         const snapshot = systemSettings && shouldSyncSystemPowerSettings(systemSettings, true)
@@ -1784,7 +1935,8 @@ export default definePlugin(() => {
       } else if (action === "reapply") {
         await updateSetting(0, 0, 0, 0);
       } else if (action === "restore") {
-        await stopInhibit(notifyStateChange, overrideState);
+        await stopInhibit(false, overrideState);
+        if (notifyStateChange) scheduleRestoreNotification();
       }
       eventChannelDiagnostics.lastFullSyncAt = Math.floor(Date.now() / 1000);
       eventChannelDiagnostics.lastFullSyncSuccessful = true;
@@ -1795,6 +1947,54 @@ export default definePlugin(() => {
     }
   }
 
+  let lastDisplayOffErrorAt = 0;
+  let displayOffCloseOnAnyKey = false;
+  const reportDisplayOffError = (error: unknown) => {
+    console.error('[ScreenSaverEnhancements] Display-off session failed', error);
+    if (!pluginActive || Date.now() - lastDisplayOffErrorAt < 10000) return;
+    lastDisplayOffErrorAt = Date.now();
+    serverApi.toaster.toast({
+      title: t('Display Off Failed'), body: t('Display Off Failed Body'),
+      icon: <GiNightSleep />, critical: true, duration: 4000,
+    });
+  };
+
+  const displayOffSession = new DisplayOffSession({
+    getDisplayPower,
+    setDisplayPower,
+    prepare: async () => {
+      displayOffCloseOnAnyKey = await withPowerTimeout(
+        getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false), 'Read display wake setting');
+      if (overlayState.GetState() === 1) {
+        if (!await withPowerTimeout(setPluginSetting(serverApi, BLACK_BACKGROUND_ENABLED, false), 'Close black overlay')) {
+          throw new Error('Could not close the black overlay');
+        }
+        overlayState.SetState(0);
+      }
+      Navigation.CloseSideMenus();
+      await new Promise<void>(resolve => setTimeout(resolve, 300));
+    },
+    setAwake: async (awake) => {
+      displayOffInhibiting = awake;
+      if (!pluginActive) return;
+      await enqueuePowerOperation(() => synchronizeRuntimeState());
+    },
+    startGuard: () => serverApi.startDisplayWakeGuard(),
+    heartbeat: token => serverApi.heartbeatDisplayWakeGuard(token),
+    stopGuard: token => serverApi.stopDisplayWakeGuard(token),
+    subscribeWake: wake => subscribeDisplayWake(wake, displayOffCloseOnAnyKey),
+    scheduleTick: tick => {
+      const timer = setInterval(() => { void tick().catch(reportDisplayOffError); }, 2000);
+      return () => clearInterval(timer);
+    },
+    onState: phase => displayOffState.SetState({ idle: 0, starting: 1, active: 2, waking: 3 }[phase]),
+    onError: reportDisplayOffError,
+  });
+
+  const activateDisplayOff = async () => {
+    try { await displayOffSession.start(); } catch (error) { reportDisplayOffError(error); }
+  };
+
   const disconnectPushListeners = () => {
     unsubscribeSettingsChanged?.();
     unsubscribeSettingsChanged = null;
@@ -1803,27 +2003,29 @@ export default definePlugin(() => {
     pushListenerHealth.markDisconnected();
   }
 
+  const runtimeSyncScheduler = createRuntimeSyncScheduler({
+    enqueue: operation => enqueuePowerOperation(operation),
+    synchronize: showNotification => synchronizeRuntimeState(showNotification),
+    isActive: () => pluginActive,
+    onError: (error, canRecover) => {
+      if (canRecover) reconnectPushListeners(true);
+      else console.error('[ScreenSaverEnhancements] Could not synchronize after reconnecting push listeners', error);
+    },
+  });
+
   const reconnectPushListeners = (synchronizeAfterConnect = false) => {
     if (!pluginActive) return;
     disconnectPushListeners();
     try {
       unsubscribeSettingsChanged = serverApi.subscribeSettingsChanged(() => {
-        if (!pluginActive) return;
-        enqueuePowerOperation(() => synchronizeRuntimeState())
-          .catch(() => reconnectPushListeners(true));
+        runtimeSyncScheduler.request();
       });
       unsubscribeInhibitStateChanged = serverApi.subscribeInhibitStateChanged(() => {
-        if (!pluginActive) return;
-        enqueuePowerOperation(() => synchronizeRuntimeState(true))
-          .catch(() => reconnectPushListeners(true));
+        runtimeSyncScheduler.request(true);
       });
       pushListenerHealth.markConnected();
       if (synchronizeAfterConnect) {
-        enqueuePowerOperation(() => synchronizeRuntimeState())
-          .catch((syncError) => console.error(
-            "[ScreenSaverEnhancements] Could not synchronize after reconnecting push listeners",
-            syncError,
-          ));
+        runtimeSyncScheduler.request(false, false);
       }
     } catch (error) {
       disconnectPushListeners();
@@ -1831,45 +2033,92 @@ export default definePlugin(() => {
     }
   }
 
+  let resolveInitialPowerProfile: (settings: PowerSettings | null) => void;
+  const initialPowerProfile = new Promise<PowerSettings | null>(resolve => { resolveInitialPowerProfile = resolve; });
+  let resolveInitialConfiguredProfile: (loaded: boolean) => void;
+  const initialConfiguredProfileLoaded = new Promise<boolean>(resolve => { resolveInitialConfiguredProfile = resolve; });
+
   const initializePlugin = async () => {
+    let initialProfile: PowerSettings | null = null;
+    let configuredProfileLoaded = false;
     try {
-      const blackBackground = await getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_ENABLED, false)
-      if (blackBackground) {
-        overlayState.SetState(1)
-      }
-
-      const blackOpacity = await getPluginNumberSetting(serverApi, BLACK_BACKGROUND_OPACITY, 1)
-      opacityState.SetState(clampOpacity(blackOpacity))
-
-      showNotify = await getPluginBooleanSetting(serverApi, SHOW_NOTIFY, false)
-
-      const [batteryDim, acDim, batterySuspend, acSuspend] = await Promise.all([
+      await powerLifecycle.ready;
+      if (!pluginActive) return;
+      const initialOverlayRevision = overlayState.GetRevision();
+      const initialOpacityRevision = opacityState.GetRevision();
+      const initialNotifyRevision = showNotifyState.GetRevision();
+      const [blackBackground, blackOpacity, notify, batteryDim, acDim, batterySuspend, acSuspend] = await withPowerTimeout(Promise.all([
+        getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_ENABLED, false),
+        getPluginNumberSetting(serverApi, BLACK_BACKGROUND_OPACITY, 1),
+        getPluginBooleanSetting(serverApi, SHOW_NOTIFY, false),
         getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batteryDim, DEFAULT_POWER_SETTINGS.batteryDim),
         getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acDim, DEFAULT_POWER_SETTINGS.acDim),
         getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.batterySuspend, DEFAULT_POWER_SETTINGS.batterySuspend),
         getPluginNumberSetting(serverApi, POWER_SETTING_KEYS.acSuspend, DEFAULT_POWER_SETTINGS.acSuspend),
-      ])
+      ]), 'Load plugin settings');
+      if (!pluginActive) return;
+      if (overlayState.GetRevision() === initialOverlayRevision) {
+        overlayState.SetState(blackBackground ? 1 : 0)
+      }
+
+      if (opacityState.GetRevision() === initialOpacityRevision) {
+        opacityState.SetState(clampOpacity(blackOpacity))
+      }
+      if (showNotifyState.GetRevision() === initialNotifyRevision) {
+        showNotify = notify;
+        showNotifyState.SetState(notify ? 1 : 0);
+      }
       setConfiguredPowerSettings(normalizePowerSettings({
         batteryDim,
         acDim,
         batterySuspend,
         acSuspend,
       }))
+      configuredProfileLoaded = true;
 
     } catch (error) {
       backendState.SetState(0)
       console.error("[ScreenSaverEnhancements] Plugin initialization failed", error)
     } finally {
-      if (pluginActive) {
-        try {
-          await synchronizeRuntimeState();
-        } catch (error) {
-          console.error("[ScreenSaverEnhancements] Could not synchronize runtime state", error)
+      // Recovery callbacks must not wait for initialPowerProfile: its runtime
+      // synchronization also uses the same power operation queue.
+      resolveInitialConfiguredProfile(configuredProfileLoaded);
+      try {
+        if (pluginActive) {
+          try {
+            await enqueuePowerOperation(() => synchronizeRuntimeState());
+          } catch (error) {
+            console.error("[ScreenSaverEnhancements] Could not synchronize runtime state", error)
+          }
+          reconnectPushListeners();
+          initialProfile = await readSystemPowerSettings();
         }
-        reconnectPushListeners();
+      } finally {
+        resolveInitialPowerProfile(initialProfile);
       }
     }
   }
+
+  const powerEditor = createPowerEditor(configuredPowerSettings, {
+    ready: initialPowerProfile,
+    persist: async settings => {
+      let saved = false;
+      await enqueuePowerOperation(async () => {
+        const state = await claimPowerOverride(await getPowerOverrideState());
+        const owner = newPowerOwner();
+        try {
+          saved = await withPowerTimeout(serverApi.savePowerSettings(settings, owner, state.owner ?? null), 'Save power profile') === true;
+          if (saved) { powerOwner = owner; ownershipUncertain = false; }
+        } catch (error) {
+          ownershipUncertain = true;
+          throw error;
+        }
+      }, true);
+      return saved;
+    },
+    apply: settings => applyConfiguredPowerSettings(settings, true),
+    onConfirmed: setConfiguredPowerSettings,
+  });
 
   void initializePlugin();
 
@@ -1877,31 +2126,45 @@ export default definePlugin(() => {
     "ScreenSaverEnhancementsBlackOverlay",
     () => <BlackOverlay serverApi={serverApi} overlayState={overlayState} opacityState={opacityState} />
   );
+  serverApi.routerHook.addGlobalComponent(
+    'ScreenSaverEnhancementsDisplayOff', () => <DisplayOffSurface state={displayOffState} />,
+  );
 
-  return {
-    name: t("Plugin Name"),
-    titleView: <div className={staticClasses.Title}>{t("Plugin Name")}</div>,
-    content: <Content
+  const panelContent = createHotReloadContent(window, <Content
       serverApi={serverApi}
       backendState={backendState}
       overlayState={overlayState}
       opacityState={opacityState}
-      onPowerSettingsLoaded={setConfiguredPowerSettings}
-      onPowerSettingsApply={applyConfiguredPowerSettings}
+      displayOffState={displayOffState}
+      onDisplayOff={activateDisplayOff}
+      powerEditor={powerEditor}
       readSystemPowerSettings={readSystemPowerSettings}
       onMonitorChanged={() => enqueuePowerOperation(() => synchronizeRuntimeState())}
       getEventChannelDiagnostics={() => ({
         ...pushListenerHealth.snapshot(),
         ...eventChannelDiagnostics,
       })}
-    />,
+    />);
+
+  return {
+    name: t("Plugin Name"),
+    titleView: <div className={staticClasses.Title}>{t("Plugin Name")}</div>,
+    content: panelContent.content,
     icon: <GiNightSleep />,
     onDismount() {
-      void restorePendingPowerOverride()
+      disposePluginSettings(serverApi);
+      panelContent.retire();
       clearTimeout(timeout)
       pluginActive = false
+      runtimeSyncScheduler.cancel();
       disconnectPushListeners()
+      cancelPendingRestoreNotification();
+      const cleanup = powerEditor.dispose().finally(() => displayOffSession.dispose()).finally(() =>
+        enqueuePowerOperation(async () => { await restorePendingPowerOverride(); }, true));
+      powerLifecycle.trackCleanup(cleanup);
+      void cleanup.catch(reportDisplayOffError);
       serverApi.routerHook.removeGlobalComponent("ScreenSaverEnhancementsBlackOverlay")
+      serverApi.routerHook.removeGlobalComponent('ScreenSaverEnhancementsDisplayOff')
     },
   };
 });

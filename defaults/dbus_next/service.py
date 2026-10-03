@@ -5,6 +5,8 @@ from .errors import SignalDisabledError
 from ._private.util import signature_contains_type, replace_fds_with_idx, replace_idx_with_fds, parse_annotation
 
 from functools import wraps
+from contextlib import contextmanager
+from contextvars import ContextVar
 import inspect
 from typing import no_type_check_decorator, Dict, List, Any
 import copy
@@ -428,6 +430,21 @@ class ServiceInterface:
         interface.__buses.remove(bus)
 
     last_msg = None
+    _current_message = ContextVar('dbus_service_current_message', default=None)
+
+    @staticmethod
+    def get_current_message():
+        """Return the message for this service invocation, including across awaits."""
+        return ServiceInterface._current_message.get()
+
+    @staticmethod
+    @contextmanager
+    def _message_context(msg):
+        token = ServiceInterface._current_message.set(msg)
+        try:
+            yield
+        finally:
+            ServiceInterface._current_message.reset(token)
 
     @staticmethod
     def _msg_body_to_args(msg):

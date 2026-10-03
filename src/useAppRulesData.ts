@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { InhibitStatus, PluginServerApi, RunningProcess } from './deckyApi';
 import { normalizeManualApps } from './settingsClient';
 
@@ -22,20 +22,23 @@ export const useAppRulesData = (
   const [inhibitStatus, setInhibitStatus] = useState<InhibitStatus>(EMPTY_INHIBIT_STATUS);
   const [runningProcesses, setRunningProcesses] = useState<RunningProcess[]>([]);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const processRevision = useRef(0);
+  const inhibitRevision = useRef(0);
 
   const fetchRunningProcesses = async () => {
     if (!isPanelVisible()) return;
     const token = getRequestToken();
+    const revision = ++processRevision.current;
     setRefreshing(true);
     try {
       const processes = await serverApi.getRunningProcesses();
-      if (isCurrentRequest(token)) {
+      if (isCurrentRequest(token) && revision === processRevision.current) {
         setRunningProcesses(processes);
       }
     } catch (error) {
       console.warn('[ScreenSaverEnhancements] Could not load running processes', error);
     } finally {
-      if (isCurrentRequest(token)) {
+      if (isCurrentRequest(token) && revision === processRevision.current) {
         setRefreshing(false);
       }
     }
@@ -44,9 +47,10 @@ export const useAppRulesData = (
   const fetchInhibitStatus = async () => {
     if (!isPanelVisible()) return;
     const token = getRequestToken();
+    const revision = ++inhibitRevision.current;
     try {
       const result = await serverApi.getInhibitStatus();
-      if (isCurrentRequest(token) && result) {
+      if (isCurrentRequest(token) && revision === inhibitRevision.current && result) {
         setInhibitStatus({
           ...EMPTY_INHIBIT_STATUS,
           ...result,

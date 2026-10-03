@@ -1,9 +1,13 @@
 import { parseSteamPowerSettings, PowerSettings } from "./powerSettings";
+import type { NestedMprisSource } from "./deckyApi";
 
 export type DiagnosticEvent = {
   timestamp: number;
   type: string;
   detail?: string;
+  application?: string;
+  reason?: string;
+  cookie?: number;
 };
 
 export type Diagnostics = {
@@ -16,6 +20,11 @@ export type Diagnostics = {
   manualRuleCount: number;
   manualActiveApp: string | null;
   dbusRequestCount: number;
+  nestedMprisActive: boolean;
+  nestedMprisSources: NestedMprisSource[];
+  nestedMprisScanCount: number;
+  nestedMprisLastScanAt: number | null;
+  nestedMprisBusCount: number;
   pushListenerActive: boolean;
   pushReconnectCount: number;
   lastFullSyncAt: number | null;
@@ -49,6 +58,9 @@ export const parseDiagnostics = (value: unknown): Diagnostics | null => {
         timestamp: finiteNumber(event.timestamp),
         type: event.type.slice(0, 64),
         detail: typeof event.detail === "string" ? event.detail.slice(0, 256) : undefined,
+        application: typeof event.application === "string" ? event.application.slice(0, 256) : undefined,
+        reason: typeof event.reason === "string" ? event.reason.slice(0, 256) : undefined,
+        cookie: typeof event.cookie === "number" ? event.cookie : undefined,
       }];
     })
     : [];
@@ -63,6 +75,17 @@ export const parseDiagnostics = (value: unknown): Diagnostics | null => {
     manualRuleCount: finiteNumber(source.manualRuleCount),
     manualActiveApp: typeof source.manualActiveApp === "string" ? source.manualActiveApp : null,
     dbusRequestCount: finiteNumber(source.dbusRequestCount),
+    nestedMprisActive: source.nestedMprisActive === true,
+    nestedMprisSources: Array.isArray(source.nestedMprisSources)
+      ? source.nestedMprisSources.slice(0, 100).flatMap((item): NestedMprisSource[] => {
+        if (!item || typeof item !== "object" || typeof item.application !== "string"
+          || typeof item.service !== "string") return [];
+        return [{ application: item.application.slice(0, 256), service: item.service.slice(0, 256),
+          reason: typeof item.reason === "string" ? item.reason.slice(0, 256) : "" }];
+      }) : [],
+    nestedMprisScanCount: finiteNumber(source.nestedMprisScanCount),
+    nestedMprisLastScanAt: nullableTimestamp(source.nestedMprisLastScanAt),
+    nestedMprisBusCount: finiteNumber(source.nestedMprisBusCount),
     pushListenerActive: source.pushListenerActive === true,
     pushReconnectCount: finiteNumber(source.pushReconnectCount),
     lastFullSyncAt: nullableTimestamp(source.lastFullSyncAt),

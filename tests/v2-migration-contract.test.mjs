@@ -16,14 +16,14 @@ test("pins the Decky 3.2.6 compatible modern frontend toolchain", () => {
   assert.equal(packageJson.type, "module");
   assert.equal(packageJson.dependencies["@decky/api"], "1.1.3");
   assert.equal(packageJson.devDependencies["@decky/ui"], "4.11.6");
-  assert.equal(packageJson.devDependencies["@decky/rollup"], "1.0.2");
+  assert.equal(packageJson.devDependencies.rollup, "4.64.0");
   assert.match(packageJson.scripts["build:v2-probe"], /rollup\.v2-probe\.config\.js/);
   assert.equal(packageJson.scripts.build, "rollup -c");
   assert.equal(packageJson.dependencies["decky-frontend-lib"], undefined);
   assert.equal(pluginJson.api_version, 1);
 });
 
-test("release metadata identifies the 2.0.1 release", () => {
+test("release metadata identifies the 2.0.4 internal display power release", () => {
   const pnpmLock = readFileSync(
     new URL("../pnpm-lock.yaml", import.meta.url),
     "utf8",
@@ -32,16 +32,26 @@ test("release metadata identifies the 2.0.1 release", () => {
     new URL("../decky.pyi", import.meta.url),
     "utf8",
   );
+  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  const readmeZh = readFileSync(new URL("../README_ZH.md", import.meta.url), "utf8");
 
-  assert.equal(packageJson.version, "2.0.1");
-  assert.equal(packageLock.version, "2.0.1");
-  assert.equal(packageLock.packages[""].version, "2.0.1");
+  assert.equal(packageJson.version, "2.0.4");
+  assert.equal(packageLock.version, "2.0.4");
+  assert.equal(packageLock.packages[""].version, "2.0.4");
   assert.match(pnpmLock, /'@decky\/api':/);
   assert.doesNotMatch(pnpmLock, /decky-frontend-lib:/);
   assert.match(deckyStub, /async def emit\(event: str, \*args: Any\) -> None:/);
   assert.match(pluginJson.publish.description, /DeckyMusic playback/);
   assert.deepEqual(pluginJson.publish.tags, ["dbus", "screensaver", "media", "power-management"]);
   assert.match(pluginJson.publish.image, /Grails125\/ScreenSaverEnhancements\/main\/docs\/release-cover-zh-v2\.0\.1\.png$/);
+  assert.match(readme, /What's new in v2\.0\.4/);
+  assert.match(readme, /object-style `Unregister`\/`unregister` handles/);
+  assert.match(readme, /legacy function handles/);
+  assert.match(readme, /does not register a null listener/);
+  assert.match(readmeZh, /v2\.0\.4 更新说明/);
+  assert.match(readmeZh, /对象式 `Unregister`\/`unregister` 注销句柄/);
+  assert.match(readmeZh, /旧版函数句柄/);
+  assert.match(readmeZh, /不再写入 `null`/);
 });
 
 test("the V2 probe uses typed callable RPC and reversible modern APIs", () => {
@@ -57,13 +67,13 @@ test("the V2 probe uses typed callable RPC and reversible modern APIs", () => {
   assert.doesNotMatch(source, /ServerAPI|callPluginMethod|decky-frontend-lib/);
 });
 
-test("the V2 probe build delegates to the official Decky Rollup preset", () => {
+test("the V2 probe shares the production Decky build contract", () => {
   const source = readFileSync(
     new URL("../rollup.v2-probe.config.js", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /from ["']@decky\/rollup["']/);
+  assert.match(source, /from ["']\.\/rollup\.config\.js["']/);
   assert.match(source, /format:\s*["']esm["']/);
   assert.match(source, /build\/v2-probe/);
   assert.match(source, /entryFileNames:\s*["']index\.js["']/);
@@ -93,13 +103,19 @@ test("the V2 probe type-check is isolated from the legacy frontend", () => {
   assert.equal(probeTsconfig.compilerOptions.jsx, "react-jsx");
 });
 
-test("the production build uses the official Decky ESM Rollup preset", () => {
+test("the production build preserves Decky ESM and shared React/UI globals", async () => {
   const source = readFileSync(
     new URL("../rollup.config.js", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /from ["']@decky\/rollup["']/);
+  const {default: config} = await import('../rollup.config.js');
+  assert.equal(config.context, 'window');
+  assert.equal(config.output.format, 'esm');
+  assert.equal(config.output.exports, 'default');
+  assert.ok(config.external.includes('react'));
+  assert.ok(config.external.includes('@decky/ui'));
+  assert.ok(config.plugins.some(plugin => plugin.name.includes('external-globals')));
   assert.doesNotMatch(source, /format:\s*["']iife["']|decky-frontend-lib/);
 });
 
@@ -210,8 +226,8 @@ test("power settings and recovery use direct typed RPC results", () => {
 
   assert.match(source, /serverApi\.getSystemPowerSettings\(\)/);
   assert.match(source, /serverApi\.getPowerOverrideState\(\)/);
-  assert.match(source, /serverApi\.beginPowerOverride\(snapshot\)/);
-  assert.match(source, /serverApi\.endPowerOverride\(\)/);
+  assert.match(source, /serverApi\.beginPowerOverride\(snapshot, owner, expectedOwner\)/);
+  assert.match(source, /serverApi\.endPowerOverride\(expectedOwner, owner\)/);
   assert.doesNotMatch(source, /callPluginMethod[^\n]*(get_system_power_settings|get_power_override_state|begin_power_override|end_power_override)/);
 });
 
@@ -241,7 +257,7 @@ test("the monitoring toggle describes sleep inhibition behavior", () => {
   );
 
   assert.equal(zh["Background Monitor"], "息屏抑制监控");
-  assert.equal(zh.plugin_switch_tip, "检测禁用息屏列表，接管系统息屏");
+  assert.equal(zh.plugin_switch_tip, "规则或请求生效时阻止自动休眠");
   assert.equal(zh["Background Monitor Failed"], "息屏抑制监控切换失败");
   assert.equal(en["Background Monitor"], "Sleep Inhibition Monitor");
 });
@@ -288,14 +304,21 @@ test("monitor switching uses dedicated notifications instead of restore-sleep co
   );
   assert.equal(zh["Monitor Enabled Body"], "已开始检测禁用息屏列表并接管系统息屏");
   assert.equal(zh["Monitor Disabled Body"], "已停止检测禁用息屏列表，系统息屏已交还系统管理");
-  assert.equal(zh.notify_tip, "监控开关或息屏状态变化时显示通知");
+  assert.equal(zh.notify_tip, "监控或休眠抑制变化时通知");
   assert.equal(en["Monitor Enabled Body"], "Monitoring the sleep-inhibition list and managing system sleep");
   assert.equal(en["Monitor Disabled Body"], "Monitoring stopped; system sleep is managed by SteamOS again");
-  assert.equal(en.notify_tip, "Show notifications when monitoring or sleep-inhibition status changes");
+  assert.equal(en.notify_tip, "Notify on monitor or sleep-inhibit changes");
   assert.match(frontend, /notifyMonitorStatus\(checked\)/);
   assert.match(frontend, /const notifyStateChange = showStateNotification && running/);
-  assert.match(frontend, /await stopInhibit\(notifyStateChange, overrideState\)/);
-  assert.doesNotMatch(frontend, /event\.reason/);
+  assert.match(frontend, /await stopInhibit\(false, overrideState\)/);
+  assert.match(frontend, /event\.reason/);
+});
+
+test("restore notifications are delayed and revalidated after all inhibit sources disappear", () => {
+  const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
+  assert.match(source, /restoreNotificationTimeout/);
+  assert.match(source, /setTimeout\([\s\S]*getInhibitStatus\(\)/);
+  assert.match(source, /stopInhibit\(false, overrideState\)/);
 });
 
 test("diagnostics merge monitor state and process mode behind an accessible detail button", () => {
@@ -309,7 +332,7 @@ test("diagnostics merge monitor state and process mode behind an accessible deta
 
   assert.equal(zh["Monitor Details"], "查看息屏抑制监控详情");
   assert.equal(zh["Monitoring Method"], "监听方式");
-  assert.equal(zh.monitor_details_tip, "开启后优先使用内核进程事件监听；不可用时自动切换为低频扫描。关闭监控后，进程监听也会停止。");
+  assert.equal(zh.monitor_details_tip, "优先事件监听，不可用时低频扫描");
   assert.doesNotMatch(source, /<DiagnosticRow label=\{t\('Process Monitor Mode'\)\}/);
   assert.match(source, /<MonitorStatusRow/);
   assert.match(source, /aria-expanded=\{detailsVisible\}/);
@@ -325,7 +348,7 @@ test("Stage 4.1 performs silent full-state sync before event subscriptions", () 
   assert.match(source, /serverApi\.getInhibitStatus\(\)/);
   assert.match(source, /getPowerSyncAction\(/);
   assert.doesNotMatch(source, /refreshDeckyMusicSetting/);
-  assert.match(source, /await synchronizeRuntimeState\(\);[\s\S]*reconnectPushListeners\(\)/);
+  assert.match(source, /await enqueuePowerOperation\(\(\) => synchronizeRuntimeState\(\)\);[\s\S]*reconnectPushListeners\(\)/);
   assert.match(source, /const reconnectPushListeners = \([^)]*\) =>[\s\S]*subscribeSettingsChanged[\s\S]*subscribeInhibitStateChanged/);
   assert.match(source, /backendState\.SetState\(running \? 1 : 0\)/);
 });
@@ -356,9 +379,9 @@ test("Stage 4.3 treats critical pushes as full-state refresh signals", () => {
   assert.match(apiSource, /subscribeInhibitStateChanged/);
   assert.match(source, /serverApi\.subscribeInhibitStateChanged\(\(\) =>/);
   assert.match(source, /const synchronizeRuntimeState = async \(showStateNotification = false\) =>/);
-  assert.match(source, /enqueuePowerOperation\(\(\) => synchronizeRuntimeState\(true\)\)/);
+  assert.match(source, /runtimeSyncScheduler\.request\(true\)/);
   assert.doesNotMatch(source, /startInhibit\(event\.application\)/);
-  assert.doesNotMatch(source, /event\.reason/);
+  assert.match(source, /event\.reason/);
 });
 
 test("monitor lifecycle is synchronized from backend inhibit state", () => {
@@ -368,7 +391,7 @@ test("monitor lifecycle is synchronized from backend inhibit state", () => {
   );
 
   assert.match(source, /onMonitorChanged: \(\) => Promise<void>/);
-  assert.match(source, /if \(succeeded !== true\) throw new Error\("backend lifecycle RPC failed"\);\s*await onMonitorChanged\(\);\s*notifyMonitorStatus\(checked\)/);
+  assert.match(source, /if \(succeeded !== true\) throw new Error\("backend lifecycle RPC failed"\);\s*await onMonitorChanged\(\);\s*if \(!isActive\(\)\) return false;\s*notifyMonitorStatus\(checked\)/);
   assert.match(source, /backendInhibiting = running && inhibitStatus\.is_inhibiting;/);
   assert.doesNotMatch(source, /deckyMusicInhibiting/);
   assert.doesNotMatch(source, /deckyMusicState/);
