@@ -15,17 +15,20 @@ test("update checking uses the V2 typed RPC contract", () => {
   assert.match(updateSource, /serverApi\.getPluginVersion\(\)/);
   assert.match(updateSource, /serverApi\.checkUpdate\(\)/);
   assert.match(apiSource, /installPluginUpdate\([^)]*UpdateInstallRequest/);
-  assert.match(apiSource, /restartDecky\(\): Promise<void>/);
   assert.match(updateSource, /serverApi\.installPluginUpdate\(/);
-  assert.match(updateSource, /serverApi\.restartDecky\(\)/);
-  assert.match(updateSource, /serverApi\.getInstalledPluginVersion\(\)/);
+  assert.doesNotMatch(updateSource, /serverApi\.restartDecky\(\)/);
+  assert.doesNotMatch(apiSource, /updater\/do_restart/);
   assert.doesNotMatch(updateSource, /callPluginMethod/);
 });
 
-test("installation restarts Decky after the target package version reaches disk", () => {
-  assert.match(updateHookSource, /installedVersion === latestVersion/);
-  assert.match(updateHookSource, /UPDATE_INSTALL_POLL_INTERVAL_MS/);
-  assert.match(updateHookSource, /await serverApi\.restartDecky\(\)/);
+test("installation is handed to Decky without polling or restarting Loader", () => {
+  assert.match(updateHookSource, /await serverApi\.installPluginUpdate\(/);
+  assert.doesNotMatch(updateHookSource, /getInstalledPluginVersion|UPDATE_INSTALL_MAX_POLLS|restartDecky/);
+});
+
+test("the one-line display-off description mentions delayed wake", () => {
+  assert.equal(zh['Screen Off Description'], '后台应用继续运行，唤醒存在延迟');
+  assert.match(en['Screen Off Description'], /waking may take a moment/);
 });
 
 test("update checking has localized status and error copy", () => {

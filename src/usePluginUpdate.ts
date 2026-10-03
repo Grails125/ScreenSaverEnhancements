@@ -2,9 +2,6 @@ import React, { useRef, useState } from 'react';
 import { GiNightSleep } from 'react-icons/gi';
 import { PluginServerApi } from './deckyApi';
 
-const UPDATE_INSTALL_POLL_INTERVAL_MS = 1000;
-const UPDATE_INSTALL_MAX_POLLS = 120;
-
 type Translate = (key: any) => string;
 
 export const usePluginUpdate = (
@@ -86,15 +83,7 @@ export const usePluginUpdate = (
         version: latestVersion,
         sha256: updateSha256,
       });
-      for (let attempt = 0; attempt < UPDATE_INSTALL_MAX_POLLS; attempt += 1) {
-        await new Promise(resolve => setTimeout(resolve, UPDATE_INSTALL_POLL_INTERVAL_MS));
-        const installedVersion = await serverApi.getInstalledPluginVersion();
-        if (installedVersion === latestVersion) {
-          await serverApi.restartDecky();
-          return;
-        }
-      }
-      throw new Error('Decky installer did not finish before the timeout');
+      // Decky owns confirmation, download progress and reloading this plugin.
     } catch (error) {
       console.error('[ScreenSaverEnhancements] Update installation failed', error);
       serverApi.toaster.toast({

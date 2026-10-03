@@ -65,13 +65,14 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
   });
   await serverApi.getPluginVersion();
   await serverApi.checkUpdate();
-  await serverApi.getInstalledPluginVersion();
   await serverApi.installPluginUpdate({
     downloadUrl: "https://github.com/Grails125/ScreenSaverEnhancements/releases/download/v1.5.0/ScreenSaverEnhancements.zip",
     version: "1.5.0",
     sha256: "abc123",
   });
-  await serverApi.restartDecky();
+  await serverApi.startDisplayWakeGuard();
+  await serverApi.heartbeatDisplayWakeGuard('lease');
+  await serverApi.stopDisplayWakeGuard('lease');
 
   assert.deepEqual(calls, [
     { route: "get_power_override_state", args: [] },
@@ -82,7 +83,9 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
     },
     { route: "get_plugin_version", args: [] },
     { route: "check_update", args: [] },
-    { route: "get_installed_plugin_version", args: [] },
+    { route: 'start_display_wake_guard', args: [] },
+    { route: 'heartbeat_display_wake_guard', args: ['lease'] },
+    { route: 'stop_display_wake_guard', args: ['lease'] },
   ]);
   assert.deepEqual(loaderCalls, [
     {
@@ -95,14 +98,42 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
         2,
       ],
     },
-    { route: "updater/do_restart", args: [] },
   ]);
   assert.equal(response.active, true);
+});
+
+test("passes power recovery revisions without changing the legacy positional contract", async () => {
+  const calls = [];
+  const { createPluginServerApi } = loadDeckyApi(route => async (...args) => {
+    calls.push({ route, args });
+    return true;
+  });
+  const api = createPluginServerApi();
+  const snapshot = { batteryDim: 300, acDim: 300, batterySuspend: 600, acSuspend: 600 };
+  await api.beginPowerOverride(snapshot, 'next-revision', 'previous-revision');
+  await api.endPowerOverride('next-revision', 'inactive-revision');
+  await api.beginPowerOverride(snapshot, 'first-revision', null);
+  await api.endPowerOverride();
+  assert.deepEqual(calls, [
+    { route: 'begin_power_override', args: [snapshot, 'next-revision', 'previous-revision'] },
+    { route: 'end_power_override', args: ['next-revision', 'inactive-revision'] },
+    { route: 'begin_power_override', args: [snapshot, 'first-revision', null] },
+    { route: 'end_power_override', args: [] },
+  ]);
 });
 
 test("does not expose the obsolete frontend DeckyMusic playback RPC", () => {
   assert.doesNotMatch(source, /record_decky_music_playback_state/);
   assert.doesNotMatch(source, /recordDeckyMusicPlaybackState/);
+});
+
+test('profile persistence carries the current revision and its atomic replacement', async () => {
+  const calls = [];
+  const { createPluginServerApi } = loadDeckyApi(route => async (...args) => { calls.push({ route, args }); return true; });
+  const api = createPluginServerApi();
+  const profile = { batteryDim: 300, acDim: 180, batterySuspend: 600, acSuspend: 600 };
+  assert.equal(await api.savePowerSettings(profile, 'saved-revision', 'previous-revision'), true);
+  assert.deepEqual(calls, [{ route: 'save_power_settings', args: [profile, 'saved-revision', 'previous-revision'] }]);
 });
 
 test("propagates callable rejections to feature boundaries", async () => {

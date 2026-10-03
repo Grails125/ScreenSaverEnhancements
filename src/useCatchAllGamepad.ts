@@ -33,7 +33,11 @@ export const useCatchAllGamepad = () => {
 
     releaseRef.current = typeof releaseHandle === "function"
       ? releaseHandle
-      : () => navManager.SetCatchAllGamepadInput(null);
+      : typeof releaseHandle?.Unregister === "function"
+        ? () => releaseHandle.Unregister()
+        : typeof releaseHandle?.unregister === "function"
+          ? () => releaseHandle.unregister()
+          : () => navManager.SetCatchAllGamepadInput(null);
   }, []);
 
   return { subscribe, release };

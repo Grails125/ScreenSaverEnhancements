@@ -22,6 +22,7 @@ ScreenSaver Enhancements is a [Decky Loader](https://decky.xyz) plugin for Steam
 - **DeckyMusic-aware playback detection** — detects actual audio playback from the backend only when a DeckyMusic rule is configured. It tolerates one short missed check before restoring normal sleep behavior, preventing false restores during track changes or brief stalls. *(v1.1.0, optimized in v2.0.0)*
 - **Event-driven application monitoring** — listens for kernel process events when available and uses a 120-second fallback scan when necessary. DeckyMusic's 5-second audio check is independent, so it does not force repeated full process scans. *(v1.3.0, optimized in v2.0.0)*
 - **Black display overlay** — optionally show a black overlay with adjustable opacity. *(v1.3.0)*
+- **Display-off mode** — turn off the internal display while music, downloads, and other background applications keep running. Shares the overlay's Close on any key setting; when disabled, Quick Access wakes the display and opens the panel. The power button still suspends normally. Requires Steam's internal-display power API and reports failure when unavailable. Waking or exiting restores the previous power configuration; an independent guard wakes the display if the frontend loses contact.
 - **Separate battery and AC settings** — customize screen-dim and system-suspend timeouts for battery and external power, with two-way synchronization to the system settings. *(v2.0.0)*
 - **V2 typed API and state synchronization** — uses Decky's modern typed RPC and push events for settings and inhibition state, with full-state reconciliation after a listener reconnect. *(v2.0.0)*
 - **Diagnostics and updates** — inspect monitor mode, process activity, inhibition source, D-Bus requests, power override state, recent events, and event-channel health; copy the report or update from the plugin panel. *(v2.0.0)*
@@ -78,6 +79,8 @@ The package is created at `build/ScreenSaverEnhancements.zip`. Install it using 
 ## Upgrade
 
 The plugin can check for updates from the bottom of its panel. When a newer release is available, open the update section, review the version and release notes, then start the upgrade there.
+
+Decky automatically reloads this plugin after installation; restarting the whole Decky Loader is unnecessary.
 
 To upgrade manually, download the latest release package, then select it through **Decky Settings** → **Developer** → **Install Plugin from ZIP**.
 

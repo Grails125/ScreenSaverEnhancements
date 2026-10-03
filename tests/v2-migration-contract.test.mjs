@@ -210,8 +210,8 @@ test("power settings and recovery use direct typed RPC results", () => {
 
   assert.match(source, /serverApi\.getSystemPowerSettings\(\)/);
   assert.match(source, /serverApi\.getPowerOverrideState\(\)/);
-  assert.match(source, /serverApi\.beginPowerOverride\(snapshot\)/);
-  assert.match(source, /serverApi\.endPowerOverride\(\)/);
+  assert.match(source, /serverApi\.beginPowerOverride\(snapshot, owner, expectedOwner\)/);
+  assert.match(source, /serverApi\.endPowerOverride\(expectedOwner, owner\)/);
   assert.doesNotMatch(source, /callPluginMethod[^\n]*(get_system_power_settings|get_power_override_state|begin_power_override|end_power_override)/);
 });
 
@@ -332,7 +332,7 @@ test("Stage 4.1 performs silent full-state sync before event subscriptions", () 
   assert.match(source, /serverApi\.getInhibitStatus\(\)/);
   assert.match(source, /getPowerSyncAction\(/);
   assert.doesNotMatch(source, /refreshDeckyMusicSetting/);
-  assert.match(source, /await synchronizeRuntimeState\(\);[\s\S]*reconnectPushListeners\(\)/);
+  assert.match(source, /await enqueuePowerOperation\(\(\) => synchronizeRuntimeState\(\)\);[\s\S]*reconnectPushListeners\(\)/);
   assert.match(source, /const reconnectPushListeners = \([^)]*\) =>[\s\S]*subscribeSettingsChanged[\s\S]*subscribeInhibitStateChanged/);
   assert.match(source, /backendState\.SetState\(running \? 1 : 0\)/);
 });
@@ -363,7 +363,7 @@ test("Stage 4.3 treats critical pushes as full-state refresh signals", () => {
   assert.match(apiSource, /subscribeInhibitStateChanged/);
   assert.match(source, /serverApi\.subscribeInhibitStateChanged\(\(\) =>/);
   assert.match(source, /const synchronizeRuntimeState = async \(showStateNotification = false\) =>/);
-  assert.match(source, /enqueuePowerOperation\(\(\) => synchronizeRuntimeState\(true\)\)/);
+  assert.match(source, /runtimeSyncScheduler\.request\(true\)/);
   assert.doesNotMatch(source, /startInhibit\(event\.application\)/);
   assert.match(source, /event\.reason/);
 });
@@ -375,7 +375,7 @@ test("monitor lifecycle is synchronized from backend inhibit state", () => {
   );
 
   assert.match(source, /onMonitorChanged: \(\) => Promise<void>/);
-  assert.match(source, /if \(succeeded !== true\) throw new Error\("backend lifecycle RPC failed"\);\s*await onMonitorChanged\(\);\s*notifyMonitorStatus\(checked\)/);
+  assert.match(source, /if \(succeeded !== true\) throw new Error\("backend lifecycle RPC failed"\);\s*await onMonitorChanged\(\);\s*if \(!isActive\(\)\) return false;\s*notifyMonitorStatus\(checked\)/);
   assert.match(source, /backendInhibiting = running && inhibitStatus\.is_inhibiting;/);
   assert.doesNotMatch(source, /deckyMusicInhibiting/);
   assert.doesNotMatch(source, /deckyMusicState/);
