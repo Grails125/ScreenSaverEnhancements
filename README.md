@@ -17,25 +17,27 @@ ScreenSaver Enhancements is a [Decky Loader](https://decky.xyz) plugin for Steam
 ## Features
 
 - **D-Bus sleep inhibition** — supports standard inhibition requests from apps such as VLC, Chrome, mpv, and wiliwili. *(v1.0.0)*
-- **Power settings recovery** — saves the current SteamOS screen-dim and suspend configuration before taking control, then restores it when inhibition ends or recovery is needed. *(v1.0.0)*
+- **Power settings recovery** — saves the current SteamOS screen-dim and suspend configuration before taking control, then restores it when inhibition ends or recovery is needed. Display-off sessions also restore the previous configuration on wake or exit; an independent guard wakes the display if the frontend loses contact. *(v1.0.0, strengthened in v2.0.4)*
 - **Manual application rules** — choose running processes that should keep the screen awake, including Flatpak app IDs and full command lines. *(v1.0.0)*
 - **DeckyMusic-aware playback detection** — detects actual audio playback from the backend only when a DeckyMusic rule is configured. It tolerates one short missed check before restoring normal sleep behavior, preventing false restores during track changes or brief stalls. *(v1.1.0, optimized in v2.0.0)*
 - **Event-driven application monitoring** — listens for kernel process events when available and uses a 120-second fallback scan when necessary. DeckyMusic's 5-second audio check is independent, so it does not force repeated full process scans. *(v1.3.0, optimized in v2.0.0)*
 - **Black display overlay** — optionally show a black overlay with adjustable opacity. *(v1.3.0)*
-- **Display-off mode** — turn off the internal display while music, downloads, and other background applications keep running. Shares the overlay's Close on any key setting; when disabled, Quick Access wakes the display and opens the panel. The power button still suspends normally. Requires Steam's internal-display power API and reports failure when unavailable. Waking or exiting restores the previous power configuration; an independent guard wakes the display if the frontend loses contact.
+- **Display-off mode** — turn off the internal display while music, downloads, and other background applications keep running. Shares the overlay's Close on any key setting; when disabled, Quick Access wakes the display and opens the panel. The power button still suspends normally. Requires Steam's internal-display power API and reports failure when unavailable; waking may take a moment. *(v2.0.4)*
 - **Separate battery and AC settings** — customize screen-dim and system-suspend timeouts for battery and external power, with two-way synchronization to the system settings. *(v2.0.0)*
 - **V2 typed API and state synchronization** — uses Decky's modern typed RPC and push events for settings and inhibition state, with full-state reconciliation after a listener reconnect. *(v2.0.0)*
 - **Diagnostics and updates** — inspect monitor mode, process activity, inhibition source, D-Bus requests, power override state, recent events, and event-channel health; copy the report or update from the plugin panel. *(v2.0.0)*
-- **Reliable lifecycle handling** — waits for pending inhibition notifications to cancel during unload/restart and packages all required backend modules with the release. *(v2.0.0)*
+- **Reliable lifecycle handling** — cancels pending inhibition notifications during unload/restart, refreshes the panel when Decky reloads the plugin after an update, and prevents retired instances or delayed requests from overriding current settings and display state. *(v2.0.0, strengthened in v2.0.4)*
 - **Decky Music MPRIS playback monitoring** — recognizes current Decky Music releases through their public MPRIS playback events while retaining the legacy DeckyMusic compatibility path. Playback changes no longer require a repeated full-process scan. *(v2.0.1)*
 - **Nested Desktop playback monitoring** — automatically detects MPRIS playback on Nested Desktop session buses. Pausing, stopping, or exiting releases this playback inhibitor; configured manual rules remain unchanged. *(v2.0.4)*
 - **Ukrainian localization** — supports Steam's Ukrainian language setting alongside English and Simplified Chinese. *(v2.0.4)*
 - **Clearer diagnostics** — recent plugin events retain the latest 40 entries, can be cleared from the Diagnostics page, and now identify the application that added or removed a sleep rule or changed sleep-inhibition state. *(v2.0.1)*
 - **Process-list refinements** — preserves Unicode process names, avoids duplicate localized labels, and improves the refresh feedback and scrolling behavior in the app-rules page. *(v2.0.1)*
-- **Safer settings persistence** — validates setting values before saving, normalizes persisted values, and preserves malformed settings files for recovery instead of silently discarding them. *(v2.0.2)*
+- **Safer settings persistence** — validates setting values before saving, normalizes persisted values, and preserves malformed settings files for recovery instead of silently discarding them. Serializes setting changes and retains pending edits when the panel reopens. *(v2.0.2, strengthened in v2.0.4)*
 - **Steam menu input compatibility** — supports current object-style `Unregister`/`unregister` handles alongside legacy function handles, and cleans up only valid handles without registering a null listener. *(v2.0.3)*
 
 ## What's new in v2.0.4
+
+Thanks to [WowOne987](https://github.com/WowOne987) for contributing Nested Desktop MPRIS playback monitoring and Ukrainian localization in [PR #1](https://github.com/Grails125/ScreenSaverEnhancements/pull/1).
 
 - Add Nested Desktop MPRIS playback detection and Ukrainian localization, preserving existing application rules and Chinese labels.
 - Add internal display power control while retaining the black overlay and shared input-wake setting.
@@ -91,9 +93,11 @@ curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/dow
 
 ### Release package
 
-1. Download `ScreenSaverEnhancements.zip` from the [latest release](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest).
+1. Download `ScreenSaverEnhancements-v<version>.zip` from the [latest release](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest), for example `ScreenSaverEnhancements-v2.0.4.zip`.
 2. Open **Decky Settings** → **Developer** → **Install Plugin from ZIP**.
 3. Select the downloaded ZIP package and complete the installation.
+
+Earlier releases may use the filename `ScreenSaverEnhancements.zip`.
 
 ### Build from source
 
@@ -103,7 +107,7 @@ npm.cmd test
 python build.py
 ```
 
-The package is created at `build/ScreenSaverEnhancements.zip`. Install it using the release-package steps above.
+The package is created at `build/ScreenSaverEnhancements-v<version>.zip`, using the project version (for example `build/ScreenSaverEnhancements-v2.0.4.zip`). Install it using the release-package steps above.
 
 ## Upgrade
 
@@ -143,6 +147,7 @@ All sources share the same state synchronization and power-control path. Before 
 ## Credits
 
 - [xfangfang/DeckyInhibitScreenSaver](https://github.com/xfangfang/DeckyInhibitScreenSaver) — the project this plugin extends.
+- [WowOne987](https://github.com/WowOne987) — contributed Nested Desktop MPRIS playback monitoring and Ukrainian localization through [PR #1](https://github.com/Grails125/ScreenSaverEnhancements/pull/1).
 - [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) — Steam Deck plugin loader and platform.
 
 ## License

@@ -3,25 +3,27 @@ ScreenSaver Enhancements 是一个用于 Steam Deck 的 [Decky Loader](https://d
 ## 功能
 
 - **D-Bus 息屏抑制**：支持 VLC、Chrome、mpv、wiliwili 等应用的标准抑制请求。*（v1.0.0）*
-- **电源设置恢复**：接管前保存当前 SteamOS 的调暗与休眠配置；抑制结束或需要恢复时自动还原。*（v1.0.0）*
+- **电源设置恢复**：接管前保存当前 SteamOS 的调暗与休眠配置；抑制结束或需要恢复时自动还原。关闭内屏后，唤醒或退出会恢复原电源配置；前端失联时独立守护进程会自动亮屏。*（v1.0.0，v2.0.4 加强）*
 - **手动应用规则**：选择需要保持亮屏的运行中进程，支持 Flatpak 应用 ID 和完整命令行匹配。*（v1.0.0）*
 - **DeckyMusic 播放检测**：不会仅因 DeckyMusic 进程常驻就持续抑制息屏；仅在配置 DeckyMusic 规则后由后端检测实际音频播放。连续一次短暂未检测到音频不会立即恢复息屏，可避免切歌或短暂卡顿误判。*（v1.1.0，v2.0.0 优化）*
 - **事件驱动的应用监控**：优先监听内核进程事件；不可用时每 120 秒低频兜底扫描。DeckyMusic 的 5 秒音频检测与普通应用进程扫描解耦，不会额外触发完整进程扫描。*（v1.3.0，v2.0.0 优化）*
 - **黑色显示遮罩**：可选黑色遮罩，支持透明度调整。*（v1.3.0）*
-- **关闭内屏**：主动关闭内屏，音乐、下载和其他后台应用继续运行。与黑色覆盖共用“按任意键关闭”设置；关闭该设置时使用快捷访问键唤醒并打开面板。电源键仍可正常休眠。需要 Steam 提供内屏电源控制接口；不支持时会提示失败。唤醒或退出后恢复原电源配置，前端失联时守护进程会自动亮屏。
+- **关闭内屏**：主动关闭内屏，音乐、下载和其他后台应用继续运行。与黑色覆盖共用“按任意键关闭”设置；关闭该设置时使用快捷访问键唤醒并打开面板。电源键仍可正常休眠。需要 Steam 提供内屏电源控制接口；不支持时会提示失败，唤醒稍有延迟。*（v2.0.4）*
 - **电池与外接电源分别配置**：可自定义设置电池和外接电源模式下的调暗、系统休眠超时并与系统设置双向同步。*（v2.0.0）*
 - **V2 类型化接口与状态同步**：使用 Decky 现代类型化 RPC 和状态推送处理设置、息屏抑制状态；监听恢复后会进行完整状态同步。*（v2.0.0）*
 - **诊断与更新**：可查看监控模式、进程活动、禁用来源、D-Bus 请求、电源覆盖状态、最近事件与事件通道健康度；支持复制诊断报告，并可在插件面板内检查更新。*（v2.0.0）*
-- **可靠的生命周期处理**：卸载或重启时会等待待处理的息屏状态通知取消完成，并确保发布包包含全部后端模块。*（v2.0.0）*
+- **可靠的生命周期处理**：卸载或重启时取消待处理的息屏状态通知；更新后由 Decky 重载插件即可刷新面板，避免旧实例或延迟请求覆盖当前设置与显示状态。*（v2.0.0，v2.0.4 加强）*
 - **Decky Music MPRIS 播放监听**：通过公开的 MPRIS 播放状态事件识别新版 Decky Music，同时保留旧版 DeckyMusic 的兼容路径；播放状态变化不再需要反复进行完整进程扫描。*（v2.0.1）*
 - **嵌套桌面播放监听**：自动识别嵌套桌面独立会话中的 MPRIS 播放状态；暂停、停止或退出后解除这一路抑制，保留已有手动规则。*（v2.0.4）*
 - **乌克兰语本地化**：根据 Steam 语言设置切换，保留英语与简体中文支持。*（v2.0.4）*
 - **更清晰的诊断信息**：最近插件事件仅保留最新 40 条，可在诊断页清空；现在会标明增加/减少息屏规则，以及禁用/恢复息屏的具体应用。*（v2.0.1）*
 - **运行中应用列表优化**：保留 Unicode 进程名称，避免本地化名称重复显示，并改善应用规则页的刷新反馈与滚动体验。*（v2.0.1）*
-- **更安全的设置持久化**：保存前校验设置值，规范化已持久化数据，并保留损坏的设置文件以便恢复，不再静默丢弃。*（v2.0.2）*
+- **更安全的设置持久化**：保存前校验设置值，规范化已持久化数据，并保留损坏的设置文件以便恢复，不再静默丢弃。设置修改按顺序保存，重新打开面板时保留待完成的修改。*（v2.0.2，v2.0.4 加强）*
 - **Steam 菜单输入兼容**：适配新版对象式 `Unregister`/`unregister` 注销句柄并保留旧版函数句柄；仅清理有效句柄，不再写入 `null` 监听器。*（v2.0.3）*
 
 ## v2.0.4 更新说明
+
+感谢 [WowOne987](https://github.com/WowOne987) 在 [PR #1](https://github.com/Grails125/ScreenSaverEnhancements/pull/1) 中贡献嵌套桌面 MPRIS 播放监听与乌克兰语本地化。
 
 - 新增嵌套桌面 MPRIS 播放检测与乌克兰语支持，保留已有应用规则和中文显示。
 - 新增关闭内屏，保留黑色覆盖，并共用按键唤醒设置。
@@ -77,9 +79,11 @@ curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/dow
 
 ### 使用发布包安装
 
-1. 从[最新发布页](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest)下载 `ScreenSaverEnhancements.zip`。
+1. 从[最新发布页](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest)下载 `ScreenSaverEnhancements-v<version>.zip`，例如 `ScreenSaverEnhancements-v2.0.4.zip`。
 2. 打开 **Decky 设置** → **开发者** → **从 ZIP 安装插件**。
 3. 选择下载的 ZIP 包并完成安装。
+
+旧版本发布包可能使用 `ScreenSaverEnhancements.zip` 文件名。
 
 ### 从源码构建
 
@@ -89,7 +93,7 @@ npm.cmd test
 python build.py
 ```
 
-构建产物位于 `build/ScreenSaverEnhancements.zip`，然后按上述发布包安装步骤安装即可。
+构建产物按项目版本命名，位于 `build/ScreenSaverEnhancements-v<version>.zip`，例如 `build/ScreenSaverEnhancements-v2.0.4.zip`。然后按上述发布包安装步骤安装即可。
 
 ## 更新
 
@@ -129,6 +133,7 @@ DeckyMusic 属于专用的手动规则：只有配置该规则后才会每 5 秒
 ## 致谢
 
 - [xfangfang/DeckyInhibitScreenSaver](https://github.com/xfangfang/DeckyInhibitScreenSaver)：本项目扩展自该插件。
+- [WowOne987](https://github.com/WowOne987)：通过 [PR #1](https://github.com/Grails125/ScreenSaverEnhancements/pull/1) 贡献嵌套桌面 MPRIS 播放监听与乌克兰语本地化。
 - [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)：Steam Deck 插件加载器和平台。
 
 ## 许可证

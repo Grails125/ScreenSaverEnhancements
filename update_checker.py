@@ -55,7 +55,12 @@ def parse_release_payload(payload):
     assets = payload.get("assets")
     if not isinstance(assets, list):
         raise ValueError("release assets are missing")
-    asset = next((item for item in assets if isinstance(item, dict) and item.get("name") == RELEASE_ASSET_NAME), None)
+    versioned_asset_name = f"ScreenSaverEnhancements-v{version}.zip"
+    # Prefer the versioned package; older releases retain the original name.
+    asset = next((
+        item for name in (versioned_asset_name, RELEASE_ASSET_NAME)
+        for item in assets if isinstance(item, dict) and item.get("name") == name
+    ), None)
     if asset is None:
         return {
             "version": version,
@@ -65,16 +70,17 @@ def parse_release_payload(payload):
         }
     download_url = asset.get("browser_download_url")
     parsed_url = urlparse(download_url if isinstance(download_url, str) else "")
+    expected_path = RELEASE_DOWNLOAD_PATH_PREFIX + payload["tag_name"].strip() + "/" + asset["name"]
     if (
         parsed_url.scheme != "https"
-        or parsed_url.hostname != RELEASE_DOWNLOAD_HOST
-        or not parsed_url.path.startswith(RELEASE_DOWNLOAD_PATH_PREFIX)
-        or not parsed_url.path.endswith("/" + RELEASE_ASSET_NAME)
+        or parsed_url.netloc != RELEASE_DOWNLOAD_HOST
+        or parsed_url.path != expected_path
         or parsed_url.query
         or parsed_url.fragment
     ):
         raise ValueError("invalid release package URL")
-    digest_match = SHA256_DIGEST_PATTERN.fullmatch(asset.get("digest") or "")
+    digest = asset.get("digest")
+    digest_match = SHA256_DIGEST_PATTERN.fullmatch(digest if isinstance(digest, str) else "")
     if digest_match is None:
         raise ValueError("release package digest is missing")
     return {

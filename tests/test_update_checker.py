@@ -7,6 +7,53 @@ import update_checker
 
 
 class UpdateCheckerTests(unittest.TestCase):
+    def asset(self, name, tag="v2.0.4"):
+        return {
+            "name": name,
+            "browser_download_url": f"https://github.com/Grails125/ScreenSaverEnhancements/releases/download/{tag}/{name}",
+            "digest": "sha256:" + "b" * 64,
+        }
+
+    def test_selects_versioned_package_matching_release_tag(self):
+        name = "ScreenSaverEnhancements-v2.0.4.zip"
+        release = update_checker.parse_release_payload({"tag_name": "v2.0.4", "assets": [self.asset(name)]})
+        self.assertEqual(release["download_url"], self.asset(name)["browser_download_url"])
+        self.assertEqual(release["sha256"], "b" * 64)
+
+    def test_prefers_versioned_asset_over_legacy_compatibility_alias(self):
+        for reverse in (False, True):
+            assets = [self.asset("ScreenSaverEnhancements.zip"), self.asset("ScreenSaverEnhancements-v2.0.4.zip")]
+            if reverse:
+                assets.reverse()
+            with self.subTest(reverse=reverse):
+                release = update_checker.parse_release_payload({"tag_name": "v2.0.4", "assets": assets})
+                self.assertTrue(release["download_url"].endswith("/ScreenSaverEnhancements-v2.0.4.zip"))
+
+    def test_wrong_version_asset_is_ignored_and_legacy_alias_remains_supported(self):
+        wrong = self.asset("ScreenSaverEnhancements-v2.0.3.zip")
+        release = update_checker.parse_release_payload({"tag_name": "v2.0.4", "assets": [wrong]})
+        self.assertEqual(release["download_url"], "")
+        release = update_checker.parse_release_payload({"tag_name": "v2.0.4", "assets": [wrong, self.asset("ScreenSaverEnhancements.zip")]})
+        self.assertTrue(release["download_url"].endswith("/ScreenSaverEnhancements.zip"))
+
+    def test_asset_url_must_match_selected_name_and_exact_release_tag(self):
+        for name in ("ScreenSaverEnhancements.zip", "ScreenSaverEnhancements-v2.0.4.zip"):
+            for url in (
+                self.asset(name, "v2.0.3")["browser_download_url"],
+                self.asset(name)["browser_download_url"].replace("/v2.0.4/", "/extra/v2.0.4/"),
+                self.asset("source.zip")["browser_download_url"],
+                self.asset(name)["browser_download_url"].replace("github.com/", "github.com:444/"),
+            ):
+                with self.subTest(name=name, url=url):
+                    asset = dict(self.asset(name), browser_download_url=url)
+                    with self.assertRaises(ValueError):
+                        update_checker.parse_release_payload({"tag_name": "v2.0.4", "assets": [asset]})
+
+    def test_invalid_versioned_digest_does_not_fall_back_to_legacy_asset(self):
+        asset = dict(self.asset("ScreenSaverEnhancements-v2.0.4.zip"), digest=None)
+        with self.assertRaises(ValueError):
+            update_checker.parse_release_payload({"tag_name": "v2.0.4", "assets": [self.asset("ScreenSaverEnhancements.zip"), asset]})
+
     def test_reads_and_normalizes_the_version_written_by_decky_installer(self):
         with tempfile.TemporaryDirectory() as directory:
             package_path = Path(directory) / "package.json"

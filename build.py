@@ -75,6 +75,11 @@ def verify_package(archive_path, plugin_name):
 
 def build():
     plugin_name = "ScreenSaverEnhancements"
+    with open("package.json", "r", encoding="utf-8") as package_file:
+        package_metadata = json.load(package_file)
+    version = package_metadata.get("version") if isinstance(package_metadata, dict) else None
+    if not isinstance(version, str) or VERSION_PATTERN.fullmatch(version) is None:
+        raise ValueError("package has an invalid semantic version")
     build_dir = "build"
     out_dir = os.path.join(build_dir, plugin_name)
     
@@ -133,15 +138,21 @@ def build():
     print(f"Creating zip...")
     # Ensure the first-level folder in zip is ScreenSaverEnhancements
     archive_path = shutil.make_archive(
-        os.path.join(build_dir, plugin_name),
+        os.path.join(build_dir, f"{plugin_name}-v{version}"),
         'zip',
         root_dir=build_dir,
         base_dir=plugin_name,
     )
     verify_package(archive_path, plugin_name)
+    # Released clients through v2.0.3 locate this exact asset name. Upload both
+    # packages so they can update; copying preserves the same bytes and digest.
+    compatibility_path = os.path.join(build_dir, f"{plugin_name}.zip")
+    shutil.copyfile(archive_path, compatibility_path)
+    verify_package(compatibility_path, plugin_name)
     
     print(f"Build complete! Output in {out_dir}")
     print(f"Zip created and verified at {archive_path}")
+    print(f"Compatibility zip for older update clients: {compatibility_path}")
 
 if __name__ == "__main__":
     build()
