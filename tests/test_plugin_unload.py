@@ -16,7 +16,13 @@ def plugin_logic(namespace):
     helper=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_stop_loader_ipc_listener']
     namespace['asynccontextmanager'] = asynccontextmanager
     exec(compile(ast.fix_missing_locations(ast.Module(body=helper+[ast.ClassDef(name='Plugin',bases=[],keywords=[],body=body,decorator_list=[])],type_ignores=[])),'plugin-lifecycle','exec'),namespace)
-    return namespace['Plugin']
+    cls = namespace['Plugin']
+    async def stop_nested(instance):
+        callback = namespace.get('stop_nested_media_watch')
+        if callback:
+            await callback(instance)
+    cls._stop_nested_media_watch = stop_nested
+    return cls
 
 class PluginUnloadTests(unittest.IsolatedAsyncioTestCase):
     async def test_unload_gracefully_stops_only_its_loader_ipc_listener_before_eof_busy_loop(self):
@@ -130,6 +136,7 @@ class PluginUnloadTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_normal_stop_still_pushes_state_after_releasing_resources(self):
         released=[]
+        async def stop_nested(instance):released.append('nested')
         async def stop_watch(instance):released.append('watch')
         async def stop_bus():released.append('bus')
         async def cancel_emit(wait=True):released.append('cancel')
@@ -137,11 +144,11 @@ class PluginUnloadTests(unittest.IsolatedAsyncioTestCase):
         ns={'asyncio':asyncio,'decky':NS(logger=NS(info=lambda *a:None)),
             'stop_dbus':stop_bus,'clear_dbus_requests':lambda:released.append('requests'),
             'cancel_inhibit_state_changed_task':cancel_emit,'emit_inhibit_state_changed':emit,
-            'record_diagnostic_event':lambda *a:None}
+            'record_diagnostic_event':lambda *a:None,'stop_nested_media_watch':stop_nested}
         Plugin=plugin_logic(ns)
         Plugin._stop_manual_watch=stop_watch
         self.assertTrue(await Plugin().stop_backend())
-        self.assertEqual(released,['watch','bus','requests','cancel','emit'])
+        self.assertEqual(released,['nested','watch','bus','requests','cancel','emit'])
 
     async def test_unload_does_not_wait_for_frontend_emit_after_loader_listener_stops(self):
         released=[]

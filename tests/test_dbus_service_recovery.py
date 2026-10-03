@@ -50,6 +50,7 @@ def load_logic(current_bus=None, next_bus=None):
     exec(compile(ast.fix_missing_locations(ast.Module(body=nodes+[cls], type_ignores=[])), 'main-reconnection', 'exec'), ns)
     ns['Plugin']._start_manual_watch = Mock()
     ns['Plugin']._start_dbus_connection_watch = Mock()
+    ns['Plugin']._start_nested_media_watch = Mock()
     return ns, ns['Plugin']()
 
 class DbusServiceRecoveryTests(unittest.IsolatedAsyncioTestCase):
@@ -66,6 +67,7 @@ class DbusServiceRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns['BaseInterface'].request_map, {})
         self.assertEqual(ns['decky_music_mpris_states'], {})
         ns['decky_music_mpris_change_callback'].assert_called()
+        type(plugin)._start_nested_media_watch.assert_called_once_with(plugin)
 
     async def test_connection_watcher_reconnects_without_duplicate_manual_watch(self):
         ns, plugin = load_logic(Bus(connected=False), Bus())

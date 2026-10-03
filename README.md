@@ -28,6 +28,8 @@ ScreenSaver Enhancements is a [Decky Loader](https://decky.xyz) plugin for Steam
 - **Diagnostics and updates** — inspect monitor mode, process activity, inhibition source, D-Bus requests, power override state, recent events, and event-channel health; copy the report or update from the plugin panel. *(v2.0.0)*
 - **Reliable lifecycle handling** — waits for pending inhibition notifications to cancel during unload/restart and packages all required backend modules with the release. *(v2.0.0)*
 - **Decky Music MPRIS playback monitoring** — recognizes current Decky Music releases through their public MPRIS playback events while retaining the legacy DeckyMusic compatibility path. Playback changes no longer require a repeated full-process scan. *(v2.0.1)*
+- **Nested Desktop playback monitoring** — automatically detects MPRIS playback on Nested Desktop session buses. Pausing, stopping, or exiting releases this playback inhibitor; configured manual rules remain unchanged. *(v2.0.4)*
+- **Ukrainian localization** — supports Steam's Ukrainian language setting alongside English and Simplified Chinese. *(v2.0.4)*
 - **Clearer diagnostics** — recent plugin events retain the latest 40 entries, can be cleared from the Diagnostics page, and now identify the application that added or removed a sleep rule or changed sleep-inhibition state. *(v2.0.1)*
 - **Process-list refinements** — preserves Unicode process names, avoids duplicate localized labels, and improves the refresh feedback and scrolling behavior in the app-rules page. *(v2.0.1)*
 - **Safer settings persistence** — validates setting values before saving, normalizes persisted values, and preserves malformed settings files for recovery instead of silently discarding them. *(v2.0.2)*
@@ -35,6 +37,7 @@ ScreenSaver Enhancements is a [Decky Loader](https://decky.xyz) plugin for Steam
 
 ## What's new in v2.0.4
 
+- Add Nested Desktop MPRIS playback detection and Ukrainian localization, preserving existing application rules and Chinese labels.
 - Add internal display power control while retaining the black overlay and shared input-wake setting.
 - Improve wake-request response and fix touch presses that scroll the action without activating it.
 - Strengthen display and power-profile recovery, isolating timed-out requests and retired plugin instances.
@@ -118,14 +121,15 @@ To upgrade manually, download the latest release package, then select it through
 
 ## How it works
 
-The plugin uses two complementary sources of inhibition:
+The plugin uses three complementary sources of inhibition:
 
 - **D-Bus mode** registers standard sleep-inhibition services. When an application calls `Inhibit`, the backend pushes a state update and the frontend applies the configured SteamOS power behavior.
 - **Manual mode** watches the configured process rules. It prefers process events and automatically switches to low-frequency scanning when the event source is unavailable.
+- **Nested Desktop MPRIS** watches players on separate Nested Desktop session buses. Only active playback adds an inhibitor; a brief query failure retains the last confirmed playback state for a bounded grace period. Existing manual rules still apply independently, so a configured browser rule can keep inhibiting after media pauses.
 
 DeckyMusic is a specialized manual rule: its audio state is checked every five seconds only while the rule is configured. Normal manual application rules remain event-driven, with a 120-second fallback scan, so the two paths do not multiply process-scanning work.
 
-Both sources share the same state synchronization and power-control path. Before overriding power behavior, the plugin records the current settings; once every inhibitor ends, it restores that saved configuration instead of writing fixed defaults.
+All sources share the same state synchronization and power-control path. Before overriding power behavior, the plugin records the current settings; once every inhibitor ends, it restores that saved configuration instead of writing fixed defaults.
 
 ## Development
 

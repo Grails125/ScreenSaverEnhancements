@@ -368,10 +368,33 @@ const APP_NAMES: Record<string, string> = {
   "flatpak": "Flatpak 管理器",
 };
 
+const APP_NAME_KEYS: Record<string, Parameters<typeof t>[0]> = {
+  "DeckyMusic": "App Name DeckyMusic",
+  "vlc": "App Name vlc",
+  "mpv": "App Name mpv",
+  "chrome": "App Name chrome",
+  "msedge": "App Name msedge",
+  "firefox-bin": "App Name firefox-bin",
+  "wiliwili": "App Name wiliwili",
+  "steam": "App Name steam",
+  "gamescope": "App Name gamescope",
+  "discord": "App Name discord",
+  "obs": "App Name obs",
+  "retroarch": "App Name retroarch",
+  "dolphin-emu": "App Name dolphin-emu",
+  "pcsx2": "App Name pcsx2",
+  "kodi": "App Name kodi",
+  "bash": "App Name bash",
+  "python": "App Name python",
+  "node": "App Name node",
+  "flatpak": "App Name flatpak",
+};
+
 const getAppDisplayName = (application?: string) => {
   const normalized = application?.trim() || "";
   const shortName = normalized.split(/[/.]/).pop() || normalized;
-  return APP_NAMES[normalized] || APP_NAMES[shortName] || normalized;
+  const key = APP_NAME_KEYS[normalized] || APP_NAME_KEYS[shortName];
+  return key ? t(key) : APP_NAMES[normalized] || APP_NAMES[shortName] || normalized;
 }
 const RUN_ON_LOGIN = "run_on_login"
 const SHOW_NOTIFY  = "show_notify"
@@ -492,7 +515,9 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
     </PanelSection>
 
     <PanelSection title={t('Active Inhibit Sources')}>
-      {!inhibitStatus.manual_active && inhibitStatus.dbus_requests.length === 0 && (
+      {!inhibitStatus.manual_active
+        && inhibitStatus.dbus_requests.length === 0
+        && inhibitStatus.nested_mpris_sources.length === 0 && (
         <PanelSectionRow>
           <div style={PANEL_STYLES.emptyState}>
             {t('No Active Inhibit')}
@@ -521,6 +546,21 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
           </div>
         </PanelSectionRow>
       )}
+      {inhibitStatus.nested_mpris_sources.map((source, index) => (
+        <PanelSectionRow key={`${source.service}:${source.application}:${index}`}>
+          <div style={PANEL_STYLES.processItem}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+              <span style={PANEL_STYLES.processName}>
+                {getAppDisplayName(source.application)}
+              </span>
+              <span style={PANEL_STYLES.sectionHint}>
+                {t('Nested MPRIS Inhibit Source')}
+              </span>
+            </div>
+            <span style={PANEL_STYLES.badge('app')}>{t('Active')}</span>
+          </div>
+        </PanelSectionRow>
+      ))}
       {inhibitStatus.dbus_requests.map((request) => (
         <PanelSectionRow key={request.cookie}>
           <div style={PANEL_STYLES.processItem}>
@@ -565,7 +605,7 @@ const InhibitAppsPage: FC<InhibitAppsPageProps> = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={PANEL_STYLES.processName}>{displayName}</span>
                     <span style={PANEL_STYLES.badge(proc.type)}>
-                      {proc.type === 'app' ? "应用" : "系统"}
+                      {t(proc.type === 'app' ? 'Application Type' : 'System Type')}
                     </span>
                   </div>
                   {displayName !== proc.name && (
@@ -610,6 +650,10 @@ const formatDiagnosticEventType = (type: string) => {
 
 const formatDiagnosticEventDetail = (detail: string | undefined) => {
   if (!detail) return undefined;
+  if (detail.startsWith('nested_mpris_playing:')) {
+    const applications = detail.slice('nested_mpris_playing:'.length).split(',').map(getAppDisplayName);
+    return `${t('nested_mpris_playing')}: ${applications.join(', ')}`;
+  }
   const ruleChange = /^(manual_app_rule_added|manual_app_rule_removed):(.+)$/.exec(detail);
   if (ruleChange) {
     const application = getAppDisplayName(ruleChange[2]);
@@ -757,6 +801,10 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
           <DiagnosticRow label={t('Manual Rule Count')} value={diagnostics.manualRuleCount} />
           <DiagnosticRow label={t('Active Application')} value={diagnostics.manualActiveApp || t('None')} />
           <DiagnosticRow label={t('Active D-Bus Inhibit Requests')} value={diagnostics.dbusRequestCount} />
+          <DiagnosticRow label={t('Nested MPRIS Inhibit Source')} value={diagnostics.nestedMprisActive ? diagnostics.nestedMprisSources.map(source => getAppDisplayName(source.application)).join(', ') || t('Active') : t('None')} />
+          <DiagnosticRow label={t('Nested MPRIS Bus Count')} value={diagnostics.nestedMprisBusCount} />
+          <DiagnosticRow label={t('Nested MPRIS Scan Count')} value={diagnostics.nestedMprisScanCount} />
+          <DiagnosticRow label={t('Nested MPRIS Last Scan')} value={formatDiagnosticTime(diagnostics.nestedMprisLastScanAt)} />
           <DiagnosticRow label={t('Power Recovery Active')} value={diagnostics.powerOverrideActive ? t('Yes') : t('No')} />
         </PanelSection>
 

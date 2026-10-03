@@ -25,12 +25,19 @@ const loaderCallable: CallableFactory = (route) => async (...args) => {
 
 export type RunningProcess = { name: string; type: string };
 export type InhibitRequest = { cookie: number; application: string; reason: string };
+export type NestedMprisSource = {
+  application: string;
+  service: string;
+  reason: string;
+};
 export type InhibitStatus = {
   manual_apps: string[];
   manual_active_app: string | null;
   manual_active: boolean;
   dbus_requests: InhibitRequest[];
   dbus_active: boolean;
+  nested_mpris_sources: NestedMprisSource[];
+  nested_mpris_active: boolean;
   is_inhibiting: boolean;
 };
 export type SettingsChangedKey = "manual_apps";

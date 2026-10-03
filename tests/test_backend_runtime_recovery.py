@@ -13,7 +13,8 @@ def backend_logic():
     tree = ast.parse((ROOT / 'main.py').read_text(encoding='utf-8'))
     plugin = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'Plugin')
     names = {'_init_runtime_state', '_stop_manual_watch', 'start_backend', 'stop_backend',
-             '_start_backend_locked', '_stop_backend_locked', '_backend_operation_lock', '_unload'}
+             '_start_backend_locked', '_stop_backend_locked', '_backend_operation_lock', '_unload',
+             '_stop_nested_media_watch'}
     methods = [node for node in plugin.body
                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names]
     namespace = {
@@ -21,7 +22,7 @@ def backend_logic():
         'unloading': False, 'UNLOAD_TIMEOUT': 0.025,
         'decky': NS(logger=NS(info=lambda *a: None, warning=lambda *a: None, error=lambda *a: None)),
         'DisplayWakeGuard': lambda: NS(close=async_noop),
-        'record_diagnostic_event': lambda *a: None, 'sync_inhibit_state': lambda: None,
+        'record_diagnostic_event': lambda *a: None, 'sync_inhibit_state': lambda *a, **kw: None,
         'clear_dbus_requests': lambda: None,
         'cancel_inhibit_state_changed_task': async_noop,
         'emit_inhibit_state_changed': async_noop, '_stop_loader_ipc_listener': lambda *a: None,
@@ -46,6 +47,7 @@ def backend_logic():
 
     cls._start_manual_watch = lambda self: setattr(self, 'manual_watch_task', asyncio.create_task(watcher()))
     cls._start_dbus_connection_watch = lambda self: setattr(self, 'dbus_connection_watch_task', asyncio.create_task(watcher()))
+    cls._start_nested_media_watch = lambda self: setattr(self, 'nested_media_watch_task', asyncio.create_task(watcher()))
     return namespace, cls()
 
 
@@ -67,6 +69,7 @@ class BackendLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(namespace['bus'])
             self.assertFalse(plugin.manual_watch_task.done())
             self.assertFalse(plugin.dbus_connection_watch_task.done())
+            self.assertFalse(plugin.nested_media_watch_task.done())
         finally:
             await plugin.stop_backend()
 
@@ -115,7 +118,7 @@ class BackendLifecycleTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(stop, return_exceptions=True)
             # The artificial watcher is cancellation-resistant; original real
             # watchers are restored and stopped to leave no live test tasks.
-            for task in (plugin.manual_watch_task, plugin.dbus_connection_watch_task):
+            for task in (plugin.manual_watch_task, plugin.dbus_connection_watch_task, plugin.nested_media_watch_task):
                 if task is not None:
                     task.cancel()
                     await asyncio.gather(task, return_exceptions=True)

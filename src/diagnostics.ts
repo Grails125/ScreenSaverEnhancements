@@ -1,4 +1,5 @@
 import { parseSteamPowerSettings, PowerSettings } from "./powerSettings";
+import type { NestedMprisSource } from "./deckyApi";
 
 export type DiagnosticEvent = {
   timestamp: number;
@@ -19,6 +20,11 @@ export type Diagnostics = {
   manualRuleCount: number;
   manualActiveApp: string | null;
   dbusRequestCount: number;
+  nestedMprisActive: boolean;
+  nestedMprisSources: NestedMprisSource[];
+  nestedMprisScanCount: number;
+  nestedMprisLastScanAt: number | null;
+  nestedMprisBusCount: number;
   pushListenerActive: boolean;
   pushReconnectCount: number;
   lastFullSyncAt: number | null;
@@ -69,6 +75,17 @@ export const parseDiagnostics = (value: unknown): Diagnostics | null => {
     manualRuleCount: finiteNumber(source.manualRuleCount),
     manualActiveApp: typeof source.manualActiveApp === "string" ? source.manualActiveApp : null,
     dbusRequestCount: finiteNumber(source.dbusRequestCount),
+    nestedMprisActive: source.nestedMprisActive === true,
+    nestedMprisSources: Array.isArray(source.nestedMprisSources)
+      ? source.nestedMprisSources.slice(0, 100).flatMap((item): NestedMprisSource[] => {
+        if (!item || typeof item !== "object" || typeof item.application !== "string"
+          || typeof item.service !== "string") return [];
+        return [{ application: item.application.slice(0, 256), service: item.service.slice(0, 256),
+          reason: typeof item.reason === "string" ? item.reason.slice(0, 256) : "" }];
+      }) : [],
+    nestedMprisScanCount: finiteNumber(source.nestedMprisScanCount),
+    nestedMprisLastScanAt: nullableTimestamp(source.nestedMprisLastScanAt),
+    nestedMprisBusCount: finiteNumber(source.nestedMprisBusCount),
     pushListenerActive: source.pushListenerActive === true,
     pushReconnectCount: finiteNumber(source.pushReconnectCount),
     lastFullSyncAt: nullableTimestamp(source.lastFullSyncAt),

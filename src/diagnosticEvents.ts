@@ -1,9 +1,9 @@
 export type DiagnosticEventMessage =
-  | { key: "backend_started" | "backend_stopped" | "settings_changed" | "inhibit_state_changed" | "dbus_request" | "process_monitor" | "decky_music_playback" }
+  | { key: "backend_started" | "backend_stopped" | "settings_changed" | "inhibit_state_changed" | "dbus_request" | "process_monitor" | "decky_music_playback" | "nested_mpris_playback" }
   | { fallback: string };
 
 export type DiagnosticEventDetailMessage =
-  | { key: "manual_apps" | "proc_connector" | "fallback_scan" | "decky_music_playing" | "decky_music_stopped" | "decky_music_audio_temporarily_missing" }
+  | { key: "manual_apps" | "proc_connector" | "fallback_scan" | "decky_music_playing" | "decky_music_stopped" | "decky_music_audio_temporarily_missing" | "nested_mpris_stopped" | "nested_mpris_sources_changed" }
   | { fallback: string };
 
 export type ManualAppInhibitDetail = {
@@ -19,6 +19,7 @@ const EVENT_MESSAGES = {
   dbus_request: "dbus_request",
   process_monitor: "process_monitor",
   decky_music_playback: "decky_music_playback",
+  nested_mpris_playback: "nested_mpris_playback",
 } as const;
 
 const EVENT_DETAIL_MESSAGES = {
@@ -28,6 +29,8 @@ const EVENT_DETAIL_MESSAGES = {
   decky_music_playing: "decky_music_playing",
   decky_music_stopped: "decky_music_stopped",
   decky_music_audio_temporarily_missing: "decky_music_audio_temporarily_missing",
+  nested_mpris_stopped: "nested_mpris_stopped",
+  nested_mpris_sources_changed: "nested_mpris_sources_changed",
 } as const;
 
 export const getDiagnosticEventMessage = (value: string): DiagnosticEventMessage => {
