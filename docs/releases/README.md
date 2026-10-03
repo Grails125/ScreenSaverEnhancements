@@ -19,14 +19,15 @@ v2.0.4 使用 [v2.0.4.md](./v2.0.4.md)，主要安装包为 `ScreenSaverEnhancem
 
 原 v2.0.4 安装包因更新安装身份名称错误撤回，更正包仍以 v2.0.4 发布。已安装原包的用户需从 ZIP 重装，同版本更正不会触发新版本提示。
 
-同版本重发前，由维护者核对本地及远端 `v2.0.4` 标签均指向包含修复、已通过验证的提交，再从该提交重新构建两份 ZIP。核验 ZIP 内的版本、插件名、必需模块及两份包的 SHA-256 一致；旧发行版撤回后才重新创建发行版。已有标签不可直接重复创建，应先确认标签对应的提交。
+同版本重发前，由维护者核对本地及远端 `v2.0.4` 标签均指向包含修复、已通过验证的提交，再从该提交重新构建两份 ZIP。核验 ZIP 内的版本、插件名、必需模块及两份包的 SHA-256 一致；旧发行版转为草稿后替换资产，验证新资产后再重新公开。已有标签不可直接重复创建，应先确认标签对应的提交。
 
 标签和更正包核验完成后，使用以下命令发布 v2.0.4：
 
 ```powershell
 git rev-parse v2.0.4
 git ls-remote --tags origin refs/tags/v2.0.4
-gh release create v2.0.4 --verify-tag --title v2.0.4 --notes-file docs/releases/v2.0.4.md build/ScreenSaverEnhancements-v2.0.4.zip build/ScreenSaverEnhancements.zip
+gh release upload v2.0.4 build/ScreenSaverEnhancements-v2.0.4.zip build/ScreenSaverEnhancements.zip --clobber
+gh release edit v2.0.4 --draft=false --prerelease=false --latest --title v2.0.4 --notes-file docs/releases/v2.0.4.md
 ```
 
 发布后下载并核验两份资产的 SHA-256、ZIP 元数据与已验证构建一致，确认发行版标签指向正确提交，并通过手动 ZIP 安装验证插件重载与功能。保留 [PR #1](https://github.com/Grails125/ScreenSaverEnhancements/pull/1) 作者及贡献致谢。
