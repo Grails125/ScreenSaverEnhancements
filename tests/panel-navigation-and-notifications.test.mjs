@@ -25,7 +25,7 @@ test("resets every scrollable ancestor before opening a secondary page", () => {
 test("uses one sleep-inhibition notification path for every application source", () => {
   const indexSource = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
 
-  assert.match(indexSource, /const notifyInhibitState = \(application: string \| undefined, active: boolean\)/);
+  assert.match(indexSource, /const notifyInhibitState = \(application: string \| undefined, active: boolean, isCurrent\?: \(\) => boolean\)/);
   assert.match(indexSource, /notifyInhibitState\(application, true\)/);
   assert.match(indexSource, /notifyInhibitState\(undefined, false\)/);
   assert.doesNotMatch(indexSource, /notify\(DECKY_MUSIC_APP,/);

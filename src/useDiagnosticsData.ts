@@ -19,31 +19,41 @@ export const useDiagnosticsData = (
   const [diagnosticsLoading, setDiagnosticsLoading] = useState<boolean>(false);
   const [diagnosticsExportStatus, setDiagnosticsExportStatus] = useState<string>('');
   const diagnosticsExportTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestRevision = useRef(0);
+  const mounted = useRef(true);
 
-  useEffect(() => () => {
-    if (diagnosticsExportTimeoutRef.current !== null) {
-      clearTimeout(diagnosticsExportTimeoutRef.current);
-      diagnosticsExportTimeoutRef.current = null;
-    }
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      requestRevision.current++;
+      if (diagnosticsExportTimeoutRef.current !== null) {
+        clearTimeout(diagnosticsExportTimeoutRef.current);
+        diagnosticsExportTimeoutRef.current = null;
+      }
+    };
   }, []);
 
   const refreshDiagnostics = async () => {
+    const revision = ++requestRevision.current;
     setDiagnosticsLoading(true);
     try {
       const result = await serverApi.getDiagnostics();
+      if (!mounted.current || revision !== requestRevision.current) return;
       const parsed = parseDiagnostics(result);
       setDiagnostics(parsed ? { ...parsed, ...getEventChannelDiagnostics() } : null);
     } catch (error) {
       console.warn('[ScreenSaverEnhancements] Could not load diagnostics', error);
-      setDiagnostics(null);
+      if (mounted.current && revision === requestRevision.current) setDiagnostics(null);
     } finally {
-      setDiagnosticsLoading(false);
+      if (mounted.current && revision === requestRevision.current) setDiagnosticsLoading(false);
     }
   };
 
   const exportDiagnostics = async () => {
     if (!diagnostics) return;
     const copied = await copyTextToClipboard(JSON.stringify(diagnostics, null, 2));
+    if (!mounted.current) return;
     if (copied) {
       setDiagnosticsExportStatus(translate('Diagnostic Report Copied'));
     } else {
@@ -60,7 +70,15 @@ export const useDiagnosticsData = (
   };
 
   const clearDiagnosticEvents = async () => {
-    if (await serverApi.clearDiagnosticEvents()) await refreshDiagnostics();
+    const revision = ++requestRevision.current;
+    setDiagnosticsLoading(true);
+    try {
+      if (await serverApi.clearDiagnosticEvents() && mounted.current) await refreshDiagnostics();
+    } catch (error) {
+      console.warn('[ScreenSaverEnhancements] Could not clear diagnostics', error);
+    } finally {
+      if (mounted.current && revision === requestRevision.current) setDiagnosticsLoading(false);
+    }
   };
 
   return {

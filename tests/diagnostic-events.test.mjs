@@ -22,6 +22,7 @@ test("maps every backend diagnostic event to a translatable message", () => {
   assert.equal(getDiagnosticEventMessage("backend_stopped").key, "backend_stopped");
   assert.equal(getDiagnosticEventMessage("settings_changed").key, "settings_changed");
   assert.equal(getDiagnosticEventMessage("inhibit_state_changed").key, "inhibit_state_changed");
+  assert.equal(getDiagnosticEventMessage("dbus_request").key, "dbus_request");
   assert.equal(getDiagnosticEventMessage("process_monitor").key, "process_monitor");
   assert.equal(getDiagnosticEventMessage("decky_music_playback").key, "decky_music_playback");
   assert.equal(getDiagnosticEventMessage("custom_event").fallback, "custom_event");
@@ -62,6 +63,7 @@ test("provides Chinese translations for every diagnostic event message", () => {
     "backend_stopped",
     "settings_changed",
     "inhibit_state_changed",
+    "dbus_request",
     "process_monitor",
     "decky_music_playback",
     "decky_music_playing",

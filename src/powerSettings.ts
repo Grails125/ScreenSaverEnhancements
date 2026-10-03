@@ -8,6 +8,7 @@ export type PowerSettings = {
 export type PowerOverrideState = {
   active: boolean;
   snapshot: PowerSettings | null;
+  owner?: string;
 };
 
 export const DEFAULT_POWER_SETTINGS: PowerSettings = {
@@ -66,11 +67,12 @@ export const parsePowerOverrideState = (value: unknown): PowerOverrideState => {
     return { active: false, snapshot: null };
   }
   const state = value as Record<string, unknown>;
+  const ownership = typeof state.owner === 'string' ? { owner: state.owner } : {};
   const snapshot = parseSteamPowerSettings(state.snapshot);
   if (state.active !== true || !snapshot) {
-    return { active: false, snapshot: null };
+    return { active: false, snapshot: null, ...ownership };
   }
-  return { active: true, snapshot };
+  return { active: true, snapshot, ...ownership };
 };
 
 export const minutesToSeconds = (minutes: unknown) => normalizePowerTimeout(

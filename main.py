@@ -1,18 +1,11 @@
 import decky
 import asyncio
 import importlib.util
-import base64
-import hashlib
-import json
 import os
 from pathlib import Path
-import re
-import socket
-import struct
 import time
 from collections import deque
-from urllib.parse import urlparse
-from urllib.request import urlopen
+from contextlib import asynccontextmanager
 
 
 def load_local_module(module_name, file_name):
@@ -31,23 +24,29 @@ def load_local_module(module_name, file_name):
 SettingsManager = load_local_module("settings", "settings.py").SettingsManager
 plugin_contract = load_local_module("contract", "plugin_contract.py")
 process_events = load_local_module("process_events", "process_events.py")
+process_utils = load_local_module("process_utils", "process_utils.py")
+power_settings = load_local_module("power_settings", "power_settings.py")
+decky_music_cdp = load_local_module("decky_music_cdp", "decky_music_cdp.py")
+manual_watch_utils = load_local_module("manual_watch_utils", "manual_watch_utils.py")
 update_checker = load_local_module("update_checker", "update_checker.py")
 task_lifecycle = load_local_module("task_lifecycle", "task_lifecycle.py")
 ProcessEventSource = process_events.ProcessEventSource
 ManagedTask = task_lifecycle.ManagedTask
-
-STEAM_CONFIG_PATHS = (
-    "/home/deck/.local/share/Steam/config/config.vdf",
-    "/home/deck/.steam/steam/config/config.vdf",
-)
-STEAM_POWER_SETTING_KEYS = {
-    "batteryDim": "IdleBacklightDimBatterySeconds",
-    "acDim": "IdleBacklightDimACSeconds",
-    "batterySuspend": "IdleSuspendBatterySeconds",
-    "acSuspend": "IdleSuspendACSeconds",
-}
+normalize_power_settings = power_settings.normalize_power_settings
+read_steam_power_settings = power_settings.read_steam_power_settings
+is_decky_music_playing_cdp = decky_music_cdp.is_playing
+update_decky_music_detection_state = manual_watch_utils.update_decky_music_detection_state
+should_scan_manual_processes = manual_watch_utils.should_scan_manual_processes
+get_manual_app_rule_change_details = manual_watch_utils.get_manual_app_rule_change_details
 POWER_OVERRIDE_ACTIVE = "power_override_active"
 POWER_OVERRIDE_SNAPSHOT = "power_override_snapshot"
+UNLOAD_TIMEOUT = 3.5  # Decky kills a plugin after five seconds.
+MPRIS_REFRESH_TIMEOUT = 2.0
+MAX_DBUS_REQUESTS_PER_SENDER = 64
+MAX_DBUS_REQUESTS = 256
+MAX_DBUS_APPLICATION_BYTES = 1024
+MAX_DBUS_REASON_BYTES = 4096
+POWER_OVERRIDE_OWNER = "power_override_owner"
 LEGACY_SETTING_KEYS = (
     "custom_power_settings_enabled",
     "dim_timeout",
@@ -55,276 +54,6 @@ LEGACY_SETTING_KEYS = (
     "mute_notifications",
     "system_power_settings_snapshot",
 )
-DECKY_CDP_ADDRESS = ("127.0.0.1", 8080)
-DECKY_CDP_TARGET_TITLE = "SharedJSContext"
-DECKY_MUSIC_TRACKER_KEY = "__screenSaverEnhancementsDeckyMusicTrackerV1"
-DECKY_MUSIC_TRACKER_SCRIPT = r'''
-(() => {
-  const key = "__screenSaverEnhancementsDeckyMusicTrackerV1";
-  const existing = globalThis[key];
-  if (existing && existing.version === 1) return true;
-
-  const tracked = new Set();
-  const mediaPrototype = HTMLMediaElement.prototype;
-  const originalPlay = mediaPrototype.play;
-  const originalPause = mediaPrototype.pause;
-  const remove = function() { tracked.delete(this); };
-  const track = (audio) => {
-    if (!audio || tracked.has(audio)) return audio;
-    tracked.add(audio);
-    audio.addEventListener("pause", remove, { once: true });
-    audio.addEventListener("ended", remove, { once: true });
-    return audio;
-  };
-
-  mediaPrototype.play = function(...args) {
-    track(this);
-    return originalPlay.apply(this, args);
-  };
-  mediaPrototype.pause = function(...args) {
-    track(this);
-    return originalPause.apply(this, args);
-  };
-  globalThis[key] = {
-    version: 1,
-    trackAll(audioObjects) {
-      for (const audio of audioObjects) track(audio);
-      return this.isPlaying();
-    },
-    isPlaying() {
-      for (const audio of tracked) {
-        if (!audio.paused && !audio.ended && audio.readyState > 0) return true;
-      }
-      return false;
-    },
-  };
-  return true;
-})()
-'''
-
-
-def _recv_exact(sock, size):
-    chunks = []
-    remaining = size
-    while remaining:
-        chunk = sock.recv(remaining)
-        if not chunk:
-            raise ConnectionError("Chrome DevTools connection closed")
-        chunks.append(chunk)
-        remaining -= len(chunk)
-    return b"".join(chunks)
-
-
-def _send_websocket_text(sock, payload):
-    data = payload.encode("utf-8")
-    mask = os.urandom(4)
-    size = len(data)
-    if size < 126:
-        header = bytes((0x81, 0x80 | size))
-    elif size <= 0xFFFF:
-        header = bytes((0x81, 0x80 | 126)) + struct.pack("!H", size)
-    else:
-        header = bytes((0x81, 0x80 | 127)) + struct.pack("!Q", size)
-    masked = bytes(value ^ mask[index % 4] for index, value in enumerate(data))
-    sock.sendall(header + mask + masked)
-
-
-def _recv_websocket_text(sock):
-    while True:
-        first, second = _recv_exact(sock, 2)
-        opcode = first & 0x0F
-        masked = bool(second & 0x80)
-        size = second & 0x7F
-        if size == 126:
-            size = struct.unpack("!H", _recv_exact(sock, 2))[0]
-        elif size == 127:
-            size = struct.unpack("!Q", _recv_exact(sock, 8))[0]
-        mask = _recv_exact(sock, 4) if masked else b""
-        data = _recv_exact(sock, size)
-        if masked:
-            data = bytes(value ^ mask[index % 4] for index, value in enumerate(data))
-        if opcode == 0x8:
-            raise ConnectionError("Chrome DevTools WebSocket closed")
-        if opcode == 0x9:
-            sock.sendall(bytes((0x8A, len(data))) + data)
-            continue
-        if opcode == 0x1:
-            return data.decode("utf-8")
-
-
-def _open_cdp_websocket(websocket_url):
-    parsed = urlparse(websocket_url)
-    if (
-        parsed.scheme != "ws"
-        or parsed.hostname not in {"127.0.0.1", "localhost"}
-        or parsed.port != DECKY_CDP_ADDRESS[1]
-        or not parsed.path.startswith("/devtools/page/")
-    ):
-        raise ValueError("Unexpected Chrome DevTools endpoint")
-    sock = socket.create_connection(DECKY_CDP_ADDRESS, timeout=6)
-    sock.settimeout(6)
-    key = base64.b64encode(os.urandom(16)).decode("ascii")
-    request = (
-        f"GET {parsed.path} HTTP/1.1\r\n"
-        f"Host: {DECKY_CDP_ADDRESS[0]}:{DECKY_CDP_ADDRESS[1]}\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        f"Sec-WebSocket-Key: {key}\r\n"
-        "Sec-WebSocket-Version: 13\r\n"
-        "Origin: http://localhost\r\n\r\n"
-    )
-    sock.sendall(request.encode("ascii"))
-    response = b""
-    while b"\r\n\r\n" not in response:
-        chunk = sock.recv(1024)
-        if not chunk:
-            raise ConnectionError("Chrome DevTools closed during handshake")
-        response += chunk
-        if len(response) > 16 * 1024:
-            raise ConnectionError("Invalid Chrome DevTools handshake")
-    headers, _ = response.split(b"\r\n\r\n", 1)
-    expected_accept = base64.b64encode(
-        hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest(),
-    ).decode("ascii")
-    if b" 101 " not in headers.splitlines()[0] or expected_accept.encode("ascii") not in headers:
-        sock.close()
-        raise ConnectionError("Chrome DevTools WebSocket handshake failed")
-    return sock
-
-
-def _call_cdp(sock, request_id, method_name, params):
-    _send_websocket_text(sock, json.dumps({
-        "id": request_id,
-        "method": method_name,
-        "params": params,
-    }, separators=(",", ":")))
-    while True:
-        message = json.loads(_recv_websocket_text(sock))
-        if message.get("id") != request_id:
-            continue
-        if "error" in message:
-            raise RuntimeError(message["error"].get("message", "Chrome DevTools error"))
-        return message["result"]
-
-
-def _read_decky_music_tracker(sock):
-    result = _call_cdp(sock, 1, "Runtime.evaluate", {
-        "expression": (
-            "(() => { const tracker = globalThis["
-            f"{json.dumps(DECKY_MUSIC_TRACKER_KEY)}"
-            "]; return tracker ? tracker.isPlaying() : null; })()"
-        ),
-        "returnByValue": True,
-    })
-    value = result["result"].get("value")
-    return value if isinstance(value, bool) else None
-
-
-def _install_decky_music_tracker(sock):
-    installed = _call_cdp(sock, 2, "Runtime.evaluate", {
-        "expression": DECKY_MUSIC_TRACKER_SCRIPT,
-        "returnByValue": True,
-    })["result"].get("value")
-    if installed is not True:
-        raise RuntimeError("Could not install DeckyMusic playback tracker")
-
-    prototype = _call_cdp(sock, 3, "Runtime.evaluate", {
-        "expression": "HTMLAudioElement.prototype",
-    })["result"]["objectId"]
-    audio_objects = _call_cdp(sock, 4, "Runtime.queryObjects", {
-        "prototypeObjectId": prototype,
-    })["objects"]["objectId"]
-    result = _call_cdp(sock, 5, "Runtime.callFunctionOn", {
-        "objectId": audio_objects,
-        "functionDeclaration": (
-            "function() { return globalThis["
-            f"{json.dumps(DECKY_MUSIC_TRACKER_KEY)}"
-            "].trackAll(this); }"
-        ),
-        "returnByValue": True,
-    })
-    return result["result"].get("value") is True
-
-
-def _is_decky_music_playing_cdp():
-    """Fallback playback detection for older Decky Music releases without MPRIS."""
-    with urlopen("http://127.0.0.1:8080/json", timeout=2) as response:
-        targets = json.load(response)
-    target = next(
-        (item for item in targets if item.get("title") == DECKY_CDP_TARGET_TITLE),
-        None,
-    )
-    if not target or not isinstance(target.get("webSocketDebuggerUrl"), str):
-        return False
-    sock = _open_cdp_websocket(target["webSocketDebuggerUrl"])
-    try:
-        playback_state = _read_decky_music_tracker(sock)
-        return _install_decky_music_tracker(sock) if playback_state is None else playback_state
-    finally:
-        sock.close()
-
-
-def update_decky_music_detection_state(was_active, is_playing, missing_checks):
-    if is_playing:
-        return 0, True
-    missing_checks = min(missing_checks + 1, 2)
-    return missing_checks, was_active and missing_checks < 2
-
-
-def should_scan_manual_processes(
-    has_manual_process_rules,
-    decky_music_active,
-    current_manual_app,
-    wakeup_received,
-    last_scan_monotonic,
-    now_monotonic,
-):
-    if not has_manual_process_rules or decky_music_active:
-        return False
-    current_name = str(current_manual_app or "").lower().replace(" ", "").replace("-", "").replace("_", "")
-    if wakeup_received or current_name == "deckymusic":
-        return True
-    if last_scan_monotonic is None:
-        return True
-    return now_monotonic - last_scan_monotonic >= 120
-
-
-def normalize_power_settings(value):
-    if not isinstance(value, dict):
-        return None
-    result = {}
-    for key in STEAM_POWER_SETTING_KEYS:
-        timeout = value.get(key)
-        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
-            return None
-        timeout = round(timeout)
-        if timeout < 0 or timeout > 3600:
-            return None
-        result[key] = timeout
-    return result
-
-
-def parse_steam_power_settings(text):
-    result = {}
-    for output_key, steam_key in STEAM_POWER_SETTING_KEYS.items():
-        match = re.search(r'"{}"\s+"(\d+)"'.format(re.escape(steam_key)), text)
-        if match is None:
-            return None
-        result[output_key] = int(match.group(1))
-    return result
-
-
-def read_steam_power_settings():
-    for path in STEAM_CONFIG_PATHS:
-        try:
-            with open(path, "r", encoding="utf-8", errors="replace") as config_file:
-                parsed = parse_steam_power_settings(config_file.read())
-            if parsed is not None:
-                return parsed
-        except OSError:
-            continue
-    return None
-
 def import_third_party_lib():
     import sys
     from pathlib import Path
@@ -341,6 +70,7 @@ def setup_environ_vars():
 
 import_third_party_lib()
 setup_environ_vars()
+DisplayWakeGuard = load_local_module("display_wake_guard", "display_wake_guard.py").DisplayWakeGuard
 decky.logger.info("Main.py Loading...")
 decky.logger.info("Environment setup complete")
 settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
@@ -355,16 +85,20 @@ if settings.getSetting("manual_apps", None) is None:
 recent_diagnostic_events = deque(maxlen=40)
 manual_inhibiting = False
 inhibit_active = False
+unloading = False
 decky.logger.info(f"Settings directory: {settings_dir}")
 
 from dbus_next.aio import MessageBus
-from dbus_next import Message, MessageType
+from dbus_next import Message, MessageType, NameFlag, RequestNameReply, ErrorType
+from dbus_next.errors import DBusError
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
 bus = None
 inhibit_state_changed_task = ManagedTask()
 DECKY_MUSIC_MPRIS_PREFIX = "org.mpris.MediaPlayer2.decky_music."
 decky_music_mpris_owners = {}
 decky_music_mpris_states = {}
+decky_music_mpris_revisions = {}
+decky_music_mpris_refresh_generation = 0
 decky_music_mpris_change_callback = None
 
 
@@ -374,27 +108,49 @@ async def _is_decky_music_playing_mpris():
 
 
 async def refresh_decky_music_mpris_state():
+    """Keep optional player discovery from delaying all background monitoring."""
+    current_bus = bus
+    previous_states = dict(decky_music_mpris_states)
+    try:
+        await asyncio.wait_for(_refresh_decky_music_mpris_state(), MPRIS_REFRESH_TIMEOUT)
+    except Exception as error:
+        decky.logger.debug(f"DeckyMusic MPRIS discovery unavailable: {error}")
+        # A partial refresh may have received valid player replies before a
+        # second player failed. Publish those changes without losing signals.
+        if (bus is current_bus and previous_states != decky_music_mpris_states
+                and decky_music_mpris_change_callback):
+            decky_music_mpris_change_callback()
+
+
+async def _refresh_decky_music_mpris_state():
     """Discover dynamic MPRIS instances and obtain their initial playback state."""
     global decky_music_mpris_owners, decky_music_mpris_states
+    global decky_music_mpris_refresh_generation
+    decky_music_mpris_refresh_generation += 1
+    generation = decky_music_mpris_refresh_generation
+    current_bus = bus
     if bus is None:
         decky_music_mpris_owners = {}
         decky_music_mpris_states = {}
         return
-    names_reply = await bus.call(Message(
+    names_reply = await current_bus.call(Message(
         destination="org.freedesktop.DBus",
         path="/org/freedesktop/DBus",
         interface="org.freedesktop.DBus",
         member="ListNames",
     ))
+    if bus is not current_bus or generation != decky_music_mpris_refresh_generation:
+        return
     if names_reply.message_type == MessageType.ERROR:
         return
     services = [
         name for name in names_reply.body[0]
         if name.startswith(DECKY_MUSIC_MPRIS_PREFIX)
     ]
-    owners, states = {}, {}
+    previous_states = dict(decky_music_mpris_states)
+    owners = {}
     for service in services:
-        owner_reply = await bus.call(Message(
+        owner_reply = await current_bus.call(Message(
             destination="org.freedesktop.DBus",
             path="/org/freedesktop/DBus",
             interface="org.freedesktop.DBus",
@@ -402,9 +158,17 @@ async def refresh_decky_music_mpris_state():
             signature="s",
             body=[service],
         ))
-        if owner_reply.message_type != MessageType.ERROR and owner_reply.body:
-            owners[owner_reply.body[0]] = service
-        status_reply = await bus.call(Message(
+        if bus is not current_bus or generation != decky_music_mpris_refresh_generation:
+            return
+        if owner_reply.message_type == MessageType.ERROR or not owner_reply.body:
+            continue
+        owner = owner_reply.body[0]
+        owners[owner] = service
+        # Subscribe to this sender before awaiting Get. Signals that arrive while
+        # the query is pending must win over its older PlaybackStatus snapshot.
+        decky_music_mpris_owners[owner] = service
+        revision = decky_music_mpris_revisions.get(service, 0)
+        status_reply = await current_bus.call(Message(
             destination=service,
             path="/org/mpris/MediaPlayer2",
             interface="org.freedesktop.DBus.Properties",
@@ -412,19 +176,39 @@ async def refresh_decky_music_mpris_state():
             signature="ss",
             body=["org.mpris.MediaPlayer2.Player", "PlaybackStatus"],
         ))
-        if status_reply.message_type != MessageType.ERROR and status_reply.body:
-            states[service] = status_reply.body[0].value == "Playing"
-    changed = states != decky_music_mpris_states
-    decky_music_mpris_owners, decky_music_mpris_states = owners, states
+        if bus is not current_bus or generation != decky_music_mpris_refresh_generation:
+            return
+        if (status_reply.message_type != MessageType.ERROR and status_reply.body
+                and revision == decky_music_mpris_revisions.get(service, 0)):
+            decky_music_mpris_states[service] = status_reply.body[0].value == "Playing"
+    active_services = set(owners.values())
+    decky_music_mpris_owners = owners
+    decky_music_mpris_states = {
+        service: playing for service, playing in decky_music_mpris_states.items()
+        if service in active_services
+    }
+    changed = previous_states != decky_music_mpris_states
     if changed and decky_music_mpris_change_callback:
         decky_music_mpris_change_callback()
 
 
 def handle_decky_music_mpris_message(message):
+    global decky_music_mpris_refresh_generation
     if message.message_type != MessageType.SIGNAL:
         return False
     if message.interface == "org.freedesktop.DBus" and message.member == "NameOwnerChanged":
         if message.body and str(message.body[0]).startswith(DECKY_MUSIC_MPRIS_PREFIX):
+            service, old_owner, new_owner = message.body
+            # Invalidate pending queries immediately, before the refresh task runs.
+            decky_music_mpris_refresh_generation += 1
+            if old_owner:
+                decky_music_mpris_owners.pop(old_owner, None)
+            decky_music_mpris_states.pop(service, None)
+            decky_music_mpris_revisions[service] = decky_music_mpris_revisions.get(service, 0) + 1
+            if new_owner:
+                decky_music_mpris_owners[new_owner] = service
+            if decky_music_mpris_change_callback:
+                decky_music_mpris_change_callback()
             asyncio.create_task(refresh_decky_music_mpris_state())
     elif (
         message.interface == "org.freedesktop.DBus.Properties"
@@ -436,6 +220,7 @@ def handle_decky_music_mpris_message(message):
         and "PlaybackStatus" in message.body[1]
     ):
         service = decky_music_mpris_owners[message.sender]
+        decky_music_mpris_revisions[service] = decky_music_mpris_revisions.get(service, 0) + 1
         decky_music_mpris_states[service] = message.body[1]["PlaybackStatus"].value == "Playing"
         if decky_music_mpris_change_callback:
             decky_music_mpris_change_callback()
@@ -455,23 +240,17 @@ async def is_decky_music_playing_mpris():
 
 async def is_decky_music_playing_legacy():
     """Read playback state for the legacy DeckyMusic CEF implementation."""
-    return await asyncio.to_thread(_is_decky_music_playing_cdp)
+    return await asyncio.to_thread(is_decky_music_playing_cdp)
 
 
-def record_diagnostic_event(event_type, detail=None):
+def record_diagnostic_event(event_type, detail=None, **fields):
     entry = {"timestamp": int(time.time()), "type": str(event_type)[:64]}
     if detail:
         entry["detail"] = str(detail)[:256]
+    for key, value in fields.items():
+        if value is not None:
+            entry[str(key)[:32]] = value
     recent_diagnostic_events.append(entry)
-
-
-def get_manual_app_rule_change_details(previous, current):
-    previous_set = set(previous if isinstance(previous, list) else [])
-    current_set = set(current if isinstance(current, list) else [])
-    return (
-        [f"manual_app_rule_added:{app}" for app in current if app not in previous_set]
-        + [f"manual_app_rule_removed:{app}" for app in previous if app not in current_set]
-    )
 
 
 async def emit_manual_apps_changed(details=None):
@@ -484,6 +263,8 @@ async def emit_manual_apps_changed(details=None):
 
 
 async def emit_inhibit_state_changed(detail=None):
+    if unloading:
+        return
     try:
         await decky.emit("inhibit_state_changed")
         record_diagnostic_event("inhibit_state_changed", detail)
@@ -492,15 +273,23 @@ async def emit_inhibit_state_changed(detail=None):
 
 
 def schedule_inhibit_state_changed(detail=None):
+    if unloading:
+        return
     try:
         inhibit_state_changed_task.schedule(lambda: emit_inhibit_state_changed(detail))
     except RuntimeError as e:
         decky.logger.warning(f"Could not schedule inhibit_state_changed: {e}")
 
 
-async def cancel_inhibit_state_changed_task():
+async def cancel_inhibit_state_changed_task(wait=True):
     try:
-        await inhibit_state_changed_task.cancel_and_wait()
+        if wait:
+            await inhibit_state_changed_task.cancel_and_wait()
+        else:
+            task = inhibit_state_changed_task.task
+            inhibit_state_changed_task.task = None
+            if task is not None and not task.done():
+                task.cancel()
     except Exception as error:
         decky.logger.warning(f"Could not stop inhibit_state_changed task: {error}")
 
@@ -531,7 +320,11 @@ class AppRequest:
             body=[self.sender]
         )
         reply = await bus.call(message)
-        return reply.message_type != MessageType.ERROR
+        if reply.message_type == MessageType.ERROR:
+            if reply.error_name == 'org.freedesktop.DBus.Error.NameHasNoOwner':
+                return False
+            raise RuntimeError(f"D-Bus connection query failed: {reply.error_name}")
+        return True
 
     def to_status(self):
         return {
@@ -550,18 +343,51 @@ class BaseInterface(ServiceInterface):
 
     async def _inhibit_impl(self, application, reason):
         if application in BaseInterface.ignore_application: return 0
+        sender = ServiceInterface.get_current_message().sender
+        for label, value, maximum in (
+            ('application', application, MAX_DBUS_APPLICATION_BYTES),
+            ('reason', reason, MAX_DBUS_REASON_BYTES),
+        ):
+            # Reject obviously oversized strings before encoding them. D-Bus
+            # has already validated these arguments as UTF-8 strings.
+            if len(value) > maximum or len(value.encode('utf-8')) > maximum:
+                raise DBusError(ErrorType.LIMITS_EXCEEDED, f'{label} exceeds {maximum} UTF-8 bytes')
+        if len(BaseInterface.request_map) >= MAX_DBUS_REQUESTS:
+            raise DBusError(ErrorType.LIMITS_EXCEEDED, 'Too many inhibition requests')
+        sender_requests = sum(request.sender == sender for request in BaseInterface.request_map.values())
+        if sender_requests >= MAX_DBUS_REQUESTS_PER_SENDER:
+            raise DBusError(ErrorType.LIMITS_EXCEEDED, 'Too many inhibition requests for this sender')
         decky.logger.info(f'called Inhibit with application={application} and reason={reason}')
-        sender = ServiceInterface.last_msg.sender
         BaseInterface.cookie += 1
         BaseInterface.request_map[BaseInterface.cookie] = AppRequest(sender, BaseInterface.cookie, application, reason)
+        record_diagnostic_event(
+            "dbus_request",
+            "inhibit",
+            application=application,
+            reason=reason,
+            cookie=BaseInterface.cookie,
+        )
         sync_inhibit_state()
         return BaseInterface.cookie
 
     async def _un_inhibit_impl(self, cookie):
         if cookie == 0: return
+        request = BaseInterface.request_map.get(cookie)
+        if request is not None:
+            sender = ServiceInterface.get_current_message().sender
+            if request.sender != sender:
+                raise DBusError(ErrorType.ACCESS_DENIED, 'Inhibition request belongs to another sender')
+            BaseInterface.request_map.pop(cookie)
         decky.logger.info(f'called UnInhibit with cookie={cookie}')
-        if BaseInterface.request_map.pop(cookie, None) is None:
+        if request is None:
             decky.logger.info(f'cannot find cookie={cookie}')
+        record_diagnostic_event(
+            "dbus_request",
+            "uninhibit",
+            application=request.application if request else None,
+            reason=request.reason if request else None,
+            cookie=cookie,
+        )
         sync_inhibit_state()
 
 class InhibitInterface(BaseInterface):
@@ -612,19 +438,25 @@ async def is_dbus_request_connected(request):
         return await asyncio.wait_for(request.is_connected(), timeout=2)
     except Exception as e:
         decky.logger.debug(f"D-Bus connection check failed: {e}")
-        return False
+        return None  # An unavailable query does not prove that the sender exited.
 
 
 async def stop_dbus():
     global bus, decky_music_mpris_owners, decky_music_mpris_states
+    global decky_music_mpris_refresh_generation
+    decky_music_mpris_refresh_generation += 1
     try:
         if bus is not None:
             bus.disconnect()
+    except Exception as e:
+        decky.logger.info(f"error: {e}")
+    finally:
         bus = None
         decky_music_mpris_owners = {}
         decky_music_mpris_states = {}
-    except Exception as e:
-        decky.logger.info(f"error: {e}")
+        decky_music_mpris_revisions.clear()
+        if decky_music_mpris_change_callback:
+            decky_music_mpris_change_callback()
 
 async def start_dbus():
     global bus
@@ -652,10 +484,15 @@ async def start_dbus():
         bus.export('/org/freedesktop/ScreenSaver', interface) # chrome
         bus.export('/org/freedesktop/PowerManagement/Inhibit', pm_interface) # wiliwili
         bus.export('/org/gnome/SessionManager', gnome_interface) # mpv with https://github.com/Guldoman/mpv_inhibit_gnome installed
-        await bus.request_name('org.freedesktop.PowerManagement')
-        await bus.request_name('org.freedesktop.PowerManagement.Inhibit')
-        await bus.request_name('org.freedesktop.ScreenSaver')
-        await bus.request_name('org.gnome.SessionManager')
+        for name in (
+            'org.freedesktop.PowerManagement',
+            'org.freedesktop.PowerManagement.Inhibit',
+            'org.freedesktop.ScreenSaver',
+            'org.gnome.SessionManager',
+        ):
+            reply = await bus.request_name(name, NameFlag.DO_NOT_QUEUE)
+            if reply not in (RequestNameReply.PRIMARY_OWNER, RequestNameReply.ALREADY_OWNER):
+                raise RuntimeError(f'D-Bus service name is already owned: {name} ({reply})')
         await refresh_decky_music_mpris_state()
         return True
     except Exception as e:
@@ -664,113 +501,14 @@ async def start_dbus():
         clear_dbus_requests()
         return False
 
-import shlex
 import subprocess
-import pwd
 
-
-def normalize_process_name(value):
-    value = (value or "").strip()
-    if not value:
-        return ""
-    value = value.strip("\"'")
-    return os.path.basename(value).lower()
-
-
-def split_process_args(args):
-    if not args:
-        return []
-    try:
-        return shlex.split(args)
-    except ValueError:
-        return args.split()
-
-
-def process_candidates(comm, args):
-    candidates = []
-
-    def add(value):
-        normalized = normalize_process_name(value)
-        if normalized and normalized not in candidates:
-            candidates.append(normalized)
-
-    add(comm)
-    for token in split_process_args(args):
-        add(token)
-
-    return candidates
-
-
-def display_process_name(comm, args):
-    comm_name = normalize_process_name(comm)
-    tokens = split_process_args(args)
-
-    if comm_name == "flatpak":
-        for index, token in enumerate(tokens):
-            if token == "run":
-                for app_id in tokens[index + 1:]:
-                    if not app_id.startswith("-"):
-                        return app_id
-
-    if tokens:
-        executable = normalize_process_name(tokens[0])
-        if executable and comm_name and len(comm_name) >= 15 and executable.startswith(comm_name):
-            return executable
-
-    return comm.strip()
-
-
-def parse_process_listing_line(line):
-    """Parse fixed-width ps output without splitting process names on spaces."""
-    user = line[:16].strip()
-    comm = line[16:48].strip()
-    args = line[48:].strip()
-    return comm, user, args
-
-
-def get_process_entries(proc_root="/proc", user_lookup=None):
-    """Read process fields from procfs without terminal column-width assumptions."""
-    if user_lookup is None:
-        user_lookup = lambda process_path: pwd.getpwuid(os.stat(process_path).st_uid).pw_name
-
-    entries = []
-    try:
-        proc_entries = os.scandir(proc_root)
-    except OSError:
-        return entries
-
-    with proc_entries:
-        for entry in proc_entries:
-            if not entry.name.isdigit() or not entry.is_dir():
-                continue
-            try:
-                with open(os.path.join(entry.path, "comm"), encoding="utf-8", errors="replace") as comm_file:
-                    comm = comm_file.read().strip()
-                with open(os.path.join(entry.path, "cmdline"), "rb") as cmdline_file:
-                    args = cmdline_file.read().decode("utf-8", errors="replace").replace("\0", " ").strip()
-                user = user_lookup(entry.path)
-            except (OSError, KeyError):
-                continue
-            if comm and user:
-                entries.append((comm, user, args))
-    return entries
-
-
-def get_decky_music_rule_source(name):
-    normalized = normalize_process_name(name)
-    if normalized == "deckymusic":
-        return "legacy_cdp"
-    if normalized.replace(" ", "").replace("-", "").replace("_", "") == "deckymusic":
-        return "mpris"
-    return None
-
-
-def is_decky_music_name(name):
-    return get_decky_music_rule_source(name) is not None
-
-
-def get_decky_music_rule(manual_apps):
-    return next((app for app in manual_apps if is_decky_music_name(app)), None)
+normalize_process_name = process_utils.normalize_process_name
+process_candidates = process_utils.process_candidates
+display_process_name = process_utils.display_process_name
+get_decky_music_rule_source = process_utils.get_decky_music_rule_source
+is_decky_music_name = process_utils.is_decky_music_name
+get_decky_music_rule = process_utils.get_decky_music_rule
 
 
 def get_process_lines(command):
@@ -782,8 +520,47 @@ def get_process_lines(command):
         return []
 
 
+def _stop_loader_ipc_listener(plugin):
+    """Avoid Decky 3.2.9's non-yielding server-listener loop after IPC EOF."""
+    current = asyncio.current_task()
+    stopped = 0
+    async def ignore_message(_message):
+        return None
+    for task in asyncio.all_tasks():
+        if task is current:
+            continue
+        coroutine = task.get_coro()
+        if getattr(coroutine, '__qualname__', None) != 'UnixSocket._listen_for_method_call':
+            continue
+        frame = getattr(coroutine, 'cr_frame', None)
+        socket = frame.f_locals.get('self') if frame is not None else None
+        if socket is None or type(socket).__module__ not in (
+            'decky_loader.localplatform.localsocket', 'localplatform.localsocket',
+        ):
+            continue
+        runner = getattr(getattr(socket, 'on_new_message', None), '__self__', None)
+        if getattr(runner, 'Plugin', None) is not plugin:
+            continue
+        reader = frame.f_locals.get('reader')
+        if isinstance(reader, asyncio.StreamReader):
+            # Its current loop iteration unconditionally invokes this callback
+            # after read. Give that final empty read a harmless result, then let
+            # the loop exit normally rather than faulting the server callback.
+            socket.active = False
+            socket.on_new_message = ignore_message
+            reader.feed_eof()
+        else:
+            # Ownership is proven, but an unfamiliar reader cannot be drained
+            # safely using the known 3.2.9 StreamReader protocol.
+            task.cancel()
+        stopped += 1
+    return stopped
+
+
 class Plugin:
     def _init_runtime_state(self):
+        if not hasattr(self, 'display_wake_guard'):
+            self.display_wake_guard = DisplayWakeGuard()
         if not hasattr(self, 'manual_active'):
             self.manual_active = False
         if not hasattr(self, 'manual_running_app'):
@@ -817,27 +594,21 @@ class Plugin:
         if not hasattr(self, 'decky_music_missing_checks'):
             self.decky_music_missing_checks = 0
 
-    async def _get_all_process_lines(self):
+    async def _get_all_process_entries(self):
         self.process_scan_count += 1
         self.last_process_scan_at = int(time.time())
         self.last_manual_process_scan_monotonic = time.monotonic()
-        return await asyncio.to_thread(get_process_lines, ['ps', '-eo', 'pid=,comm=,args='])
+        return await asyncio.to_thread(process_utils.get_process_entries)
 
     async def _find_running_manual_app(self, manual_apps):
         apps_to_check = [app for app in manual_apps if not is_decky_music_name(app)]
         if not apps_to_check:
             return None
-        lines = await Plugin._get_all_process_lines(self)
+        entries = await Plugin._get_all_process_entries(self)
         # Build candidate sets once for all running processes
         proc_candidates_list = []
-        for line in lines:
-            parts = line.split(None, 2)
-            if len(parts) < 2:
-                continue
-            process_id = int(parts[0])
-            comm = parts[1]
-            args = parts[2] if len(parts) > 2 else ""
-            proc_candidates_list.append((process_id, set(process_candidates(comm, args))))
+        for entry in entries:
+            proc_candidates_list.append((entry["pid"], set(process_candidates(entry["comm"], entry["args"]))))
         for app in apps_to_check:
             target = normalize_process_name(app)
             matching_pids = {
@@ -938,6 +709,7 @@ class Plugin:
                             was_decky_music_active,
                             decky_music_playing,
                             self.decky_music_missing_checks,
+                            confirm_missing=has_legacy_decky_music_rule,
                         )
                         if was_decky_music_active and self.decky_music_missing_checks == 1:
                             decky.logger.info("DeckyMusic audio was temporarily not detected; waiting for confirmation")
@@ -1016,15 +788,29 @@ class Plugin:
         while True:
             try:
                 await asyncio.sleep(25)
+                if bus is None or not bus.connected:
+                    async with Plugin._backend_operation_lock(self):
+                        if unloading:
+                            return
+                        # Another explicit start may have recovered while the
+                        # watcher waited for the lifecycle lock.
+                        if bus is None or not bus.connected:
+                            await Plugin._start_backend_locked(self)
+                    continue
                 requests = list(BaseInterface.request_map.items())
                 if not requests:
                     continue
-                connected_requests = await asyncio.gather(
-                    *(is_dbus_request_connected(request) for _, request in requests),
-                )
+                current_bus = bus
+                requests_by_sender = {request.sender: request for _, request in requests}
+                connected_senders = dict(zip(requests_by_sender, await asyncio.gather(
+                    *(is_dbus_request_connected(request) for request in requests_by_sender.values()),
+                )))
+                if bus is not current_bus or not current_bus.connected:
+                    continue
                 changed = False
-                for (cookie, _), connected in zip(requests, connected_requests):
-                    if not connected:
+                for cookie, request in requests:
+                    if (connected_senders[request.sender] is False
+                            and BaseInterface.request_map.get(cookie) is request):
                         BaseInterface.request_map.pop(cookie, None)
                         changed = True
                 if changed:
@@ -1035,15 +821,11 @@ class Plugin:
                 decky.logger.warning(f"D-Bus request connection check failed: {e}")
 
     def _process_matches_manual_rule(self, process_id):
-        try:
-            with open(f"/proc/{process_id}/comm", "r", encoding="utf-8", errors="replace") as comm_file:
-                comm = comm_file.read().strip()
-            with open(f"/proc/{process_id}/cmdline", "rb") as args_file:
-                args = args_file.read().replace(b"\0", b" ").decode("utf-8", errors="replace")
-        except OSError:
+        entry = process_utils.read_process_entry(process_id)
+        if entry is None:
             return False
 
-        candidates = set(process_candidates(comm, args))
+        candidates = set(process_candidates(entry["comm"], entry["args"]))
         manual_apps = settings.getSetting("manual_apps", [])
         return any(
             normalize_process_name(app) in candidates
@@ -1127,48 +909,74 @@ class Plugin:
         manual_inhibiting = False
         sync_inhibit_state()
 
+    @asynccontextmanager
+    async def _backend_operation_lock(self):
+        if not hasattr(self, 'backend_lifecycle_lock'):
+            self.backend_lifecycle_lock = asyncio.Lock()
+        async with self.backend_lifecycle_lock:
+            self.backend_lifecycle_operation = asyncio.current_task()
+            try:
+                yield
+            finally:
+                self.backend_lifecycle_operation = None
+
     async def start_backend(self):
+        async with Plugin._backend_operation_lock(self):
+            if unloading:
+                return False
+            return await Plugin._start_backend_locked(self)
+
+    async def _start_backend_locked(self):
         global bus
         decky.logger.info("Start backend server")
         Plugin._init_runtime_state(self)
-        if bus is None:
+        if bus is None or not bus.connected:
+            await stop_dbus()
+            clear_dbus_requests()
             for attempt, retry_delay in enumerate((0, 1, 3), start=1):
                 if retry_delay:
                     await asyncio.sleep(retry_delay)
                 if await start_dbus():
                     break
                 decky.logger.warning(f"D-Bus start attempt {attempt} failed")
-            if bus is None:
+            if bus is None or not bus.connected:
                 raise RuntimeError("Could not register D-Bus inhibit services")
         Plugin._start_manual_watch(self)
         Plugin._start_dbus_connection_watch(self)
         record_diagnostic_event("backend_started")
         return True
 
-    async def stop_backend(self):
+    async def stop_backend(self, emit_state=True):
+        async with Plugin._backend_operation_lock(self):
+            return await Plugin._stop_backend_locked(self, emit_state=emit_state)
+
+    async def _stop_backend_locked(self, emit_state=True):
         decky.logger.info("Stop backend server")
-        await Plugin._stop_manual_watch(self)
-        await stop_dbus()
-        clear_dbus_requests()
-        await cancel_inhibit_state_changed_task()
-        await emit_inhibit_state_changed()
+        try:
+            await Plugin._stop_manual_watch(self)
+        finally:
+            # Even cancellation of a watcher must release services and cookies.
+            await stop_dbus()
+            clear_dbus_requests()
+            await cancel_inhibit_state_changed_task(wait=emit_state)
+        if emit_state:
+            await emit_inhibit_state_changed()
         record_diagnostic_event("backend_stopped")
         return True
 
     async def is_running(self):
         global bus
-        return bus is not None
+        return bus is not None and bus.connected
 
     async def get_running_processes(self):
-        entries = await asyncio.to_thread(get_process_entries)
+        entries = await asyncio.to_thread(process_utils.get_process_entries)
         proc_map = {}
-        for comm, user, args in entries:
-            if comm and user:
-                name = display_process_name(comm, args)
-                if name and not name.startswith('['):
-                    proc_type = "app" if user == "deck" else "system"
-                    if name not in proc_map or proc_type == "app":
-                        proc_map[name] = proc_type
+        for entry in entries:
+            name = display_process_name(entry["comm"], entry["args"])
+            if name and not name.startswith('['):
+                proc_type = "app" if entry["user"] == "deck" else "system"
+                if name not in proc_map or proc_type == "app":
+                    proc_map[name] = proc_type
 
         result = []
         for name, ptype in proc_map.items():
@@ -1225,7 +1033,7 @@ class Plugin:
         override_state = await Plugin.get_power_override_state(self)
         return {
             "timestamp": int(time.time()),
-            "backendRunning": bus is not None,
+            "backendRunning": bus is not None and bus.connected,
             "processMonitorMode": self.process_monitor_mode,
             "processScanCount": self.process_scan_count,
             "lastProcessScanAt": self.last_process_scan_at,
@@ -1260,6 +1068,9 @@ class Plugin:
         }
 
     async def get_settings(self, key: str, defaults):
+        if not plugin_contract.validate_setting_key(key):
+            decky.logger.warning("Rejected non-public setting read")
+            return defaults
         if key != "manual_apps":
             decky.logger.info('[settings] get {}'.format(key))
         return settings.getSetting(key, defaults)
@@ -1269,22 +1080,80 @@ class Plugin:
         decky.logger.info(f"System power settings read: {result}")
         return result
 
+    async def start_display_wake_guard(self):
+        Plugin._init_runtime_state(self)
+        return await self.display_wake_guard.start()
+
+    async def heartbeat_display_wake_guard(self, token: str):
+        Plugin._init_runtime_state(self)
+        return await self.display_wake_guard.heartbeat(token)
+
+    async def stop_display_wake_guard(self, token: str):
+        Plugin._init_runtime_state(self)
+        return await self.display_wake_guard.stop(token)
+
     async def get_power_override_state(self):
         snapshot = normalize_power_settings(settings.getSetting(POWER_OVERRIDE_SNAPSHOT, None))
         active = settings.getSetting(POWER_OVERRIDE_ACTIVE, False) is True and snapshot is not None
-        return {"active": active, "snapshot": snapshot if active else None}
+        owner = settings.getSetting(POWER_OVERRIDE_OWNER, None)
+        return {"active": active, "snapshot": snapshot if active else None, "owner": owner}
 
-    async def begin_power_override(self, snapshot: dict):
+    async def begin_power_override(self, snapshot: dict, owner: str = None, expected_owner: str = None):
         normalized = normalize_power_settings(snapshot)
         if normalized is None:
             return False
+        for value in (owner, expected_owner):
+            if value is not None and (not isinstance(value, str) or not 0 < len(value) <= 128):
+                return False
+        if owner is not None and owner == expected_owner:
+            return False
+        state = await Plugin.get_power_override_state(self)
+        if state["owner"] != expected_owner:
+            return False
+        # These settings writes do not yield: ownership comparison and commit are atomic.
         return settings.setSettings({
             POWER_OVERRIDE_ACTIVE: True,
             POWER_OVERRIDE_SNAPSHOT: normalized,
+            POWER_OVERRIDE_OWNER: owner,
         })
 
-    async def end_power_override(self):
-        return settings.unsetSettings((POWER_OVERRIDE_ACTIVE, POWER_OVERRIDE_SNAPSHOT))
+    async def end_power_override(self, owner: str = None, next_owner: str = None):
+        if next_owner is not None and (not isinstance(next_owner, str) or not 0 < len(next_owner) <= 128 or next_owner == owner):
+            return False
+        if owner is not None and next_owner is None:
+            return False
+        state = await Plugin.get_power_override_state(self)
+        if state["owner"] != owner:
+            return False
+        if next_owner is not None:
+            # Keep an inactive revision so delayed requests cannot recreate a cleared override.
+            return settings.setSettings({
+                POWER_OVERRIDE_ACTIVE: False,
+                POWER_OVERRIDE_SNAPSHOT: None,
+                POWER_OVERRIDE_OWNER: next_owner,
+            })
+        return settings.unsetSettings((POWER_OVERRIDE_ACTIVE, POWER_OVERRIDE_SNAPSHOT, POWER_OVERRIDE_OWNER))
+
+    async def save_power_settings(self, profile: dict, owner: str, expected_owner: str = None):
+        normalized = normalize_power_settings(profile)
+        if normalized is None or not isinstance(owner, str) or not 0 < len(owner) <= 128:
+            return False
+        if expected_owner is not None and (not isinstance(expected_owner, str) or not 0 < len(expected_owner) <= 128):
+            return False
+        if owner == expected_owner:
+            return False
+        state = await Plugin.get_power_override_state(self)
+        if state["owner"] != expected_owner:
+            return False
+        # Profile persistence and revision advance are one non-yielding commit.
+        # Keep an active recovery snapshot until the native mutation has finished.
+        return settings.setSettings({
+            "battery_dim_timeout": normalized["batteryDim"],
+            "ac_dim_timeout": normalized["acDim"],
+            "battery_suspend_timeout": normalized["batterySuspend"],
+            "ac_suspend_timeout": normalized["acSuspend"],
+            POWER_OVERRIDE_OWNER: owner,
+        })
 
     async def set_settings(self, key: str, value):
         normalized = plugin_contract.normalize_settings_batch({key: value})
@@ -1323,8 +1192,30 @@ class Plugin:
             await Plugin.start_backend(self)
 
     async def _unload(self):
+        global unloading
         decky.logger.info("Goodnight World!")
-        await Plugin.stop_backend(self)
+        unloading = True
+        Plugin._init_runtime_state(self)
+        # Stop only this plugin's Loader IPC reader before the first yield.
+        # Loader closes its peer first; otherwise EOF can starve every timer.
+        _stop_loader_ipc_listener(self)
+        # A start/stop RPC may own the lifecycle lock while awaiting another
+        # service. Cancel it before the bounded cleanup tries to acquire it.
+        operation = getattr(self, 'backend_lifecycle_operation', None)
+        if operation is not None and operation is not asyncio.current_task():
+            operation.cancel()
+        tasks = {
+            asyncio.create_task(self.display_wake_guard.close()),
+            asyncio.create_task(Plugin.stop_backend(self, emit_state=False)),
+        }
+        done, pending = await asyncio.wait(tasks, timeout=UNLOAD_TIMEOUT)
+        for task in pending:
+            task.cancel()
+        if pending:
+            decky.logger.warning("Plugin cleanup exceeded its total unload budget")
+        for task in done:
+            if not task.cancelled() and task.exception() is not None:
+                decky.logger.warning(f"Plugin cleanup failed: {task.exception()}")
 
     async def _uninstall(self):
         pass

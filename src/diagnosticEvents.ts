@@ -1,5 +1,5 @@
 export type DiagnosticEventMessage =
-  | { key: "backend_started" | "backend_stopped" | "settings_changed" | "inhibit_state_changed" | "process_monitor" | "decky_music_playback" }
+  | { key: "backend_started" | "backend_stopped" | "settings_changed" | "inhibit_state_changed" | "dbus_request" | "process_monitor" | "decky_music_playback" }
   | { fallback: string };
 
 export type DiagnosticEventDetailMessage =
@@ -16,6 +16,7 @@ const EVENT_MESSAGES = {
   backend_stopped: "backend_stopped",
   settings_changed: "settings_changed",
   inhibit_state_changed: "inhibit_state_changed",
+  dbus_request: "dbus_request",
   process_monitor: "process_monitor",
   decky_music_playback: "decky_music_playback",
 } as const;

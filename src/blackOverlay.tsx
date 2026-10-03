@@ -88,13 +88,15 @@ export const BlackOverlay: FC<{
         return;
       }
 
+      const opacityRevision = opacityState.GetRevision();
       const [opacityValue, closeOnAnyKeyValue] = await Promise.all([
         getPluginNumberSetting(serverApi, BLACK_BACKGROUND_OPACITY, opacityState.GetState()),
         getPluginBooleanSetting(serverApi, BLACK_BACKGROUND_CLOSE_ON_ANY_KEY, false),
       ]);
       if (token !== stateChangeTokenRef.current) return;
 
-      const nextOpacity = clampOpacity(opacityValue);
+      const nextOpacity = opacityState.GetRevision() === opacityRevision
+        ? clampOpacity(opacityValue) : opacityState.GetState();
       setOpacity(nextOpacity);
       opacityState.SetState(nextOpacity);
       setVisible(true);

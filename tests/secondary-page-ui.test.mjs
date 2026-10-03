@@ -25,7 +25,7 @@ test("keeps recent event timestamps on one line when event names are long", () =
   assert.match(indexSource, /textOverflow: 'ellipsis'/);
   assert.match(indexSource, /whiteSpace: 'nowrap' as const/);
   assert.doesNotMatch(indexSource, /formatDiagnosticEventDetail\(event\.detail\) \|\| formatDiagnosticTime\(event\.timestamp\)/);
-  assert.match(indexSource, /const eventDetail = formatDiagnosticEventDetail\(event\.detail\);/);
+  assert.match(indexSource, /const eventDetail = formatDbusDiagnosticEvent\(event\)[\s\S]*formatDiagnosticEventDetail\(event\.detail\)/);
   assert.match(indexSource, /eventDetail && \([\s\S]*\{eventDetail\}/);
   assert.doesNotMatch(indexSource, /\{formatDiagnosticEventDetail\(event\.detail\)\}/);
 });
