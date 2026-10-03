@@ -27,8 +27,8 @@ test("installation is handed to Decky without polling or restarting Loader", () 
 });
 
 test("the one-line display-off description mentions delayed wake", () => {
-  assert.equal(zh['Screen Off Description'], '后台应用继续运行，唤醒存在延迟');
-  assert.match(en['Screen Off Description'], /waking may take a moment/);
+  assert.equal(zh['Screen Off Description'], '关闭内屏供电，唤醒稍有延迟');
+  assert.match(en['Screen Off Description'], /Display power off; waking takes a moment/);
 });
 
 test("update checking has localized status and error copy", () => {

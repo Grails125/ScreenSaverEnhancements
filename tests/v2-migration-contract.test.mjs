@@ -247,7 +247,7 @@ test("the monitoring toggle describes sleep inhibition behavior", () => {
   );
 
   assert.equal(zh["Background Monitor"], "息屏抑制监控");
-  assert.equal(zh.plugin_switch_tip, "检测禁用息屏列表，接管系统息屏");
+  assert.equal(zh.plugin_switch_tip, "规则或请求生效时阻止自动休眠");
   assert.equal(zh["Background Monitor Failed"], "息屏抑制监控切换失败");
   assert.equal(en["Background Monitor"], "Sleep Inhibition Monitor");
 });
@@ -294,10 +294,10 @@ test("monitor switching uses dedicated notifications instead of restore-sleep co
   );
   assert.equal(zh["Monitor Enabled Body"], "已开始检测禁用息屏列表并接管系统息屏");
   assert.equal(zh["Monitor Disabled Body"], "已停止检测禁用息屏列表，系统息屏已交还系统管理");
-  assert.equal(zh.notify_tip, "监控开关或息屏状态变化时显示通知");
+  assert.equal(zh.notify_tip, "监控或休眠抑制变化时通知");
   assert.equal(en["Monitor Enabled Body"], "Monitoring the sleep-inhibition list and managing system sleep");
   assert.equal(en["Monitor Disabled Body"], "Monitoring stopped; system sleep is managed by SteamOS again");
-  assert.equal(en.notify_tip, "Show notifications when monitoring or sleep-inhibition status changes");
+  assert.equal(en.notify_tip, "Notify on monitor or sleep-inhibit changes");
   assert.match(frontend, /notifyMonitorStatus\(checked\)/);
   assert.match(frontend, /const notifyStateChange = showStateNotification && running/);
   assert.match(frontend, /await stopInhibit\(false, overrideState\)/);
@@ -322,7 +322,7 @@ test("diagnostics merge monitor state and process mode behind an accessible deta
 
   assert.equal(zh["Monitor Details"], "查看息屏抑制监控详情");
   assert.equal(zh["Monitoring Method"], "监听方式");
-  assert.equal(zh.monitor_details_tip, "开启后优先使用内核进程事件监听；不可用时自动切换为低频扫描。关闭监控后，进程监听也会停止。");
+  assert.equal(zh.monitor_details_tip, "优先事件监听，不可用时低频扫描");
   assert.doesNotMatch(source, /<DiagnosticRow label=\{t\('Process Monitor Mode'\)\}/);
   assert.match(source, /<MonitorStatusRow/);
   assert.match(source, /aria-expanded=\{detailsVisible\}/);
