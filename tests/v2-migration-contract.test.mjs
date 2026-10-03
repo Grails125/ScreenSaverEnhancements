@@ -16,7 +16,7 @@ test("pins the Decky 3.2.6 compatible modern frontend toolchain", () => {
   assert.equal(packageJson.type, "module");
   assert.equal(packageJson.dependencies["@decky/api"], "1.1.3");
   assert.equal(packageJson.devDependencies["@decky/ui"], "4.11.6");
-  assert.equal(packageJson.devDependencies["@decky/rollup"], "1.0.2");
+  assert.equal(packageJson.devDependencies.rollup, "4.64.0");
   assert.match(packageJson.scripts["build:v2-probe"], /rollup\.v2-probe\.config\.js/);
   assert.equal(packageJson.scripts.build, "rollup -c");
   assert.equal(packageJson.dependencies["decky-frontend-lib"], undefined);
@@ -57,13 +57,13 @@ test("the V2 probe uses typed callable RPC and reversible modern APIs", () => {
   assert.doesNotMatch(source, /ServerAPI|callPluginMethod|decky-frontend-lib/);
 });
 
-test("the V2 probe build delegates to the official Decky Rollup preset", () => {
+test("the V2 probe shares the production Decky build contract", () => {
   const source = readFileSync(
     new URL("../rollup.v2-probe.config.js", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /from ["']@decky\/rollup["']/);
+  assert.match(source, /from ["']\.\/rollup\.config\.js["']/);
   assert.match(source, /format:\s*["']esm["']/);
   assert.match(source, /build\/v2-probe/);
   assert.match(source, /entryFileNames:\s*["']index\.js["']/);
@@ -93,13 +93,19 @@ test("the V2 probe type-check is isolated from the legacy frontend", () => {
   assert.equal(probeTsconfig.compilerOptions.jsx, "react-jsx");
 });
 
-test("the production build uses the official Decky ESM Rollup preset", () => {
+test("the production build preserves Decky ESM and shared React/UI globals", async () => {
   const source = readFileSync(
     new URL("../rollup.config.js", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /from ["']@decky\/rollup["']/);
+  const {default: config} = await import('../rollup.config.js');
+  assert.equal(config.context, 'window');
+  assert.equal(config.output.format, 'esm');
+  assert.equal(config.output.exports, 'default');
+  assert.ok(config.external.includes('react'));
+  assert.ok(config.external.includes('@decky/ui'));
+  assert.ok(config.plugins.some(plugin => plugin.name.includes('external-globals')));
   assert.doesNotMatch(source, /format:\s*["']iife["']|decky-frontend-lib/);
 });
 
