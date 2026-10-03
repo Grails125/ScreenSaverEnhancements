@@ -35,7 +35,7 @@ Source: [Valve gamescope display control protocol](https://github.com/ValveSoftw
 - The production plugin's independent recovery guard started, renewed, and stopped successfully.
 - With the shared any-key option disabled, A left the display off and Quick Access woke it and opened the panel. With it enabled, A woke it.
 - A background JavaScript counter continued advancing. After waking, the power configuration matched the pre-test values and the recovery snapshot was cleared.
-- Current full checks: 288 JavaScript tests passed. All 165 Python tests passed on the Deck; six platform-specific tests skip on Windows. The installable package passed verification.
+- Release 2.0.4 checks: 293 JavaScript tests passed; 171 Python tests completed with six platform-specific skips on Windows. Earlier device validation passed all 165 Python tests available at that time. The installable package passed verification.
 
 
 ## Reload and profile recovery

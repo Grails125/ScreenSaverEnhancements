@@ -23,7 +23,7 @@ test("pins the Decky 3.2.6 compatible modern frontend toolchain", () => {
   assert.equal(pluginJson.api_version, 1);
 });
 
-test("release metadata identifies the 2.0.3 Steam menu input compatibility release", () => {
+test("release metadata identifies the 2.0.4 internal display power release", () => {
   const pnpmLock = readFileSync(
     new URL("../pnpm-lock.yaml", import.meta.url),
     "utf8",
@@ -35,20 +35,20 @@ test("release metadata identifies the 2.0.3 Steam menu input compatibility relea
   const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
   const readmeZh = readFileSync(new URL("../README_ZH.md", import.meta.url), "utf8");
 
-  assert.equal(packageJson.version, "2.0.3");
-  assert.equal(packageLock.version, "2.0.3");
-  assert.equal(packageLock.packages[""].version, "2.0.3");
+  assert.equal(packageJson.version, "2.0.4");
+  assert.equal(packageLock.version, "2.0.4");
+  assert.equal(packageLock.packages[""].version, "2.0.4");
   assert.match(pnpmLock, /'@decky\/api':/);
   assert.doesNotMatch(pnpmLock, /decky-frontend-lib:/);
   assert.match(deckyStub, /async def emit\(event: str, \*args: Any\) -> None:/);
   assert.match(pluginJson.publish.description, /DeckyMusic playback/);
   assert.deepEqual(pluginJson.publish.tags, ["dbus", "screensaver", "media", "power-management"]);
   assert.match(pluginJson.publish.image, /Grails125\/ScreenSaverEnhancements\/main\/docs\/release-cover-zh-v2\.0\.1\.png$/);
-  assert.match(readme, /What's new in v2\.0\.3/);
+  assert.match(readme, /What's new in v2\.0\.4/);
   assert.match(readme, /object-style `Unregister`\/`unregister` handles/);
   assert.match(readme, /legacy function handles/);
   assert.match(readme, /does not register a null listener/);
-  assert.match(readmeZh, /v2\.0\.3 更新说明/);
+  assert.match(readmeZh, /v2\.0\.4 更新说明/);
   assert.match(readmeZh, /对象式 `Unregister`\/`unregister` 注销句柄/);
   assert.match(readmeZh, /旧版函数句柄/);
   assert.match(readmeZh, /不再写入 `null`/);

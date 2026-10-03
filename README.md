@@ -33,6 +33,16 @@ ScreenSaver Enhancements is a [Decky Loader](https://decky.xyz) plugin for Steam
 - **Safer settings persistence** — validates setting values before saving, normalizes persisted values, and preserves malformed settings files for recovery instead of silently discarding them. *(v2.0.2)*
 - **Steam menu input compatibility** — supports current object-style `Unregister`/`unregister` handles alongside legacy function handles, and cleans up only valid handles without registering a null listener. *(v2.0.3)*
 
+## What's new in v2.0.4
+
+- Add internal display power control while retaining the black overlay and shared input-wake setting.
+- Improve wake-request response and fix touch presses that scroll the action without activating it.
+- Strengthen display and power-profile recovery, isolating timed-out requests and retired plugin instances.
+- Refresh the panel when Decky reloads this plugin after an update, and prevent stale settings and query results from replacing newer state.
+- Improve D-Bus reconnection, request ownership checks, and listener cleanup.
+- Shorten UI descriptions, explain display wake delay, and clarify automatic suspend timeout labels.
+- Update build dependencies to remove known vulnerabilities and verify all required backend modules are packaged.
+
 ## What's new in v2.0.3
 
 - Supports current object-style `Unregister`/`unregister` handles while retaining compatibility with legacy function handles.
