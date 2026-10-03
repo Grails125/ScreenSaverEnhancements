@@ -4,6 +4,7 @@ import test from "node:test";
 import ts from "typescript";
 import vm from "node:vm";
 
+const manifest = JSON.parse(readFileSync(new URL("../plugin.json", import.meta.url), "utf8"));
 const source = readFileSync(new URL("../src/deckyApi.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, {
   compilerOptions: {
@@ -13,7 +14,7 @@ const compiled = ts.transpileModule(source, {
   },
 }).outputText;
 
-const loadDeckyApi = (callable, eventApi = {}, loaderCall) => {
+const loadDeckyApi = (callable, eventApi = {}, loaderCall, pluginManifest = manifest) => {
   const module = { exports: {} };
   const deckyApiModule = {
     callable,
@@ -28,9 +29,11 @@ const loadDeckyApi = (callable, eventApi = {}, loaderCall) => {
     exports: module.exports,
     require(id) {
       if (id === "@decky/api") return deckyApiModule;
+      if (id === "@decky/manifest") return pluginManifest;
       throw new Error(`Unexpected import: ${id}`);
     },
     window: {
+      LocalizationManager: { m_rgLocalesToUse: [eventApi.locale ?? "en"] },
       DeckyBackend: {
         call: loaderCall ?? (async () => undefined),
       },
@@ -92,7 +95,7 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
       route: "utilities/install_plugin",
       args: [
         "https://github.com/Grails125/ScreenSaverEnhancements/releases/download/v1.5.0/ScreenSaverEnhancements.zip",
-        "screensaver-enhancements",
+        manifest.name,
         "1.5.0",
         "abc123",
         2,
@@ -100,6 +103,35 @@ test("exposes typed RPC methods with positional callable arguments", async () =>
     },
   ]);
   assert.equal(response.active, true);
+});
+
+test("installer identity matches the packaged manifest independently of Steam language", async () => {
+  for (const locale of ["en", "zh-cn", "uk"]) {
+    const { createPluginServerApi } = loadDeckyApi(() => async () => undefined, { locale },
+      async (route, url, name, version, hash, installType) => {
+        assert.equal(route, "utilities/install_plugin");
+        assert.equal(url, "https://example.test/plugin.zip");
+        assert.equal(version, "2.0.4");
+        assert.equal(hash, "verified-hash");
+        assert.equal(installType, 2);
+        // This checks the folder lookup identity, not the install lifecycle.
+        // build.py copies this plugin.json into the ZIP without translation.
+        const extractedFolders = new Map([[manifest.name, "plugin-folder"]]);
+        assert.ok(extractedFolders.get(name), "installer cannot find the extracted plugin by a slug or translated title");
+      });
+    await createPluginServerApi().installPluginUpdate({
+      downloadUrl: "https://example.test/plugin.zip", version: "2.0.4", sha256: "verified-hash",
+    });
+  }
+});
+
+test("installer uses the supplied manifest identity instead of a hardcoded display name", async () => {
+  const calls = [];
+  const pluginManifest = { ...manifest, name: "Manifest identity fixture" };
+  const { createPluginServerApi } = loadDeckyApi(() => async () => undefined, {},
+    async (_route, ...args) => { calls.push(args); }, pluginManifest);
+  await createPluginServerApi().installPluginUpdate({ downloadUrl: "artifact", version: "2.0.4", sha256: "hash" });
+  assert.equal(calls[0][1], pluginManifest.name);
 });
 
 test("passes power recovery revisions without changing the legacy positional contract", async () => {

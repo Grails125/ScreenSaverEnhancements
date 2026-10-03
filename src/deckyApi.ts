@@ -1,3 +1,4 @@
+/// <reference types="@decky/api/src/types" />
 import {
   addEventListener,
   callable,
@@ -7,6 +8,7 @@ import {
   type RouterHook,
   type Toaster,
 } from "@decky/api";
+import manifest from "@decky/manifest";
 import type { PowerSettings } from "./powerSettings";
 
 export type CallableFactory = <Args extends any[] = [], Return = void>(
@@ -141,7 +143,7 @@ export const createPluginServerApi = (
     getPluginVersion,
     checkUpdate,
     installPluginUpdate: ({ downloadUrl, version, sha256 }: UpdateInstallRequest) =>
-      installPlugin(downloadUrl, "screensaver-enhancements", version, sha256, 2),
+      installPlugin(downloadUrl, manifest.name, version, sha256, 2),
     getSystemPowerSettings,
     getPowerOverrideState,
     savePowerSettings,

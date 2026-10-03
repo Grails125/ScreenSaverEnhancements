@@ -44,6 +44,7 @@ Thanks to [WowOne987](https://github.com/WowOne987) for contributing Nested Desk
 - Improve wake-request response and fix touch presses that scroll the action without activating it.
 - Strengthen display and power-profile recovery, isolating timed-out requests and retired plugin instances.
 - Refresh the panel when Decky reloads this plugin after an update, and prevent stale settings and query results from replacing newer state.
+- Correct the installer identity to use the manifest name, fixing updates that extracted files but failed to reload the plugin. The original v2.0.4 package was withdrawn; this corrected release keeps version 2.0.4.
 - Improve D-Bus reconnection, request ownership checks, and listener cleanup.
 - Shorten UI descriptions, explain display wake delay, and clarify automatic suspend timeout labels.
 - Update build dependencies to remove known vulnerabilities and verify all required backend modules are packaged.
@@ -112,6 +113,8 @@ The package is created at `build/ScreenSaverEnhancements-v<version>.zip`, using 
 ## Upgrade
 
 The plugin can check for updates from the bottom of its panel. When a newer release is available, open the update section, review the version and release notes, then start the upgrade there.
+
+If an older version's built-in update stalls, install the corrected `ScreenSaverEnhancements-v2.0.4.zip` through **Decky Settings** → **Developer** → **Install Plugin from ZIP**. Users who installed the original v2.0.4 package also need to reinstall from ZIP: the corrected package keeps the same version, so it will not appear as a newer update. Publishing this package does not repair the updater already running in an older installation.
 
 Decky automatically reloads this plugin after installation; restarting the whole Decky Loader is unnecessary.
 
