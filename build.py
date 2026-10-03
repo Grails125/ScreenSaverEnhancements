@@ -18,6 +18,8 @@ PACKAGE_SOURCE_FILES = (
     "decky_music_cdp.py",
     "manual_watch_utils.py",
     "task_lifecycle.py",
+    "gamescope_display.py",
+    "display_wake_guard.py",
     "update_checker.py",
 )
 REQUIRED_PACKAGE_ENTRIES = PACKAGE_SOURCE_FILES + (

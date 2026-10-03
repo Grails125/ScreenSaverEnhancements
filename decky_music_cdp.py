@@ -15,40 +15,84 @@ DECKY_MUSIC_TRACKER_SCRIPT = r'''
 (() => {
   const key = "__screenSaverEnhancementsDeckyMusicTrackerV1";
   const existing = globalThis[key];
-  if (existing && existing.version === 1) return true;
+  // V1 keeps its originals and strong-reference set in inaccessible closures.
+  // Preserve an already injected V1 until the UI reloads; stacking wrappers
+  // would keep that leak alive and could alter other media instrumentation.
+  if (existing && (existing.version === 1 || existing.version === 2)) return true;
 
   const tracked = new Set();
+  const revisions = new WeakMap();
   const mediaPrototype = HTMLMediaElement.prototype;
   const originalPlay = mediaPrototype.play;
   const originalPause = mediaPrototype.pause;
-  const remove = function() { tracked.delete(this); };
-  const track = (audio) => {
-    if (!audio || tracked.has(audio)) return audio;
-    tracked.add(audio);
-    audio.addEventListener("pause", remove, { once: true });
-    audio.addEventListener("ended", remove, { once: true });
-    return audio;
+  const isActive = audio => !audio.paused && !audio.ended && audio.readyState > 0;
+  const remove = function() {
+    tracked.delete(this);
+    // Keep the single element-owned playing observer: replacing src/load can
+    // resume native autoplay without calling the patched JavaScript play().
+    for (const event of ["pause", "ended", "error", "emptied"]) {
+      this.removeEventListener(event, remove);
+    }
+  };
+  const onPlaying = function() { if (isActive(this)) observe(this); };
+  const observe = audio => {
+    audio.addEventListener("playing", onPlaying);
+    for (const event of ["pause", "ended", "error", "emptied"]) {
+      audio.addEventListener(event, remove);
+    }
+    if (isActive(audio)) tracked.add(audio);
   };
 
   mediaPrototype.play = function(...args) {
-    track(this);
-    return originalPlay.apply(this, args);
+    const revision = (revisions.get(this) || 0) + 1;
+    revisions.set(this, revision);
+    observe(this);
+    let result;
+    try { result = originalPlay.apply(this, args); }
+    catch (error) {
+      if (!isActive(this)) remove.call(this);
+      throw error;
+    }
+    if (isActive(this)) tracked.add(this);
+    // The observer must not itself keep an abandoned pending play alive.
+    if (result && typeof result.then === "function" && typeof WeakRef === "function") {
+      const reference = new WeakRef(this);
+      const settle = () => {
+        const audio = reference.deref();
+        if (!audio || revisions.get(audio) !== revision) return;
+        if (!audio.paused && !audio.ended) observe(audio);
+        else remove.call(audio);
+      };
+      result.then(settle, settle);
+    }
+    // Preserve the original promise, result and rejection for the caller.
+    return result;
   };
   mediaPrototype.pause = function(...args) {
-    track(this);
-    return originalPause.apply(this, args);
+    const result = originalPause.apply(this, args);
+    if (this.paused || this.ended) remove.call(this);
+    return result;
   };
   globalThis[key] = {
-    version: 1,
+    version: 2,
     trackAll(audioObjects) {
-      for (const audio of audioObjects) track(audio);
+      // Event listeners on the audio do not root it; keep native autoplay
+      // observable without adding initially paused objects to the strong set.
+      for (const audio of audioObjects) if (audio && !audio.ended) observe(audio);
       return this.isPlaying();
     },
     isPlaying() {
+      let playing = false;
       for (const audio of tracked) {
-        if (!audio.paused && !audio.ended && audio.readyState > 0) return true;
+        if (isActive(audio)) playing = true;
+        else {
+          tracked.delete(audio);
+          // Keep only the element-owned observers while it buffers. A later
+          // native playing event can rejoin the set without a new play call.
+          if (audio.paused || audio.ended) remove.call(audio);
+        }
       }
-      return false;
+      return playing;
     },
   };
   return true;

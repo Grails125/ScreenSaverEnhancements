@@ -1,6 +1,8 @@
-def update_decky_music_detection_state(was_active, is_playing, missing_checks):
+def update_decky_music_detection_state(was_active, is_playing, missing_checks, confirm_missing=True):
     if is_playing:
         return 0, True
+    if not confirm_missing:
+        return 0, False
     missing_checks = min(missing_checks + 1, 2)
     return missing_checks, was_active and missing_checks < 2
 
