@@ -110,6 +110,20 @@ class ProcessListingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(utils.display_process_name('long-applicatio','/opt/long-application --flag'),'long-application')
         self.assertEqual(utils.display_process_name('flatpak','flatpak run --branch=stable org.example.Player'),'org.example.Player')
 
+    def test_reads_chinese_process_names_without_fixed_width_column_parsing(self):
+        with tempfile.TemporaryDirectory() as proc_root:
+            process_dir = Path(proc_root) / "123"
+            process_dir.mkdir()
+            (process_dir / "comm").write_text("网易云音乐\n", encoding="utf-8")
+            (process_dir / "cmdline").write_bytes("网易云音乐\0--background".encode("utf-8"))
+
+            with patch.object(utils, '_username_for_uid', return_value='deck'):
+                entries = utils.get_process_entries(proc_root)
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0]['comm'], '网易云音乐')
+            self.assertEqual(entries[0]['user'], 'deck')
+            self.assertEqual(shlex.split(entries[0]['args']), ['网易云音乐', '--background'])
+
     def test_keeps_the_existing_decky_music_rule_name_while_recognizing_it(self):
         self.assertTrue(utils.is_decky_music_name('DeckyMusic'))
         self.assertTrue(utils.is_decky_music_name('Decky Music'))

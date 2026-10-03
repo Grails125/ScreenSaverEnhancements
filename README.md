@@ -27,6 +27,22 @@ ScreenSaver Enhancements is a [Decky Loader](https://decky.xyz) plugin for Steam
 - **V2 typed API and state synchronization** — uses Decky's modern typed RPC and push events for settings and inhibition state, with full-state reconciliation after a listener reconnect. *(v2.0.0)*
 - **Diagnostics and updates** — inspect monitor mode, process activity, inhibition source, D-Bus requests, power override state, recent events, and event-channel health; copy the report or update from the plugin panel. *(v2.0.0)*
 - **Reliable lifecycle handling** — waits for pending inhibition notifications to cancel during unload/restart and packages all required backend modules with the release. *(v2.0.0)*
+- **Decky Music MPRIS playback monitoring** — recognizes current Decky Music releases through their public MPRIS playback events while retaining the legacy DeckyMusic compatibility path. Playback changes no longer require a repeated full-process scan. *(v2.0.1)*
+- **Clearer diagnostics** — recent plugin events retain the latest 40 entries, can be cleared from the Diagnostics page, and now identify the application that added or removed a sleep rule or changed sleep-inhibition state. *(v2.0.1)*
+- **Process-list refinements** — preserves Unicode process names, avoids duplicate localized labels, and improves the refresh feedback and scrolling behavior in the app-rules page. *(v2.0.1)*
+- **Safer settings persistence** — validates setting values before saving, normalizes persisted values, and preserves malformed settings files for recovery instead of silently discarding them. *(v2.0.2)*
+- **Steam menu input compatibility** — supports current object-style `Unregister`/`unregister` handles alongside legacy function handles, and cleans up only valid handles without registering a null listener. *(v2.0.3)*
+
+## What's new in v2.0.3
+
+- Supports current object-style `Unregister`/`unregister` handles while retaining compatibility with legacy function handles.
+- Cleans up only valid listener handles and does not register a null listener, preventing Steam and Quick Access Menu short presses from failing after suspend and resume.
+
+## What's new in v2.0.2
+
+- Rejects invalid setting values and normalizes valid application rules before persistence.
+- Restores invalid persisted public settings to safe defaults during startup.
+- Preserves malformed settings files with a `.corrupt` suffix for troubleshooting and recovery.
 
 ## Screenshots
 
