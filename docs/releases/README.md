@@ -2,7 +2,7 @@
 
 发布说明沿用中英文格式：先写 `[ZH-CN] 屏幕保护增强 v<version>` 和“新增与改进”，再写 `[EN] ScreenSaver Enhancements v<version>` 和“Added and improved”。每次发布将说明保存为本目录的 `v<version>.md`；合入外部贡献时，注明作者、PR 链接及具体贡献。
 
-GitHub 发行版标题与 Git 标签沿用 `v<version>` 格式，例如 `v2.0.4`。
+GitHub 发行版标题与 Git 标签沿用 `v<version>` 格式，例如 `v2.0.5`。
 
 安装包由 `package.json` 中的版本号命名：`ScreenSaverEnhancements-v<version>.zip`。ZIP 内部根目录保持 `ScreenSaverEnhancements/`，避免改变 Decky 安装目录。
 
@@ -15,7 +15,17 @@ GitHub 发行版标题与 Git 标签沿用 `v<version>` 格式，例如 `v2.0.4`
 3. 将版本标签指向已验证的提交，使用对应 `v<version>.md` 作为 GitHub Release 说明，并上传两份 ZIP。
 4. 核对发布后的资产名、GitHub 返回的 SHA-256 摘要与更新检查结果。
 
-v2.0.4 使用 [v2.0.4.md](./v2.0.4.md)，主要安装包为 `ScreenSaverEnhancements-v2.0.4.zip`。
+## v2.0.5
+
+更新说明使用 [v2.0.5.md](./v2.0.5.md)，主要安装包为 `ScreenSaverEnhancements-v2.0.5.zip`，同时上传字节完全相同的 `ScreenSaverEnhancements.zip`。本版沿用已在 Deck 验证的监控与诊断实现，版本更新不改写用户的应用规则或电源设置。
+
+新版本标签应指向完成验证并合入 main 的提交。先以草稿上传资产，核对下载文件的版本、插件名、必需模块及 SHA-256，再公开为正式 Latest Release；不要覆盖已有标签或旧版资产。
+
+依赖审计记录（2026-11-01，使用官方 npm registry）：没有高危或严重项；构建工具的 `deepmerge`、`glob`、`minimatch` 依赖链仍有 2 项低危、3 项中危告警。本次未进行会引入破坏性工具链变更的强制修复，后续依赖升级需单独验证，不能宣称已清零全部漏洞。
+
+## v2.0.4 同版本更正历史
+
+v2.0.4 使用 [v2.0.4.md](./v2.0.4.md)，主要安装包为 `ScreenSaverEnhancements-v2.0.4.zip`。以下为当时的同版本更正流程，不用于新版本发布。
 
 原 v2.0.4 安装包因更新安装身份名称错误撤回，更正包仍以 v2.0.4 发布。已安装原包的用户需从 ZIP 重装，同版本更正不会触发新版本提示。
 

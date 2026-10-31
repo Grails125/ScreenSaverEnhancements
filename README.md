@@ -20,6 +20,8 @@ If Steam or another desktop service owns a standard inhibit service name, the pl
 
 A separate read-only connection observes successful external Inhibit/UnInhibit calls and records application, reason and cookie. Observation is always partial: requests predating the connection cannot be enumerated through the standard API, and disconnects or permission failures do not mean the system has no inhibitors.
 
+Manual application rules are not a D-Bus allowlist. An application such as Edge can still issue its own playback-related inhibition request without being added to the manual list; the plugin records requests that it handles or successfully observes.
+
 After the last known source ends, a 1.5-second stable window and a fresh status read precede actual power restoration. New sources cancel restoration; explicit monitor shutdown and unload restore promptly. Recovery notifications describe only the plugin restoring its saved power settings. Ordinary manual rules remain process-based, not playback-based.
 
 Diagnostics show a compact overview with expandable D-Bus, Nested, technical and power sections; exported reports retain all fields. After an initial check, Nested discovery waits for Plasma process-start events without periodic scans when no session exists and the process subscription is confirmed. Existing sessions are checked every 5 seconds; failed queries retry after 2 seconds. When process events are unavailable, subscription confirmation times out, or event loss is detected, empty-session discovery falls back to every 10 seconds. Intervals exclude query time: playback transitions can take about 5 seconds to detect before the restoration window above. Manual rules and explicit monitor shutdown remain independent of these intervals.
@@ -44,6 +46,17 @@ Diagnostics show a compact overview with expandable D-Bus, Nested, technical and
 - **Process-list refinements** — preserves Unicode process names, avoids duplicate localized labels, and improves the refresh feedback and scrolling behavior in the app-rules page. *(v2.0.1)*
 - **Safer settings persistence** — validates setting values before saving, normalizes persisted values, and preserves malformed settings files for recovery instead of silently discarding them. Serializes setting changes and retains pending edits when the panel reopens. *(v2.0.2, strengthened in v2.0.4)*
 - **Steam menu input compatibility** — supports current object-style `Unregister`/`unregister` handles alongside legacy function handles, and cleans up only valid handles without registering a null listener. *(v2.0.3)*
+
+## What's new in v2.0.5
+
+- Keep monitoring and configured application rules running when Steam owns a standard D-Bus name, without taking that name away from Steam.
+- Observe successful external requests independently and record application, reason and cookie, with explicit partial-observation limits.
+- Delay actual power restoration by 1.5 seconds after all known sources end; revalidate state, cancel on new sources and retry failed restoration within a bounded budget.
+- Group diagnostics into an overview and expandable D-Bus, Nested, technical and power details; preserve full diagnostic exports and three-language support.
+- Stop periodic Nested discovery when no session exists and process events are confirmed. Check existing sessions every 5 seconds, retry failed queries after 2 seconds, and use 10-second empty-session discovery only when process events are unavailable.
+- Detect rejected or silent process-event subscriptions and sequence gaps, and fall back safely instead of waiting forever.
+
+See the [bilingual v2.0.5 release notes](./docs/releases/v2.0.5.md) for details, timing trade-offs and upgrade instructions. Existing application rules remain unchanged.
 
 ## What's new in v2.0.4
 
@@ -90,6 +103,8 @@ Thanks to [WowOne987](https://github.com/WowOne987) for contributing Nested Desk
 | --- | --- |
 | ![Runtime diagnostics](./docs/Screenshot/diagnostics_en_1.jpg) | ![Recent diagnostic events](./docs/Screenshot/diagnostics_en_2.jpg) |
 
+These diagnostics screenshots show the earlier layout. Since v2.0.5, detailed fields are grouped into expandable sections.
+
 ![Battery and AC power profile configuration](./docs/Screenshot/powerProfiles_en.jpg)
 
 ## Install
@@ -104,7 +119,7 @@ curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/dow
 
 ### Release package
 
-1. Download `ScreenSaverEnhancements-v<version>.zip` from the [latest release](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest), for example `ScreenSaverEnhancements-v2.0.4.zip`.
+1. Download `ScreenSaverEnhancements-v<version>.zip` from the [latest release](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest), for example `ScreenSaverEnhancements-v2.0.5.zip`.
 2. Open **Decky Settings** → **Developer** → **Install Plugin from ZIP**.
 3. Select the downloaded ZIP package and complete the installation.
 
@@ -118,13 +133,13 @@ npm.cmd test
 python build.py
 ```
 
-The package is created at `build/ScreenSaverEnhancements-v<version>.zip`, using the project version (for example `build/ScreenSaverEnhancements-v2.0.4.zip`). Install it using the release-package steps above.
+The package is created at `build/ScreenSaverEnhancements-v<version>.zip`, using the project version (for example `build/ScreenSaverEnhancements-v2.0.5.zip`). Install it using the release-package steps above.
 
 ## Upgrade
 
 The plugin can check for updates from the bottom of its panel. When a newer release is available, open the update section, review the version and release notes, then start the upgrade there.
 
-If an older version's built-in update stalls, install the corrected `ScreenSaverEnhancements-v2.0.4.zip` through **Decky Settings** → **Developer** → **Install Plugin from ZIP**. Users who installed the original v2.0.4 package also need to reinstall from ZIP: the corrected package keeps the same version, so it will not appear as a newer update. Publishing this package does not repair the updater already running in an older installation.
+If an older version's built-in update stalls, including the original v2.0.4 package with the installer-identity issue, install `ScreenSaverEnhancements-v2.0.5.zip` through **Decky Settings** → **Developer** → **Install Plugin from ZIP**. Publishing a newer release cannot repair the updater already running in an older installation. Both versioned and fixed-name compatibility ZIPs contain the same plugin.
 
 Decky automatically reloads this plugin after installation; restarting the whole Decky Loader is unnecessary.
 
@@ -146,7 +161,7 @@ The plugin uses three complementary sources of inhibition:
 
 DeckyMusic is a specialized manual rule: its audio state is checked every five seconds only while the rule is configured. Normal manual application rules remain event-driven, with a 120-second fallback scan, so the two paths do not multiply process-scanning work.
 
-All sources share the same state synchronization and power-control path. Before overriding power behavior, the plugin records the current settings; once every inhibitor ends, it restores that saved configuration instead of writing fixed defaults.
+All sources share the same state synchronization and power-control path. Before overriding power behavior, the plugin records the current settings; once every known plugin source ends and the stable window is confirmed, it restores that saved configuration instead of writing fixed defaults. This does not claim that every external system inhibitor has ended.
 
 ## Development
 
