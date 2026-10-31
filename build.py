@@ -8,6 +8,7 @@ import zipfile
 
 PACKAGE_SOURCE_FILES = (
     "main.py",
+    "external_inhibit_monitor.py",
     "plugin.json",
     "package.json",
     "settings.py",

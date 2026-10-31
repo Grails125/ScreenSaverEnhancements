@@ -20,6 +20,7 @@ def backend_logic():
     namespace = {
         'asyncio': asyncio, 'asynccontextmanager': asynccontextmanager,
         'unloading': False, 'UNLOAD_TIMEOUT': 0.025,
+        'external_inhibit_monitor': NS(start=lambda *a: None),
         'decky': NS(logger=NS(info=lambda *a: None, warning=lambda *a: None, error=lambda *a: None)),
         'DisplayWakeGuard': lambda: NS(close=async_noop),
         'record_diagnostic_event': lambda *a: None, 'sync_inhibit_state': lambda *a, **kw: None,
@@ -132,7 +133,8 @@ def connection_logic():
                    if isinstance(node, ast.AsyncFunctionDef) and node.name == '_dbus_connection_watch_loop')
     namespace = {'asyncio': asyncio, 'Message': lambda **kw: NS(**kw), 'MessageType': NS(ERROR='error'),
                  'decky': NS(logger=NS(info=lambda *a: None, debug=lambda *a: None, warning=lambda *a: None)),
-                 'sync_inhibit_state': lambda: None, 'BaseInterface': NS(request_map={})}
+                 'sync_inhibit_state': lambda: None, 'BaseInterface': NS(request_map={}),
+                 'refresh_dbus_services': async_noop}
     exec(compile(ast.Module(body=[*nodes, watcher], type_ignores=[]), 'actual-dbus-watcher', 'exec'), namespace)
     return namespace
 

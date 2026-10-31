@@ -1,6 +1,8 @@
 import { parseSteamPowerSettings, PowerSettings } from "./powerSettings";
 import type { NestedMprisSource } from "./deckyApi";
 
+type NestedMprisStatus = 'stopped' | 'checking' | 'waiting' | 'waiting_event' | 'watching' | 'partial' | 'error' | 'unknown';
+
 export type DiagnosticEvent = {
   timestamp: number;
   type: string;
@@ -8,11 +10,16 @@ export type DiagnosticEvent = {
   application?: string;
   reason?: string;
   cookie?: number;
+  service?: string;
 };
 
 export type Diagnostics = {
   timestamp: number;
   backendRunning: boolean;
+  dbusServices: { name: string; status: 'owned' | 'external'; owner: string | null; pid: number | null; process: string | null }[];
+  dbusObserverStatus: string;
+  dbusObservationComplete: boolean;
+  observedDbusRequestCount: number;
   processMonitorMode: string;
   processScanCount: number;
   lastProcessScanAt: number | null;
@@ -25,6 +32,9 @@ export type Diagnostics = {
   nestedMprisScanCount: number;
   nestedMprisLastScanAt: number | null;
   nestedMprisBusCount: number;
+  nestedMprisStatus: NestedMprisStatus;
+  /** Delay after each check; null when waiting for events, stopped or unavailable. */
+  nestedMprisPollIntervalSeconds: number | null;
   pushListenerActive: boolean;
   pushReconnectCount: number;
   lastFullSyncAt: number | null;
@@ -61,6 +71,7 @@ export const parseDiagnostics = (value: unknown): Diagnostics | null => {
         application: typeof event.application === "string" ? event.application.slice(0, 256) : undefined,
         reason: typeof event.reason === "string" ? event.reason.slice(0, 256) : undefined,
         cookie: typeof event.cookie === "number" ? event.cookie : undefined,
+        service: typeof event.service === "string" ? event.service.slice(0, 256) : undefined,
       }];
     })
     : [];
@@ -68,6 +79,16 @@ export const parseDiagnostics = (value: unknown): Diagnostics | null => {
   return {
     timestamp: finiteNumber(source.timestamp),
     backendRunning: source.backendRunning === true,
+    dbusServices: Array.isArray(source.dbusServices) ? source.dbusServices.slice(0, 4).flatMap(item => {
+      if (!item || typeof item.name !== 'string' || !['owned', 'external'].includes(item.status)) return [];
+      return [{ name: item.name.slice(0, 256), status: item.status as 'owned' | 'external',
+        owner: typeof item.owner === 'string' ? item.owner.slice(0, 256) : null,
+        pid: typeof item.pid === 'number' && Number.isSafeInteger(item.pid) && item.pid > 0 ? item.pid : null,
+        process: typeof item.process === 'string' ? item.process.slice(0, 256) : null }];
+    }) : [],
+    dbusObserverStatus: typeof source.dbusObserverStatus === 'string' ? source.dbusObserverStatus.slice(0, 32) : 'stopped',
+    dbusObservationComplete: source.dbusObservationComplete === true,
+    observedDbusRequestCount: finiteNumber(source.observedDbusRequestCount),
     processMonitorMode: typeof source.processMonitorMode === "string" ? source.processMonitorMode : "unknown",
     processScanCount: finiteNumber(source.processScanCount),
     lastProcessScanAt: nullableTimestamp(source.lastProcessScanAt),
@@ -86,6 +107,12 @@ export const parseDiagnostics = (value: unknown): Diagnostics | null => {
     nestedMprisScanCount: finiteNumber(source.nestedMprisScanCount),
     nestedMprisLastScanAt: nullableTimestamp(source.nestedMprisLastScanAt),
     nestedMprisBusCount: finiteNumber(source.nestedMprisBusCount),
+    nestedMprisStatus: typeof source.nestedMprisStatus === 'string'
+      && ['stopped', 'checking', 'waiting', 'waiting_event', 'watching', 'partial', 'error'].includes(source.nestedMprisStatus)
+      ? source.nestedMprisStatus as NestedMprisStatus : 'unknown',
+    nestedMprisPollIntervalSeconds: typeof source.nestedMprisPollIntervalSeconds === 'number'
+      && Number.isFinite(source.nestedMprisPollIntervalSeconds) && source.nestedMprisPollIntervalSeconds > 0
+      ? source.nestedMprisPollIntervalSeconds : null,
     pushListenerActive: source.pushListenerActive === true,
     pushReconnectCount: finiteNumber(source.pushReconnectCount),
     lastFullSyncAt: nullableTimestamp(source.lastFullSyncAt),

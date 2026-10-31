@@ -344,7 +344,7 @@ test("Stage 4.1 performs silent full-state sync before event subscriptions", () 
     "utf8",
   );
 
-  assert.match(source, /const synchronizeRuntimeState = async \(showStateNotification = false\) =>/);
+  assert.match(source, /const synchronizeRuntimeState = async \(\s*showStateNotification = false, restoreConfirmed = false/);
   assert.match(source, /serverApi\.getInhibitStatus\(\)/);
   assert.match(source, /getPowerSyncAction\(/);
   assert.doesNotMatch(source, /refreshDeckyMusicSetting/);
@@ -378,7 +378,7 @@ test("Stage 4.3 treats critical pushes as full-state refresh signals", () => {
 
   assert.match(apiSource, /subscribeInhibitStateChanged/);
   assert.match(source, /serverApi\.subscribeInhibitStateChanged\(\(\) =>/);
-  assert.match(source, /const synchronizeRuntimeState = async \(showStateNotification = false\) =>/);
+  assert.match(source, /const synchronizeRuntimeState = async \(\s*showStateNotification = false, restoreConfirmed = false/);
   assert.match(source, /runtimeSyncScheduler\.request\(true\)/);
   assert.doesNotMatch(source, /startInhibit\(event\.application\)/);
   assert.match(source, /event\.reason/);

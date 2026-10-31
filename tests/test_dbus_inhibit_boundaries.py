@@ -34,6 +34,7 @@ def load_logic():
           'Message': Message, 'MessageType': MessageType, 'ErrorType': ErrorType, 'DBusError': DBusError,
           'asyncio': asyncio, 'decky': NS(logger=NS(info=Mock(), debug=Mock(), warning=Mock())),
           'record_diagnostic_event': Mock(), 'sync_inhibit_state': Mock(),
+          'refresh_dbus_services': lambda: asyncio.sleep(0),
           'bus': NS(connected=True)}
     exec(compile(ast.Module(body=[*constants, *nodes, watcher], type_ignores=[]), 'actual-dbus-inhibition', 'exec'), ns)
     return ns

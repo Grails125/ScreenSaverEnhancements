@@ -6,8 +6,9 @@ from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import Mock
 import sys
+from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'defaults'))
-from dbus_next.constants import RequestNameReply, NameFlag
+from dbus_next.constants import RequestNameReply, NameFlag, MessageType
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,7 +29,7 @@ async def noop(*args, **kwargs): pass
 
 def load_logic(current_bus=None, next_bus=None):
     source = ast.parse((ROOT/'main.py').read_text(encoding='utf-8'))
-    names = {'stop_dbus', 'start_dbus', 'clear_dbus_requests'}
+    names = {'stop_dbus', 'start_dbus', 'clear_dbus_requests', 'refresh_dbus_services'}
     nodes = [n for n in source.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
     plugin = next(n for n in source.body if isinstance(n, ast.ClassDef) and n.name == 'Plugin')
     wanted = {'_init_runtime_state', '_backend_operation_lock', '_start_backend_locked', 'start_backend',
@@ -36,6 +37,8 @@ def load_logic(current_bus=None, next_bus=None):
     methods = [n for n in plugin.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in wanted]
     cls = ast.ClassDef(name='Plugin', bases=[], keywords=[], decorator_list=[], body=methods)
     ns = {'asyncio': asyncio, 'asynccontextmanager': asynccontextmanager, 'bus': current_bus,
+          'external_inhibit_monitor': NS(start=Mock(), stop=noop, tracker=NS(requests=lambda: [])),
+          'MessageType': MessageType, 'Path': Path,
           'unloading': False, 'NameFlag': NameFlag, 'RequestNameReply': RequestNameReply,
           'Message': lambda **kw: NS(**kw), 'MessageBus': lambda: next_bus or Bus(),
           'BaseInterface': NS(request_map={}, cookie=0),
@@ -43,7 +46,7 @@ def load_logic(current_bus=None, next_bus=None):
           'decky_music_mpris_revisions': {'player': 1}, 'decky_music_mpris_refresh_generation': 0,
           'decky_music_mpris_change_callback': Mock(), 'sync_inhibit_state': Mock(),
           'DisplayWakeGuard': lambda: NS(close=noop), 'record_diagnostic_event': Mock(),
-          'decky': NS(logger=NS(info=Mock(), error=Mock(), warning=Mock())),
+          'decky': NS(logger=NS(info=Mock(), error=Mock(), warning=Mock(), debug=Mock())),
           'handle_decky_music_mpris_message': Mock(), 'InhibitInterface': lambda: None,
           'PMInhibitInterface': lambda: None, 'GnomeInterface': lambda: None,
           'refresh_decky_music_mpris_state': noop, 'is_dbus_request_connected': noop}
@@ -57,6 +60,24 @@ class DbusServiceRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_disconnected_bus_reports_stopped(self):
         _, plugin = load_logic(Bus(connected=False))
         self.assertFalse(await plugin.is_running())
+
+    async def test_connection_alone_does_not_claim_manual_monitor_is_running(self):
+        _, plugin = load_logic(Bus())
+        self.assertFalse(await plugin.is_running())
+        plugin.manual_watch_task = NS(done=lambda: False)
+        self.assertTrue(await plugin.is_running())
+        plugin.manual_watch_task = NS(done=lambda: True)
+        self.assertFalse(await plugin.is_running())
+
+    async def test_observer_stop_failure_still_disconnects_the_service_bus(self):
+        candidate = Bus()
+        ns, _ = load_logic(candidate)
+        async def broken_stop():
+            raise OSError('observer already closed')
+        ns['external_inhibit_monitor'].stop = broken_stop
+        await ns['stop_dbus']()
+        self.assertFalse(candidate.connected)
+        self.assertIsNone(ns['bus'])
 
     async def test_explicit_start_replaces_disconnected_bus_and_clears_stale_inhibition(self):
         replacement = Bus()
@@ -94,10 +115,47 @@ class DbusServiceRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(candidate.connected)
         self.assertEqual(candidate.names[0][1], NameFlag.DO_NOT_QUEUE)
 
-    async def test_existing_name_is_rejected(self):
+    async def test_existing_names_degrade_without_disabling_manual_monitor(self):
         ns, _ = load_logic(next_bus=Bus(reply=RequestNameReply.EXISTS))
-        self.assertFalse(await ns['start_dbus']())
-        self.assertIsNone(ns['bus'])
+        self.assertTrue(await ns['start_dbus']())
+        self.assertTrue(ns['bus'].connected)
+        self.assertEqual(len(ns['bus'].names), 4)
+
+    async def test_released_name_recovers_without_reconnecting_or_dropping_live_cookies(self):
+        candidate = Bus()
+        name = 'org.freedesktop.ScreenSaver'
+        candidate.sse_service_states = {name: {'name': name, 'status': 'external'}}
+        ns, _ = load_logic(candidate)
+        request = object()
+        ns['BaseInterface'].request_map[7] = request
+        await ns['refresh_dbus_services']()
+        self.assertIs(ns['bus'], candidate)
+        self.assertTrue(candidate.connected)
+        self.assertEqual(candidate.sse_service_states[name]['status'], 'owned')
+        self.assertIs(ns['BaseInterface'].request_map[7], request)
+        self.assertEqual(candidate.names, [(name, NameFlag.DO_NOT_QUEUE)])
+
+    async def test_external_owner_metadata_is_reported_without_stealing_the_name(self):
+        candidate = Bus(reply=RequestNameReply.EXISTS)
+        name = 'org.freedesktop.ScreenSaver'
+        candidate.sse_service_states = {name: {'name': name, 'status': 'external'}}
+        async def query(message):
+            return NS(message_type=MessageType.METHOD_RETURN,
+                      body=[':1.32'] if message.member == 'GetNameOwner' else [2130])
+        candidate.call = query
+        ns, _ = load_logic(candidate)
+        await ns['refresh_dbus_services']()
+        self.assertEqual(candidate.sse_service_states[name]['owner'], ':1.32')
+        self.assertEqual(candidate.sse_service_states[name]['pid'], 2130)
+        self.assertEqual(candidate.sse_service_states[name]['status'], 'external')
+
+    async def test_unloading_does_not_attempt_name_recovery(self):
+        candidate = Bus()
+        candidate.sse_service_states = {'service': {'status': 'external'}}
+        ns, _ = load_logic(candidate)
+        ns['unloading'] = True
+        await ns['refresh_dbus_services']()
+        self.assertEqual(candidate.names, [])
 
     async def test_owned_names_are_accepted(self):
         for reply in (RequestNameReply.PRIMARY_OWNER, RequestNameReply.ALREADY_OWNER):
@@ -123,7 +181,7 @@ class DbusServiceRecoveryTests(unittest.IsolatedAsyncioTestCase):
         ns['BaseInterface'].request_map[1] = object()
         attempts = []
         def next_connection():
-            candidate = Bus(reply=RequestNameReply.EXISTS) if len(attempts) < 3 else replacement
+            candidate = Bus(reply=RequestNameReply.IN_QUEUE) if len(attempts) < 3 else replacement
             attempts.append(candidate)
             return candidate
         ns['MessageBus'] = next_connection
@@ -181,16 +239,16 @@ class DbusServiceRecoveryTests(unittest.IsolatedAsyncioTestCase):
         ns['MessageBus'].assert_not_called()
         self.assertIs(ns['bus'], replacement)
 
-    async def test_conflict_after_partial_registration_releases_prior_names(self):
+    async def test_partial_conflict_preserves_owned_names_and_starts_manual_rules(self):
         candidate = Bus()
         async def partial_registration(name, flags):
             candidate.names.append((name, flags))
             return RequestNameReply.PRIMARY_OWNER if len(candidate.names) < 3 else RequestNameReply.EXISTS
         candidate.request_name = partial_registration
         ns, _ = load_logic(next_bus=candidate)
-        self.assertFalse(await ns['start_dbus']())
-        self.assertEqual(len(candidate.names), 3)
-        self.assertFalse(candidate.connected)
-        self.assertIsNone(ns['bus'])
-
+        self.assertTrue(await ns['Plugin']().start_backend())
+        self.assertEqual(len(candidate.names), 4)
+        self.assertTrue(candidate.connected)
+        self.assertIs(ns['bus'], candidate)
+        ns['Plugin']._start_manual_watch.assert_called()
 if __name__ == '__main__': unittest.main()

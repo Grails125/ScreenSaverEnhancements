@@ -26,7 +26,7 @@ const loaderCallable: CallableFactory = (route) => async (...args) => {
 };
 
 export type RunningProcess = { name: string; type: string };
-export type InhibitRequest = { cookie: number; application: string; reason: string };
+export type InhibitRequest = { cookie: number; application: string; reason: string; source?: 'observed'; service?: string };
 export type NestedMprisSource = {
   application: string;
   service: string;
