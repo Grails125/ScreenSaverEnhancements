@@ -57,7 +57,9 @@ LEGACY_SETTING_KEYS = (
 NESTED_DESKTOP_RUNTIME_MARKER = "/nested-desktop."
 NESTED_MPRIS_PREFIX = "org.mpris.MediaPlayer2."
 NESTED_MPRIS_EXCLUDED_MARKERS = ("kdeconnect", "playerctld")
-NESTED_MPRIS_POLL_SECONDS = 2.0
+NESTED_MPRIS_POLL_SECONDS = 5.0
+NESTED_MPRIS_RETRY_SECONDS = 2.0
+NESTED_MPRIS_IDLE_POLL_SECONDS = 10.0
 NESTED_MPRIS_REQUEST_TIMEOUT = 0.5
 NESTED_MPRIS_UNKNOWN_GRACE_SECONDS = 10.0
 DEFAULT_MANUAL_APPS = ("mpv", "wiliwili")
@@ -103,6 +105,7 @@ from dbus_next import Message, MessageType, NameFlag, RequestNameReply, ErrorTyp
 from dbus_next.errors import DBusError
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
 bus = None
+external_inhibit_monitor = None
 inhibit_state_changed_task = ManagedTask()
 DECKY_MUSIC_MPRIS_PREFIX = "org.mpris.MediaPlayer2.decky_music."
 decky_music_mpris_owners = {}
@@ -310,6 +313,7 @@ def sync_inhibit_state(detail=None, force_emit=False):
         manual_inhibiting
         or nested_media_inhibiting
         or len(BaseInterface.request_map) > 0
+        or (external_inhibit_monitor is not None and bool(external_inhibit_monitor.tracker.requests()))
     )
     if active == inhibit_active:
         if force_emit:
@@ -462,8 +466,12 @@ async def stop_dbus():
     global decky_music_mpris_refresh_generation
     decky_music_mpris_refresh_generation += 1
     try:
-        if bus is not None:
-            bus.disconnect()
+        try:
+            if external_inhibit_monitor is not None:
+                await external_inhibit_monitor.stop()
+        finally:
+            if bus is not None:
+                bus.disconnect()
     except Exception as e:
         decky.logger.info(f"error: {e}")
     finally:
@@ -500,6 +508,7 @@ async def start_dbus():
         bus.export('/org/freedesktop/ScreenSaver', interface) # chrome
         bus.export('/org/freedesktop/PowerManagement/Inhibit', pm_interface) # wiliwili
         bus.export('/org/gnome/SessionManager', gnome_interface) # mpv with https://github.com/Guldoman/mpv_inhibit_gnome installed
+        bus.sse_service_states = {}
         for name in (
             'org.freedesktop.PowerManagement',
             'org.freedesktop.PowerManagement.Inhibit',
@@ -507,8 +516,14 @@ async def start_dbus():
             'org.gnome.SessionManager',
         ):
             reply = await bus.request_name(name, NameFlag.DO_NOT_QUEUE)
+            if reply == RequestNameReply.EXISTS:
+                bus.sse_service_states[name] = {"name": name, "status": "external", "owner": None, "pid": None}
+                record_diagnostic_event("dbus_service", "external", service=name)
+                decky.logger.warning(f"D-Bus interface unavailable to plugin; keeping other monitors active: {name}")
+                continue
             if reply not in (RequestNameReply.PRIMARY_OWNER, RequestNameReply.ALREADY_OWNER):
-                raise RuntimeError(f'D-Bus service name is already owned: {name} ({reply})')
+                raise RuntimeError(f'Unexpected D-Bus name registration result: {name} ({reply})')
+            bus.sse_service_states[name] = {"name": name, "status": "owned", "owner": None, "pid": None}
         await refresh_decky_music_mpris_state()
         return True
     except Exception as e:
@@ -516,6 +531,41 @@ async def start_dbus():
         await stop_dbus()
         clear_dbus_requests()
         return False
+
+async def refresh_dbus_services():
+    """Retry unavailable names without disconnecting or dropping live cookies."""
+    current = bus
+    if current is None or not current.connected or unloading:
+        return
+    for name, state in getattr(current, 'sse_service_states', {}).items():
+        if state['status'] == 'owned':
+            continue
+        try:
+            reply = await asyncio.wait_for(current.request_name(name, NameFlag.DO_NOT_QUEUE), 1)
+            if current is not bus or unloading:
+                return
+            if reply in (RequestNameReply.PRIMARY_OWNER, RequestNameReply.ALREADY_OWNER):
+                state.update(status='owned', owner=None, pid=None, process=None)
+                record_diagnostic_event('dbus_service', 'owned', service=name)
+                continue
+            owner_reply = await asyncio.wait_for(current.call(Message(
+                destination='org.freedesktop.DBus', path='/org/freedesktop/DBus',
+                interface='org.freedesktop.DBus', member='GetNameOwner', signature='s', body=[name])), 1)
+            if owner_reply.message_type != MessageType.ERROR and owner_reply.body:
+                state['owner'] = owner_reply.body[0]
+                pid_reply = await asyncio.wait_for(current.call(Message(
+                    destination='org.freedesktop.DBus', path='/org/freedesktop/DBus',
+                    interface='org.freedesktop.DBus', member='GetConnectionUnixProcessID',
+                    signature='s', body=[state['owner']])), 1)
+                if pid_reply.message_type != MessageType.ERROR and pid_reply.body:
+                    state['pid'] = pid_reply.body[0]
+                    try:
+                        state['process'] = Path(f"/proc/{state['pid']}/comm").read_text().strip()[:256]
+                    except OSError:
+                        state['process'] = None
+        except Exception as error:
+            decky.logger.debug(f'Could not refresh D-Bus capability {name}: {error}')
+
 
 def _read_process_environment(process_path):
     try:
@@ -537,12 +587,8 @@ def discover_nested_desktop_bus_addresses(proc_root="/proc"):
     """Return live D-Bus session addresses for Nested Desktop Plasma shells."""
     discovered = []
 
-    try:
-        proc_entries = os.scandir(proc_root)
-    except OSError:
-        return []
-
-    with proc_entries:
+    # An unreadable proc root is not proof that all sessions disappeared.
+    with os.scandir(proc_root) as proc_entries:
         for entry in proc_entries:
             try:
                 if not entry.name.isdigit() or not entry.is_dir():
@@ -799,6 +845,8 @@ class Plugin:
             self.decky_music_missing_checks = 0
         if not hasattr(self, 'nested_media_watch_task'):
             self.nested_media_watch_task = None
+        if not hasattr(self, 'nested_media_wakeup'):
+            self.nested_media_wakeup = asyncio.Event()
         if not hasattr(self, 'nested_media_active'):
             self.nested_media_active = False
         if not hasattr(self, 'nested_media_sources'):
@@ -809,6 +857,10 @@ class Plugin:
             self.nested_media_last_scan_at = None
         if not hasattr(self, 'nested_media_last_bus_count'):
             self.nested_media_last_bus_count = 0
+        if not hasattr(self, 'nested_media_poll_interval_seconds'):
+            self.nested_media_poll_interval_seconds = None
+        if not hasattr(self, 'nested_media_status'):
+            self.nested_media_status = "stopped"
 
     async def _get_all_process_entries(self):
         self.process_scan_count += 1
@@ -1059,6 +1111,10 @@ class Plugin:
         )
 
         while True:
+            # Clear before I/O: an exec arriving during discovery must wake the
+            # next check rather than being lost as we enter an indefinite wait.
+            self.nested_media_wakeup.clear()
+            self.nested_media_poll_interval_seconds = NESTED_MPRIS_POLL_SECONDS
             try:
                 addresses = await asyncio.to_thread(
                     discover_nested_desktop_bus_addresses
@@ -1072,6 +1128,16 @@ class Plugin:
                     *(query_nested_mpris_sources(address) for address in addresses),
                     return_exceptions=True,
                 )
+                incomplete = any(isinstance(result, BaseException) or result["unknown"] for result in results)
+                self.nested_media_status = "partial" if incomplete else ("watching" if addresses else "waiting")
+                if incomplete:
+                    self.nested_media_poll_interval_seconds = NESTED_MPRIS_RETRY_SECONDS
+                elif (not addresses and self.process_monitor_mode == "proc_connector"
+                      and getattr(self.process_event_source, 'subscription_confirmed', False)):
+                    self.nested_media_status = "waiting_event"
+                    self.nested_media_poll_interval_seconds = None
+                elif not addresses:
+                    self.nested_media_poll_interval_seconds = NESTED_MPRIS_IDLE_POLL_SECONDS
                 sources = Plugin._merge_nested_media_results(
                     self, addresses, results, time.monotonic()
                 )
@@ -1081,14 +1147,27 @@ class Plugin:
                 raise
 
             except Exception as error:
+                self.nested_media_status = "error"
+                self.nested_media_poll_interval_seconds = NESTED_MPRIS_RETRY_SECONDS
+                # Keep confirmed playback only for the existing bounded grace,
+                # even when discovery itself fails before a bus can be queried.
+                cached_addresses = list({key[0] for key in getattr(self, 'nested_media_confirmed', {})})
+                sources = Plugin._merge_nested_media_results(
+                    self, cached_addresses, [error] * len(cached_addresses), time.monotonic()
+                )
+                Plugin._set_nested_media_sources(self, sources)
                 decky.logger.warning(
                     "Nested Desktop MPRIS watcher error: "
                     f"{error}"
                 )
 
-            await asyncio.sleep(
-                NESTED_MPRIS_POLL_SECONDS
-            )
+            try:
+                await asyncio.wait_for(
+                    self.nested_media_wakeup.wait(),
+                    timeout=self.nested_media_poll_interval_seconds,
+                )
+            except asyncio.TimeoutError:
+                pass
 
 
     def _start_nested_media_watch(self):
@@ -1100,6 +1179,8 @@ class Plugin:
         ):
             return
 
+        self.nested_media_status = "checking"
+        self.nested_media_poll_interval_seconds = NESTED_MPRIS_POLL_SECONDS
         self.nested_media_watch_task = asyncio.create_task(
             Plugin._nested_media_watch_loop(self)
         )
@@ -1129,6 +1210,9 @@ class Plugin:
         self.nested_media_sources = []
         self.nested_media_confirmed = {}
         self.nested_media_active = False
+        self.nested_media_last_bus_count = 0
+        self.nested_media_status = "stopped"
+        self.nested_media_poll_interval_seconds = None
         nested_media_inhibiting = False
 
         sync_inhibit_state(
@@ -1141,15 +1225,20 @@ class Plugin:
         decky.logger.info("Kernel process event listener started")
         while True:
             try:
+                was_confirmed = self.process_event_source.subscription_confirmed
                 event_type, process_id = await self.process_event_source.wait_for_process_change()
+                if not was_confirmed and self.process_event_source.subscription_confirmed:
+                    self.nested_media_wakeup.set()
+                if event_type == 0:  # Subscription ACK is not a process change.
+                    continue
                 self.last_process_event_at = int(time.time())
                 should_reconcile = event_type == process_events.PROC_EVENT_EXIT and process_id in self.active_manual_pids
                 if event_type == process_events.PROC_EVENT_EXEC:
-                    should_reconcile = await asyncio.to_thread(
-                        Plugin._process_matches_manual_rule,
-                        self,
-                        process_id,
-                    )
+                    entry = await asyncio.to_thread(process_utils.read_process_entry, process_id)
+                    if entry is not None:
+                        if entry["comm"] == "plasmashell":
+                            self.nested_media_wakeup.set()
+                        should_reconcile = Plugin._process_matches_manual_rule(self, process_id, entry)
                 if should_reconcile:
                     if event_type == process_events.PROC_EVENT_EXEC:
                         self.active_manual_pids.add(process_id)
@@ -1162,6 +1251,10 @@ class Plugin:
                 self.process_monitor_mode = "fallback_scan"
                 decky.logger.warning(f"Kernel process event listener stopped: {e}")
                 self.manual_watch_wakeup.set()
+                self.nested_media_wakeup.set()
+                source, self.process_event_source = self.process_event_source, None
+                if source is not None:
+                    source.close()
                 return
 
     async def _dbus_connection_watch_loop(self):
@@ -1178,6 +1271,7 @@ class Plugin:
                         if bus is None or not bus.connected:
                             await Plugin._start_backend_locked(self)
                     continue
+                await refresh_dbus_services()
                 requests = list(BaseInterface.request_map.items())
                 if not requests:
                     continue
@@ -1201,8 +1295,9 @@ class Plugin:
             except Exception as e:
                 decky.logger.warning(f"D-Bus request connection check failed: {e}")
 
-    def _process_matches_manual_rule(self, process_id):
-        entry = process_utils.read_process_entry(process_id)
+    def _process_matches_manual_rule(self, process_id, entry=None):
+        if entry is None:
+            entry = process_utils.read_process_entry(process_id)
         if entry is None:
             return False
 
@@ -1308,7 +1403,7 @@ class Plugin:
             return await Plugin._start_backend_locked(self)
 
     async def _start_backend_locked(self):
-        global bus
+        global bus, external_inhibit_monitor
         decky.logger.info("Start backend server")
         Plugin._init_runtime_state(self)
         if bus is None or not bus.connected:
@@ -1325,6 +1420,10 @@ class Plugin:
         Plugin._start_manual_watch(self)
         Plugin._start_dbus_connection_watch(self)
         Plugin._start_nested_media_watch(self)
+        if external_inhibit_monitor is None:
+            external_inhibit_monitor = load_local_module('external_inhibit_monitor', 'external_inhibit_monitor.py').ExternalInhibitMonitor(
+                record_diagnostic_event, lambda: sync_inhibit_state('external_dbus_changed', force_emit=True))
+        external_inhibit_monitor.start(bus)
         record_diagnostic_event("backend_started")
         return True
 
@@ -1352,7 +1451,8 @@ class Plugin:
 
     async def is_running(self):
         global bus
-        return bus is not None and bus.connected
+        task = getattr(self, 'manual_watch_task', None)
+        return bus is not None and bus.connected and task is not None and not task.done()
 
     async def get_running_processes(self):
         entries = await asyncio.to_thread(process_utils.get_process_entries)
@@ -1419,7 +1519,11 @@ class Plugin:
         override_state = await Plugin.get_power_override_state(self)
         return {
             "timestamp": int(time.time()),
-            "backendRunning": bus is not None and bus.connected,
+            "backendRunning": await Plugin.is_running(self),
+            "dbusServices": list(getattr(bus, 'sse_service_states', {}).values()),
+            "dbusObserverStatus": external_inhibit_monitor.status if external_inhibit_monitor else 'stopped',
+            "dbusObservationComplete": False,
+            "observedDbusRequestCount": len(external_inhibit_monitor.tracker.requests()) if external_inhibit_monitor else 0,
             "processMonitorMode": self.process_monitor_mode,
             "processScanCount": self.process_scan_count,
             "lastProcessScanAt": self.last_process_scan_at,
@@ -1432,6 +1536,8 @@ class Plugin:
             "nestedMprisScanCount": self.nested_media_scan_count,
             "nestedMprisLastScanAt": self.nested_media_last_scan_at,
             "nestedMprisBusCount": self.nested_media_last_bus_count,
+            "nestedMprisStatus": self.nested_media_status,
+            "nestedMprisPollIntervalSeconds": self.nested_media_poll_interval_seconds,
             "powerOverrideActive": override_state["active"],
             "powerOverrideSnapshot": override_state["snapshot"],
             "systemPowerSettings": system_power_settings,
@@ -1449,6 +1555,8 @@ class Plugin:
             request.to_status()
             for request in BaseInterface.request_map.values()
         ]
+        if external_inhibit_monitor is not None:
+            dbus_requests.extend(external_inhibit_monitor.tracker.requests())
         return {
             "manual_apps": manual_apps,
             "manual_active_app": self.manual_running_app,

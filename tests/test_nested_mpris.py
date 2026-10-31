@@ -113,6 +113,12 @@ class NestedMprisTests(unittest.TestCase):
             check("org.example.NotMpris")
         )
 
+    def test_unreadable_proc_root_is_not_reported_as_an_empty_session_list(self):
+        ns = self._load_functions("discover_nested_desktop_bus_addresses")
+        with patch.object(os, "scandir", side_effect=PermissionError):
+            with self.assertRaises(PermissionError):
+                ns["discover_nested_desktop_bus_addresses"]()
+
     def test_nested_media_participates_in_inhibit_state(self):
         self.assertIn(
             "or nested_media_inhibiting",

@@ -2,6 +2,7 @@ import asyncio
 import os
 import socket
 import struct
+import time
 
 
 NETLINK_CONNECTOR = 11
@@ -41,6 +42,9 @@ def parse_process_event(message):
 class ProcessEventSource:
     def __init__(self):
         self.socket = None
+        self._sequence_by_cpu = {}
+        self.subscription_confirmed = False
+        self._subscription_deadline = None
 
     def open(self):
         netlink = socket.socket(socket.AF_NETLINK, socket.SOCK_DGRAM, NETLINK_CONNECTOR)
@@ -52,13 +56,60 @@ class ProcessEventSource:
             netlink.close()
             raise
         self.socket = netlink
+        self._sequence_by_cpu.clear()
+        self.subscription_confirmed = False
+        self._subscription_deadline = time.monotonic() + 3.0
 
     async def wait_for_process_change(self):
         if self.socket is None:
             raise RuntimeError("Process event source is not open")
         loop = asyncio.get_running_loop()
         while True:
-            message = await loop.sock_recv(self.socket, 4096)
+            if self.subscription_confirmed:
+                message = await loop.sock_recv(self.socket, 4096)
+            else:
+                if self._subscription_deadline is None:
+                    self._subscription_deadline = time.monotonic() + 3.0
+                remaining = max(0, self._subscription_deadline - time.monotonic())
+                try:
+                    message = await asyncio.wait_for(loop.sock_recv(self.socket, 4096), remaining)
+                except asyncio.TimeoutError as error:
+                    raise ConnectionError("Process event subscription confirmation timed out") from error
+            if len(message) < 16:
+                raise ConnectionError("Process event stream closed or truncated")
+            length, message_type = struct.unpack_from("=IH", message)
+            if length > len(message) or length < 16:
+                raise ConnectionError("Truncated process event packet")
+            if message_type == 2:  # NLMSG_ERROR, including subscription errors.
+                if length < 20 or struct.unpack_from("=i", message, 16)[0] != 0:
+                    raise ConnectionError("Process event subscription failed")
+                continue
+            if message_type != NLMSG_DONE:
+                continue
+            if length < 56:
+                raise ConnectionError("Truncated process connector message")
+            index, value, sequence = struct.unpack_from("=III", message, 16)
+            if (index, value) != (CN_IDX_PROC, CN_VAL_PROC):
+                continue
+            what, cpu = struct.unpack_from("=II", message, 36)
+            if what == 0:  # PROC_EVENT_NONE carries the subscription ACK.
+                if struct.unpack_from("=I", message, 52)[0] != 0:
+                    raise ConnectionError("Process event subscription rejected")
+                self.subscription_confirmed = True
+                # Older kernels echo the request seq with cpu=-1. New kernels
+                # send ACKs through send_msg(), consuming a per-CPU sequence.
+                if cpu == 0xffffffff:
+                    return 0, 0
+            # cn_proc sequences every event on its originating CPU, including
+            # event types that we do not consume. A gap invalidates event-only
+            # discovery: let the caller switch to polling rather than miss exec.
+            previous = self._sequence_by_cpu.get(cpu)
+            self._sequence_by_cpu[cpu] = sequence
+            if previous is not None and sequence != (previous + 1) & 0xffffffff:
+                raise ConnectionError("Process event sequence gap")
+            self.subscription_confirmed = True
+            if what == 0:
+                return 0, 0
             event = parse_process_event(message)
             if event is not None and event[0] in (PROC_EVENT_EXEC, PROC_EVENT_EXIT):
                 return event

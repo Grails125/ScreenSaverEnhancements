@@ -1,5 +1,5 @@
 export type DiagnosticEventMessage =
-  | { key: "backend_started" | "backend_stopped" | "settings_changed" | "inhibit_state_changed" | "dbus_request" | "process_monitor" | "decky_music_playback" | "nested_mpris_playback" }
+  | { key: "backend_started" | "backend_stopped" | "settings_changed" | "inhibit_state_changed" | "dbus_request" | "process_monitor" | "decky_music_playback" | "nested_mpris_playback" | "dbus_service" | "dbus_observer" | "dbus_observed_request" }
   | { fallback: string };
 
 export type DiagnosticEventDetailMessage =
@@ -12,6 +12,9 @@ export type ManualAppInhibitDetail = {
 };
 
 const EVENT_MESSAGES = {
+  dbus_service: "dbus_service",
+  dbus_observer: "dbus_observer",
+  dbus_observed_request: "dbus_observed_request",
   backend_started: "backend_started",
   backend_stopped: "backend_stopped",
   settings_changed: "settings_changed",

@@ -53,3 +53,30 @@ test("validates and bounds backend diagnostic snapshots", () => {
   assert.equal(parsed.recentEvents.length, 1);
   assert.equal(parsed.recentEvents[0].type, "backend_started");
 });
+
+test('interface ownership and partial observation remain separate from monitor health', () => {
+  const parsed = parseDiagnostics({backendRunning: true,
+    dbusServices: [{name: 'org.freedesktop.ScreenSaver', status: 'external', owner: ':1.32', pid: 2130, process: 'steam'}, null, {}],
+    dbusObserverStatus: 'partial', observedDbusRequestCount: 2,
+    recentEvents: [{type: 'dbus_observed_request', service: 'org.freedesktop.ScreenSaver', application: 'msedge', reason: 'video', cookie: 42}],
+  });
+  assert.equal(parsed.backendRunning, true);
+  assert.equal(parsed.dbusServices.length, 1);
+  assert.equal(parsed.dbusServices[0].process, 'steam');
+  assert.equal(parsed.dbusObservationComplete, false);
+  assert.equal(parsed.observedDbusRequestCount, 2);
+  assert.equal(parsed.recentEvents[0].cookie, 42);
+});
+
+test('nested polling diagnostics preserve unknown for older backends and reject invalid intervals', () => {
+  assert.equal(parseDiagnostics({}).nestedMprisStatus, 'unknown');
+  assert.equal(parseDiagnostics({}).nestedMprisPollIntervalSeconds, null);
+  for (const value of [null, undefined, '', '10', 0, -2, Infinity, NaN, true]) {
+    assert.equal(parseDiagnostics({nestedMprisPollIntervalSeconds: value}).nestedMprisPollIntervalSeconds, null);
+  }
+  for (const state of ['stopped', 'checking', 'waiting', 'waiting_event', 'watching', 'partial', 'error']) {
+    assert.equal(parseDiagnostics({nestedMprisStatus: state}).nestedMprisStatus, state);
+  }
+  assert.equal(parseDiagnostics({nestedMprisStatus: 'other'}).nestedMprisStatus, 'unknown');
+  assert.equal(parseDiagnostics({nestedMprisPollIntervalSeconds: 10}).nestedMprisPollIntervalSeconds, 10);
+});

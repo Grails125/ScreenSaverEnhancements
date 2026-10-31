@@ -14,6 +14,16 @@ Keep your Steam Deck screen awake while media is playing or selected application
 
 ScreenSaver Enhancements is a [Decky Loader](https://decky.xyz) plugin for Steam Deck. It handles standard D-Bus sleep-inhibition requests from supported media apps and can also monitor applications you choose yourself.
 
+## D-Bus compatibility
+
+If Steam or another desktop service owns a standard inhibit service name, the plugin keeps its other interfaces and manual process rules running without replacing that owner. Diagnostics separate monitor health, interface ownership and external observation. Unavailable names are retried individually without resetting other live requests.
+
+A separate read-only connection observes successful external Inhibit/UnInhibit calls and records application, reason and cookie. Observation is always partial: requests predating the connection cannot be enumerated through the standard API, and disconnects or permission failures do not mean the system has no inhibitors.
+
+After the last known source ends, a 1.5-second stable window and a fresh status read precede actual power restoration. New sources cancel restoration; explicit monitor shutdown and unload restore promptly. Recovery notifications describe only the plugin restoring its saved power settings. Ordinary manual rules remain process-based, not playback-based.
+
+Diagnostics show a compact overview with expandable D-Bus, Nested, technical and power sections; exported reports retain all fields. After an initial check, Nested discovery waits for Plasma process-start events without periodic scans when no session exists and the process subscription is confirmed. Existing sessions are checked every 5 seconds; failed queries retry after 2 seconds. When process events are unavailable, subscription confirmation times out, or event loss is detected, empty-session discovery falls back to every 10 seconds. Intervals exclude query time: playback transitions can take about 5 seconds to detect before the restoration window above. Manual rules and explicit monitor shutdown remain independent of these intervals.
+
 ## Features
 
 - **D-Bus sleep inhibition** — supports standard inhibition requests from apps such as VLC, Chrome, mpv, and wiliwili. *(v1.0.0)*

@@ -669,7 +669,7 @@ const formatDiagnosticEventDetail = (detail: string | undefined) => {
 };
 
 const formatDbusDiagnosticEvent = (event: { type: string; detail?: string; application?: string; reason?: string; cookie?: number }) => {
-  if (event.type !== 'dbus_request') return undefined;
+  if (event.type !== 'dbus_request' && event.type !== 'dbus_observed_request') return undefined;
   const action = event.detail === 'uninhibit' ? t('UnInhibit') : t('Inhibit');
   const application = event.application ?? t('Unknown Application');
   const cookie = event.cookie === undefined ? '' : ` #${event.cookie}`;
@@ -677,11 +677,70 @@ const formatDbusDiagnosticEvent = (event: { type: string; detail?: string; appli
   return `${action} ${application}${cookie}${reason}`;
 };
 
+const formatDbusObserverStatus = (status: string) => {
+  switch (status) {
+    case 'partial': return t('D-Bus Observation Partial');
+    case 'not_needed': return t('D-Bus Observer Not Needed');
+    case 'unavailable': return t('D-Bus Observer Unavailable');
+    case 'stopped': return t('Stopped');
+    default: return t('Not Available');
+  }
+};
+
+const formatNestedStatus = (diagnostics: Diagnostics) => {
+  if (!diagnostics.backendRunning) return t('Stopped');
+  switch (diagnostics.nestedMprisStatus) {
+    case 'stopped': return t('Stopped');
+    case 'checking': return t('Checking');
+    case 'waiting': return t('Nested No Session');
+    case 'waiting_event': return t('Nested Waiting For Event');
+    case 'watching': return t('Nested Session Detected');
+    case 'partial': return t('Nested Detection Partial');
+    case 'error': return t('Nested Detection Error');
+    default: return t('Not Available');
+  }
+};
+
+const DiagnosticGroup: FC<{
+  id: string;
+  title: string;
+  summary?: string;
+  children: React.ReactNode;
+}> = ({ id, title, summary, children }) => {
+  const [expanded, setExpanded] = useState(false);
+  const contentId = `sse-diagnostics-${id}`;
+  return (
+    <PanelSection>
+      <PanelSectionRow>
+        <Focusable role="button" tabIndex={0} aria-expanded={expanded} aria-controls={contentId}
+          aria-label={title} style={{ ...PANEL_STYLES.processItem, width: '100%', minHeight: '44px' }}
+          onClick={() => setExpanded(value => !value)}
+          onKeyDown={event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (!event.repeat) setExpanded(value => !value);
+          }}>
+          <div style={PANEL_STYLES.menuText}>
+            <span style={PANEL_STYLES.menuTitle}>{title}</span>
+            {summary && <span style={{ ...PANEL_STYLES.menuDescription, color: '#aeb5bf', overflowWrap: 'anywhere' }}>{summary}</span>}
+          </div>
+          <span style={PANEL_STYLES.chevron} aria-hidden="true">{expanded ? '⌄' : '›'}</span>
+        </Focusable>
+      </PanelSectionRow>
+      <div id={contentId} hidden={!expanded} role="region" aria-label={title}>
+        {children}
+      </div>
+    </PanelSection>
+  );
+};
+
 const DiagnosticRow: FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <PanelSectionRow>
-    <div style={PANEL_STYLES.processItem}>
-      <span style={PANEL_STYLES.sectionHint}>{label}</span>
-      <span style={{ color: '#f1f1f1', fontSize: '0.82em', textAlign: 'right' }}>{value}</span>
+    <div style={{ ...PANEL_STYLES.processItem, alignItems: 'flex-start', borderRadius: 0, border: 0,
+      borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+      <span style={{ ...PANEL_STYLES.sectionHint, color: '#aeb5bf', flex: '1 1 45%', minWidth: 0, overflowWrap: 'anywhere' }}>{label}</span>
+      <span style={{ color: '#f1f1f1', fontSize: '0.82em', textAlign: 'right', flex: '1 1 55%', minWidth: 0, overflowWrap: 'anywhere' }}>{value}</span>
     </div>
   </PanelSectionRow>
 );
@@ -697,8 +756,8 @@ const MonitorStatusRow: FC<{ running: boolean; processMonitorMode: string }> = (
       <div style={{ ...PANEL_STYLES.processItem, overflow: 'visible', position: 'relative' }}>
         <span style={PANEL_STYLES.sectionHint}>{t('Backend Status')}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ color: '#f1f1f1', fontSize: '0.82em', textAlign: 'right' }}>
-            {running ? t('Running') : t('Stopped')}
+          <span style={{ color: running ? '#8ee0aa' : '#f1f1f1', fontSize: '0.82em', textAlign: 'right' }}>
+            {running ? `● ${t('Running')}` : t('Stopped')}
           </span>
           <Focusable
             aria-label={t('Monitor Details')}
@@ -763,6 +822,11 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
   onClearEvents,
 }) => {
   const [eventsTipVisible, setEventsTipVisible] = useState(false);
+  const externalServices = diagnostics?.dbusServices.filter(service => service.status === 'external') ?? [];
+  const dbusSummary = diagnostics && diagnostics.backendRunning
+    ? [...externalServices.map(service => `${service.name.split('.').pop()} → ${service.process || t('D-Bus Owned Externally')}`),
+      formatDbusObserverStatus(diagnostics.dbusObserverStatus)].join(' · ')
+    : t('Stopped');
   return (
   <PanelLayout>
     <PanelSection>
@@ -788,28 +852,80 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
       </PanelSection>
     ) : (
       <>
-        <PanelSection title={t('Runtime Status')}>
+        <PanelSection title={t('Diagnostic Overview')}>
           <MonitorStatusRow
             running={diagnostics.backendRunning}
             processMonitorMode={diagnostics.processMonitorMode}
           />
+          <DiagnosticRow label={t('Active Application')} value={diagnostics.manualActiveApp ? getAppDisplayName(diagnostics.manualActiveApp) : t('None')} />
+          <DiagnosticRow label={t('Manual Rule Count')} value={diagnostics.manualRuleCount} />
+          <DiagnosticRow label={t('System Power Settings')} value={t(diagnostics.powerOverrideActive ? 'Diagnostic Power Overridden' : 'Diagnostic Power Unchanged')} />
+        </PanelSection>
+
+        <DiagnosticGroup id="dbus" title={t('Diagnostic D-Bus Requests')} summary={dbusSummary}>
+          <DiagnosticRow label={t('Plugin Handled Requests')} value={diagnostics.dbusRequestCount} />
+          <DiagnosticRow label={t('Observed D-Bus Requests')} value={diagnostics.observedDbusRequestCount} />
+          {diagnostics.dbusServices.map(service => (
+            <PanelSectionRow key={service.name}>
+              <div style={{ ...PANEL_STYLES.updateSummary, borderRadius: 0 }}>
+                <div style={{ ...PANEL_STYLES.updateVersionRow, alignItems: 'flex-start' }}>
+                  <span style={{ color: '#f1f1f1', fontSize: '0.82em', minWidth: 0, overflowWrap: 'anywhere' }}>
+                    {service.name.replace(/^org\.(freedesktop|gnome)\./, '')}
+                  </span>
+                  <span style={{ color: '#9dcfff', fontSize: '0.78em', textAlign: 'right', maxWidth: '45%', flexShrink: 0, overflowWrap: 'anywhere' }}>
+                    {t(service.status === 'owned' ? 'D-Bus Owned By Plugin' : 'D-Bus Owned Externally')}
+                  </span>
+                </div>
+                <div style={{ color: '#aeb5bf', fontSize: '0.76em', overflowWrap: 'anywhere', lineHeight: 1.45 }}>
+                  {service.status === 'external' && <div>{service.process || service.owner || t('Not Available')}{service.pid ? ` · PID ${service.pid}` : ''}</div>}
+                  <div>{service.name}</div>
+                </div>
+              </div>
+            </PanelSectionRow>
+          ))}
+          <DiagnosticRow label={t('D-Bus Observer')} value={formatDbusObserverStatus(diagnostics.dbusObserverStatus)} />
+          {diagnostics.backendRunning && diagnostics.dbusObserverStatus !== 'not_needed' && (
+            <PanelSectionRow>
+              <div style={{ ...PANEL_STYLES.releaseNotes, maxHeight: 'none', color: '#d7e8f7' }}>
+                <RiInformationLine aria-hidden="true" /> {t('diagnostic_observation_tip')}
+              </div>
+            </PanelSectionRow>
+          )}
+        </DiagnosticGroup>
+
+        <DiagnosticGroup id="nested" title={t('Diagnostic Nested Detection')} summary={formatNestedStatus(diagnostics)}>
+          <DiagnosticRow label={t('Nested Session Status')} value={formatNestedStatus(diagnostics)} />
+          <DiagnosticRow label={t('Nested MPRIS Inhibit Source')} value={diagnostics.nestedMprisActive ? diagnostics.nestedMprisSources.map(source => getAppDisplayName(source.application)).join(', ') || t('Active') : t('None')} />
+          <DiagnosticRow label={t('Nested MPRIS Bus Count')} value={diagnostics.nestedMprisBusCount} />
+          <DiagnosticRow label={t('Nested Poll Interval')} value={!diagnostics.backendRunning ? t('Stopped')
+            : diagnostics.nestedMprisStatus === 'waiting_event' ? t('Nested Event Driven')
+              : diagnostics.nestedMprisPollIntervalSeconds !== null
+                ? `${diagnostics.nestedMprisPollIntervalSeconds}${t('Seconds')}` : t('Not Available')} />
+          <PanelSectionRow><div style={{ ...PANEL_STYLES.releaseNotes, maxHeight: 'none' }}>{t('diagnostic_nested_tip')}</div></PanelSectionRow>
+          <DiagnosticGroup id="nested-scans" title={t('Diagnostic Scan Statistics')} summary={String(diagnostics.nestedMprisScanCount)}>
+            <DiagnosticRow label={t('Nested MPRIS Scan Count')} value={diagnostics.nestedMprisScanCount} />
+            <DiagnosticRow label={t('Nested MPRIS Last Scan')} value={formatDiagnosticTime(diagnostics.nestedMprisLastScanAt)} />
+          </DiagnosticGroup>
+        </DiagnosticGroup>
+
+        <DiagnosticGroup id="technical" title={t('Diagnostic Technical Details')} summary={t('diagnostic_technical_tip')}>
+          <DiagnosticRow label={t('Monitoring Method')} value={formatProcessMonitorMode(diagnostics.processMonitorMode)} />
           <DiagnosticRow label={t('Process Scan Count')} value={diagnostics.processScanCount} />
           {shouldShowLastProcessScan(diagnostics.processMonitorMode) && (
             <DiagnosticRow label={t('Last Process Scan')} value={formatDiagnosticTime(diagnostics.lastProcessScanAt)} />
           )}
           <DiagnosticRow label={t('Last Process Event')} value={formatDiagnosticTime(diagnostics.lastProcessEventAt)} />
-          <DiagnosticRow label={t('Manual Rule Count')} value={diagnostics.manualRuleCount} />
-          <DiagnosticRow label={t('Active Application')} value={diagnostics.manualActiveApp || t('None')} />
-          <DiagnosticRow label={t('Active D-Bus Inhibit Requests')} value={diagnostics.dbusRequestCount} />
-          <DiagnosticRow label={t('Nested MPRIS Inhibit Source')} value={diagnostics.nestedMprisActive ? diagnostics.nestedMprisSources.map(source => getAppDisplayName(source.application)).join(', ') || t('Active') : t('None')} />
-          <DiagnosticRow label={t('Nested MPRIS Bus Count')} value={diagnostics.nestedMprisBusCount} />
-          <DiagnosticRow label={t('Nested MPRIS Scan Count')} value={diagnostics.nestedMprisScanCount} />
-          <DiagnosticRow label={t('Nested MPRIS Last Scan')} value={formatDiagnosticTime(diagnostics.nestedMprisLastScanAt)} />
           <DiagnosticRow label={t('Power Recovery Active')} value={diagnostics.powerOverrideActive ? t('Yes') : t('No')} />
-        </PanelSection>
+          <DiagnosticRow label={t('Push Listener')} value={diagnostics.pushListenerActive ? t('Connected') : t('Disconnected')} />
+          <DiagnosticRow label={t('Reconnect Count')} value={diagnostics.pushReconnectCount} />
+          <DiagnosticRow label={t('Last Full Sync')} value={diagnostics.lastFullSyncAt === null
+            ? t('Not Available')
+            : `${formatDiagnosticTime(diagnostics.lastFullSyncAt)} (${diagnostics.lastFullSyncSuccessful === null ? t('Not Available')
+              : diagnostics.lastFullSyncSuccessful ? t('Successful') : t('Failed')})`} />
+        </DiagnosticGroup>
 
         {(diagnostics.powerOverrideSnapshot || diagnostics.systemPowerSettings) && (
-          <PanelSection title={t(diagnostics.powerOverrideSnapshot ? 'Saved System Power Settings' : 'System Power Settings')}>
+          <DiagnosticGroup id="power" title={t(diagnostics.powerOverrideSnapshot ? 'Saved System Power Settings' : 'System Power Settings')}>
             {diagnostics.powerOverrideSnapshot && (
               <DiagnosticRow label={t('Active Power Override')} value={t('Actual system timeouts are temporarily set to 0 seconds')} />
             )}
@@ -817,22 +933,8 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
             <DiagnosticRow label={t('AC Dim Timeout')} value={`${(diagnostics.powerOverrideSnapshot || diagnostics.systemPowerSettings)!.acDim}${t('Seconds')}`} />
             <DiagnosticRow label={t('Battery Suspend Timeout')} value={`${(diagnostics.powerOverrideSnapshot || diagnostics.systemPowerSettings)!.batterySuspend}${t('Seconds')}`} />
             <DiagnosticRow label={t('AC Suspend Timeout')} value={`${(diagnostics.powerOverrideSnapshot || diagnostics.systemPowerSettings)!.acSuspend}${t('Seconds')}`} />
-          </PanelSection>
+          </DiagnosticGroup>
         )}
-
-        <PanelSection title={t('Event Channel')}>
-          <DiagnosticRow
-            label={t('Push Listener')}
-            value={diagnostics.pushListenerActive ? t('Connected') : t('Disconnected')}
-          />
-          <DiagnosticRow label={t('Reconnect Count')} value={diagnostics.pushReconnectCount} />
-          <DiagnosticRow
-            label={t('Last Full Sync')}
-            value={diagnostics.lastFullSyncAt === null
-              ? t('Not Available')
-              : `${formatDiagnosticTime(diagnostics.lastFullSyncAt)} (${diagnostics.lastFullSyncSuccessful ? t('Successful') : t('Failed')})`}
-          />
-        </PanelSection>
 
         <PanelSection title={t('Recent Plugin Events')}>
           <div style={{ position: 'relative', height: 0, overflow: 'visible' }}>
@@ -892,7 +994,7 @@ const DiagnosticsPage: FC<DiagnosticsPageProps> = ({
                   <div style={PANEL_STYLES.diagnosticEventMain}>
                     <span style={PANEL_STYLES.diagnosticEventName}>{formatDiagnosticEventType(event.type)}</span>
                     {eventDetail && (
-                      <span style={PANEL_STYLES.sectionHint}>{eventDetail}</span>
+                      <span style={{ ...PANEL_STYLES.sectionHint, color: '#aeb5bf', overflowWrap: 'anywhere' }}>{eventDetail}</span>
                     )}
                   </div>
                   <time
@@ -1804,7 +1906,7 @@ export default definePlugin(() => {
     const displayName = getAppDisplayName(application);
     const body = active
       ? (displayName ? `${displayName} ${t("Inhibit")}` : t("Inhibit"))
-      : t("UnInhibit");
+      : t("Plugin Power Settings Restored");
     notify(t("ScreenSaver"), body, isCurrent);
   }
 
@@ -1862,20 +1964,30 @@ export default definePlugin(() => {
     }
   };
 
-  const scheduleRestoreNotification = () => {
+  const scheduleRestoreNotification = (showStateNotification = true, retryAfterFailure = false) => {
     cancelPendingRestoreNotification();
     const revision = restoreNotificationRevision;
     const isCurrent = () => pluginActive && revision === restoreNotificationRevision
       && !backendInhibiting && !displayOffInhibiting;
-    restoreNotificationTimeout = setTimeout(() => {
-      restoreNotificationTimeout = null;
-      if (!isCurrent()) return;
-      void serverApi.getInhibitStatus().then((latestStatus) => {
-        if (isCurrent() && !latestStatus.is_inhibiting) notifyInhibitState(undefined, false, isCurrent);
-      }).catch((error) => {
-        console.error("[ScreenSaverEnhancements] Delayed restore check failed", error);
-      });
-    }, 1500);
+    const retryDelays = [3000, 6000, 12000];
+    let retries = 0;
+    const scheduleAttempt = (delay: number) => {
+      restoreNotificationTimeout = setTimeout(() => {
+        restoreNotificationTimeout = null;
+        if (!isCurrent()) return;
+        void enqueuePowerOperation(async () => {
+          if (isCurrent()) await synchronizeRuntimeState(showStateNotification, true, revision);
+        }).catch((error) => {
+          console.error("[ScreenSaverEnhancements] Delayed restore check failed", error);
+          // No source event may follow this failure. Retry with the same revision
+          // so a late rejection cannot revive a cancelled restore session.
+          if (isCurrent() && retries < retryDelays.length) scheduleAttempt(retryDelays[retries++]);
+        });
+      }, delay);
+    };
+    // A direct shutdown already attempted restoration; consume the first retry
+    // slot instead of starting another stable window or granting an extra try.
+    scheduleAttempt(retryAfterFailure ? retryDelays[retries++] : 1500);
   };
 
   let pluginActive = true;
@@ -1903,7 +2015,9 @@ export default definePlugin(() => {
     return operationResult;
   }
 
-  const synchronizeRuntimeState = async (showStateNotification = false) => {
+  const synchronizeRuntimeState = async (
+    showStateNotification = false, restoreConfirmed = false, restoreRevision?: number,
+  ) => {
     try {
       const [running, inhibitStatus, rawOverrideState, rawSystemSettings] = await withPowerTimeout(Promise.all([
         serverApi.isRunning(),
@@ -1911,7 +2025,7 @@ export default definePlugin(() => {
         serverApi.getPowerOverrideState(),
         serverApi.getSystemPowerSettings(),
       ]), 'Synchronize power state');
-      if (!pluginActive) return;
+      if (!pluginActive || (restoreRevision !== undefined && restoreRevision !== restoreNotificationRevision)) return;
       const overrideState = await claimPowerOverride(parsePowerOverrideState(rawOverrideState));
       const systemSettings = parseSteamPowerSettings(rawSystemSettings);
       const activeApplication = inhibitStatus.manual_active_app
@@ -1920,7 +2034,11 @@ export default definePlugin(() => {
 
       backendState.SetState(running ? 1 : 0);
       backendInhibiting = running && inhibitStatus.is_inhibiting;
-      if (backendInhibiting || displayOffInhibiting) cancelPendingRestoreNotification();
+      const stoppedWithoutRetry = !running && restoreRevision === undefined;
+      if (stoppedWithoutRetry) {
+        cancelPendingRestoreNotification();
+        restoreRevision = restoreNotificationRevision;
+      } else if (backendInhibiting || displayOffInhibiting) cancelPendingRestoreNotification();
 
       if (overrideState.active && overrideState.snapshot) {
         setConfiguredPowerSettings(overrideState.snapshot);
@@ -1935,8 +2053,22 @@ export default definePlugin(() => {
       } else if (action === "reapply") {
         await updateSetting(0, 0, 0, 0);
       } else if (action === "restore") {
-        await stopInhibit(false, overrideState);
-        if (notifyStateChange) scheduleRestoreNotification();
+        if (running && !restoreConfirmed) {
+          if (restoreNotificationTimeout === null) scheduleRestoreNotification(notifyStateChange);
+        } else {
+          const isCurrent = () => pluginActive && !backendInhibiting && !displayOffInhibiting
+            && (restoreRevision === undefined || restoreRevision === restoreNotificationRevision);
+          if (!isCurrent()) return;
+          try {
+            await stopInhibit(false, overrideState);
+          } catch (error) {
+            // A queued retry owns its existing budget even if the backend has
+            // stopped. Direct shutdown failures need their own bounded retry.
+            if (stoppedWithoutRetry && isCurrent()) scheduleRestoreNotification(false, true);
+            throw error;
+          }
+          if (notifyStateChange && isCurrent()) notifyInhibitState(undefined, false, isCurrent);
+        }
       }
       eventChannelDiagnostics.lastFullSyncAt = Math.floor(Date.now() / 1000);
       eventChannelDiagnostics.lastFullSyncSuccessful = true;
@@ -2021,6 +2153,7 @@ export default definePlugin(() => {
         runtimeSyncScheduler.request();
       });
       unsubscribeInhibitStateChanged = serverApi.subscribeInhibitStateChanged(() => {
+        cancelPendingRestoreNotification();
         runtimeSyncScheduler.request(true);
       });
       pushListenerHealth.markConnected();

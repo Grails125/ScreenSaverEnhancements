@@ -110,6 +110,7 @@ class MprisRefreshTests(unittest.IsolatedAsyncioTestCase):
                          NameFlag=NameFlag, RequestNameReply=RequestNameReply,
                          clear_dbus_requests=lambda: None,
                          InhibitInterface=lambda: None, PMInhibitInterface=lambda: None, GnomeInterface=lambda: None)
+        namespace['record_diagnostic_event'] = lambda *a, **kw: None
         exec(compile(ast.Module(body=[start], type_ignores=[]), 'actual-dbus-startup', 'exec'), namespace)
         self.assertTrue(await asyncio.wait_for(namespace['start_dbus'](), 0.15))
         self.assertIs(namespace['bus'], bus_instance)
