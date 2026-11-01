@@ -23,7 +23,7 @@ test("pins the Decky 3.2.6 compatible modern frontend toolchain", () => {
   assert.equal(pluginJson.api_version, 1);
 });
 
-test("release metadata identifies the 2.0.5 monitoring reliability release", () => {
+test("release metadata identifies the 2.0.6 panel compatibility fix", () => {
   const pnpmLock = readFileSync(
     new URL("../pnpm-lock.yaml", import.meta.url),
     "utf8",
@@ -35,20 +35,20 @@ test("release metadata identifies the 2.0.5 monitoring reliability release", () 
   const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
   const readmeZh = readFileSync(new URL("../README_ZH.md", import.meta.url), "utf8");
 
-  assert.equal(packageJson.version, "2.0.5");
-  assert.equal(packageLock.version, "2.0.5");
-  assert.equal(packageLock.packages[""].version, "2.0.5");
+  assert.equal(packageJson.version, "2.0.6");
+  assert.equal(packageLock.version, "2.0.6");
+  assert.equal(packageLock.packages[""].version, "2.0.6");
   assert.match(pnpmLock, /'@decky\/api':/);
   assert.doesNotMatch(pnpmLock, /decky-frontend-lib:/);
   assert.match(deckyStub, /async def emit\(event: str, \*args: Any\) -> None:/);
   assert.match(pluginJson.publish.description, /DeckyMusic playback/);
   assert.deepEqual(pluginJson.publish.tags, ["dbus", "screensaver", "media", "power-management"]);
   assert.match(pluginJson.publish.image, /Grails125\/ScreenSaverEnhancements\/main\/docs\/release-cover-zh-v2\.0\.1\.png$/);
-  assert.match(readme, /What's new in v2\.0\.5/);
+  assert.match(readme, /What's new in v2\.0\.6/);
   assert.match(readme, /object-style `Unregister`\/`unregister` handles/);
   assert.match(readme, /legacy function handles/);
   assert.match(readme, /does not register a null listener/);
-  assert.match(readmeZh, /v2\.0\.5 更新说明/);
+  assert.match(readmeZh, /v2\.0\.6 更新说明/);
   assert.match(readmeZh, /对象式 `Unregister`\/`unregister` 注销句柄/);
   assert.match(readmeZh, /旧版函数句柄/);
   assert.match(readmeZh, /不再写入 `null`/);
@@ -59,14 +59,23 @@ test("release notes retain the bilingual numbered format and update compatibilit
   assert.ok(notes.startsWith(`[ZH-CN] 屏幕保护增强 v${packageJson.version}`));
   assert.ok(notes.indexOf("新增与改进：") < notes.indexOf(`[EN] ScreenSaver Enhancements v${packageJson.version}`));
   assert.match(notes, /Added and improved:/);
+  assert.match(notes, /1\. .*Steam UI/);
+  assert.match(notes, /toScopedSelector/);
+  assert.match(notes, /默认布局/);
+  assert.match(notes, /标题/);
+  assert.match(notes, /D-Bus/);
+  assert.ok(notes.includes(`ScreenSaverEnhancements-v${packageJson.version}.zip`));
+  assert.ok(notes.includes("ScreenSaverEnhancements.zip"));
+  assert.ok(notes.length <= 8000, "all release notes fit in the built-in update panel");
+});
+
+test("previous monitoring release notes retain timing and observation limits", () => {
+  const notes = readFileSync(new URL("../docs/releases/v2.0.5.md", import.meta.url), "utf8");
   assert.match(notes, /1\. .*D-Bus/);
   assert.match(notes, /5 秒/);
   assert.match(notes, /10 秒/);
   assert.match(notes, /1\.5 秒/);
   assert.match(notes, /application.*reason.*cookie/);
-  assert.ok(notes.includes(`ScreenSaverEnhancements-v${packageJson.version}.zip`));
-  assert.ok(notes.includes("ScreenSaverEnhancements.zip"));
-  assert.ok(notes.length <= 8000, "all release notes fit in the built-in update panel");
 });
 
 test("the V2 probe uses typed callable RPC and reversible modern APIs", () => {

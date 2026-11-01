@@ -47,6 +47,15 @@ Diagnostics show a compact overview with expandable D-Bus, Nested, technical and
 - **Safer settings persistence** — validates setting values before saving, normalizes persisted values, and preserves malformed settings files for recovery instead of silently discarding them. Serializes setting changes and retains pending edits when the panel reopens. *(v2.0.2, strengthened in v2.0.4)*
 - **Steam menu input compatibility** — supports current object-style `Unregister`/`unregister` handles alongside legacy function handles, and cleans up only valid handles without registering a null listener. *(v2.0.3)*
 
+## What's new in v2.0.6
+
+- Prevent plugin loading failures when Steam UI class discovery returns missing panel classes, as reported on some Steam beta versions.
+- Validate class values, skip empty scoped CSS rules and preserve the localized title when its class map is unavailable. Existing class names and styles remain unchanged when available; missing panel classes fall back to the default layout.
+- Add eight regression tests covering missing maps and fields, invalid values, whitespace, compound classes, CSS scope and title rendering.
+- Keep application rules, power settings, D-Bus inhibition and Nested detection behavior unchanged.
+
+See the [bilingual v2.0.6 release notes](./docs/releases/v2.0.6.md). This patch handles missing styling fields; it does not guarantee compatibility with every Steam beta build or repair unrelated Decky component-discovery failures.
+
 ## What's new in v2.0.5
 
 - Keep monitoring and configured application rules running when Steam owns a standard D-Bus name, without taking that name away from Steam.
@@ -119,7 +128,7 @@ curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/dow
 
 ### Release package
 
-1. Download `ScreenSaverEnhancements-v<version>.zip` from the [latest release](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest), for example `ScreenSaverEnhancements-v2.0.5.zip`.
+1. Download `ScreenSaverEnhancements-v<version>.zip` from the [latest release](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest), for example `ScreenSaverEnhancements-v2.0.6.zip`.
 2. Open **Decky Settings** → **Developer** → **Install Plugin from ZIP**.
 3. Select the downloaded ZIP package and complete the installation.
 
@@ -133,13 +142,13 @@ npm.cmd test
 python build.py
 ```
 
-The package is created at `build/ScreenSaverEnhancements-v<version>.zip`, using the project version (for example `build/ScreenSaverEnhancements-v2.0.5.zip`). Install it using the release-package steps above.
+The package is created at `build/ScreenSaverEnhancements-v<version>.zip`, using the project version (for example `build/ScreenSaverEnhancements-v2.0.6.zip`). Install it using the release-package steps above.
 
 ## Upgrade
 
 The plugin can check for updates from the bottom of its panel. When a newer release is available, open the update section, review the version and release notes, then start the upgrade there.
 
-If an older version's built-in update stalls, including the original v2.0.4 package with the installer-identity issue, install `ScreenSaverEnhancements-v2.0.5.zip` through **Decky Settings** → **Developer** → **Install Plugin from ZIP**. Publishing a newer release cannot repair the updater already running in an older installation. Both versioned and fixed-name compatibility ZIPs contain the same plugin.
+If an older version's built-in update stalls, including the original v2.0.4 package with the installer-identity issue, install `ScreenSaverEnhancements-v2.0.6.zip` through **Decky Settings** → **Developer** → **Install Plugin from ZIP**. Publishing a newer release cannot repair the updater already running in an older installation. Both versioned and fixed-name compatibility ZIPs contain the same plugin.
 
 Decky automatically reloads this plugin after installation; restarting the whole Decky Loader is unnecessary.
 
