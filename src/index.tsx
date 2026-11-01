@@ -99,23 +99,25 @@ const renderBlackBackgroundTip = () => React.createElement(
   t('black_bg_tip_suffix')
 )
 
-const toScopedSelector = (className: string) => className
-  .split(' ')
+const toScopedSelector = (className: unknown) => {
+  if (typeof className !== 'string') return ''
+  return className
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(name => `.${name}`)
+    .join('')
+}
+
+const PANEL_LAYOUT_CSS = [staticClasses?.PanelSection, staticClasses?.PanelSectionRow]
+  .map(toScopedSelector)
+  // Missing Steam UI classes must not turn a descendant rule into a root rule.
   .filter(Boolean)
-  .map(name => `.${name}`)
-  .join('')
-
-const PANEL_LAYOUT_CSS = `
-  .sse-panel-root ${toScopedSelector(staticClasses.PanelSection)} {
+  .map(selector => `
+  .sse-panel-root ${selector} {
     margin-left: 0 !important;
     margin-right: 0 !important;
   }
-
-  .sse-panel-root ${toScopedSelector(staticClasses.PanelSectionRow)} {
-    margin-left: 0 !important;
-    margin-right: 0 !important;
-  }
-`
+`).join('\n')
 
 const PanelLayout: FC<{ children: React.ReactNode }> = ({ children }) => React.createElement(
   'div',
@@ -2281,7 +2283,7 @@ export default definePlugin(() => {
 
   return {
     name: t("Plugin Name"),
-    titleView: <div className={staticClasses.Title}>{t("Plugin Name")}</div>,
+    titleView: <div className={staticClasses?.Title}>{t("Plugin Name")}</div>,
     content: panelContent.content,
     icon: <GiNightSleep />,
     onDismount() {

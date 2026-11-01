@@ -179,7 +179,7 @@ test("plugin name and title use the active locale", () => {
   const zh = JSON.parse(readFileSync(new URL("../src/i18n/zh-cn.json", import.meta.url), "utf8"));
 
   assert.match(source, /name: t\("Plugin Name"\)/);
-  assert.match(source, /titleView: <div className=\{staticClasses\.Title\}>\{t\("Plugin Name"\)\}<\/div>/);
+  assert.match(source, /titleView: <div className=\{staticClasses\?\.Title\}>\{t\("Plugin Name"\)\}<\/div>/);
   assert.equal(en["Plugin Name"], "ScreenSaver Enhancements");
   assert.equal(zh["Plugin Name"], "屏幕保护增强");
 });
