@@ -2,7 +2,7 @@
 
 发布说明沿用中英文格式：先写 `[ZH-CN] 屏幕保护增强 v<version>` 和“新增与改进”，再写 `[EN] ScreenSaver Enhancements v<version>` 和“Added and improved”。每次发布将说明保存为本目录的 `v<version>.md`；合入外部贡献时，注明作者、PR 链接及具体贡献。
 
-GitHub 发行版标题与 Git 标签沿用 `v<version>` 格式，例如 `v2.0.5`。
+GitHub 发行版标题与 Git 标签沿用 `v<version>` 格式，例如 `v2.0.6`。
 
 安装包由 `package.json` 中的版本号命名：`ScreenSaverEnhancements-v<version>.zip`。ZIP 内部根目录保持 `ScreenSaverEnhancements/`，避免改变 Decky 安装目录。
 
@@ -14,6 +14,14 @@ GitHub 发行版标题与 Git 标签沿用 `v<version>` 格式，例如 `v2.0.5`
 2. 运行 `npm test` 和 `python build.py`，检查两份安装包的 SHA-256 一致。
 3. 将版本标签指向已验证的提交，使用对应 `v<version>.md` 作为 GitHub Release 说明，并上传两份 ZIP。
 4. 核对发布后的资产名、GitHub 返回的 SHA-256 摘要与更新检查结果。
+
+## v2.0.6
+
+更新说明使用 [v2.0.6.md](./v2.0.6.md)，主要安装包为 `ScreenSaverEnhancements-v2.0.6.zip`，同时上传字节完全相同的 `ScreenSaverEnhancements.zip`。本版仅修复 Steam UI 类名缺失时的加载和样式降级，不改变监控行为，不覆盖用户设置。
+
+保留原 `staticClasses` 取值，缺失时跳过样式规则；不要将空选择器插入 `.sse-panel-root` 规则，也不要因为字段缺失就优先切换未经对应环境验证的类名集合。已有模拟测试及 Deck 同步验证不代表所有 Steam 测试通道版本均已实测。
+
+按上述草稿上传、下载核验再公开的顺序发布；新标签指向合入 main 的已验证提交，不移动旧版本标签。此次发布不自动更新此前已同步修复、仍标记为 2.0.5 的 Deck 安装。
 
 ## v2.0.5
 

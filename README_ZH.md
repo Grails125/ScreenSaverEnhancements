@@ -33,6 +33,15 @@ Steam 或桌面服务已占用标准 D-Bus 名称时，插件保留其他接口�
 
 诊断页默认展示状态概览，D-Bus 接口与观测、Nested 检测、技术统计及电源设置按需展开；复制报告仍保留完整字段。Nested 在监控启动时进行初始检查，无会话且进程事件订阅已确认时只等待 Plasma 启动事件，不做周期扫描。已有会话每 5 秒检查播放，查询失败每 2 秒重试；进程事件不可用、订阅确认超时或检测到事件丢失时，无会话探测回退为每 10 秒一次。间隔不含查询耗时，播放/暂停识别可能延迟约 5 秒，之后的电源恢复仍需上述稳定窗口。手动应用规则及停止监控不受轮询间隔限制。
 
+## v2.0.6 更新说明
+
+- 修复部分 Steam 测试版反馈的面板类名缺失导致插件加载报错的问题。
+- 校验类名类型、跳过空选择器对应的 CSS 规则，并为标题类名添加空值保护。类名可用时保留原有取值和样式，缺失时退回默认布局。
+- 新增 8 项回归测试，覆盖对象及字段缺失、异常值、空白字符、复合类名、CSS 作用范围和标题显示。
+- 不改变应用规则、电源设置、D-Bus 抑制及 Nested 检测逻辑。
+
+详见[中英文 v2.0.6 发布说明](./docs/releases/v2.0.6.md)。本次处理的是样式字段缺失，不代表所有 Steam 测试版本均已验证，也不修复 Decky 其他组件的发现失败问题。
+
 ## v2.0.5 更新说明
 
 - Steam 占用标准 D-Bus 名称时保留监控与已配置的应用规则，不抢占 Steam 的名称。
@@ -105,7 +114,7 @@ curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/dow
 
 ### 使用发布包安装
 
-1. 从[最新发布页](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest)下载 `ScreenSaverEnhancements-v<version>.zip`，例如 `ScreenSaverEnhancements-v2.0.5.zip`。
+1. 从[最新发布页](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest)下载 `ScreenSaverEnhancements-v<version>.zip`，例如 `ScreenSaverEnhancements-v2.0.6.zip`。
 2. 打开 **Decky 设置** → **开发者** → **从 ZIP 安装插件**。
 3. 选择下载的 ZIP 包并完成安装。
 
@@ -119,13 +128,13 @@ npm.cmd test
 python build.py
 ```
 
-构建产物按项目版本命名，位于 `build/ScreenSaverEnhancements-v<version>.zip`，例如 `build/ScreenSaverEnhancements-v2.0.5.zip`。然后按上述发布包安装步骤安装即可。
+构建产物按项目版本命名，位于 `build/ScreenSaverEnhancements-v<version>.zip`，例如 `build/ScreenSaverEnhancements-v2.0.6.zip`。然后按上述发布包安装步骤安装即可。
 
 ## 更新
 
 插件面板底部提供更新检查功能。发现新版本后，可在更新区域查看版本与发布说明，并直接开始升级。
 
-若旧版内置更新卡住，包括存在安装身份问题的原 v2.0.4 包，请下载 `ScreenSaverEnhancements-v2.0.5.zip`，通过 **Decky 设置** → **开发者** → **从 ZIP 安装插件** 安装。发布新版不会自动修复旧安装中正在运行的更新入口。带版本号与固定名称的兼容 ZIP 内容相同。
+若旧版内置更新卡住，包括存在安装身份问题的原 v2.0.4 包，请下载 `ScreenSaverEnhancements-v2.0.6.zip`，通过 **Decky 设置** → **开发者** → **从 ZIP 安装插件** 安装。发布新版不会自动修复旧安装中正在运行的更新入口。带版本号与固定名称的兼容 ZIP 内容相同。
 
 安装完成后由 Decky 自动重新加载此插件，无需重启整个 Decky Loader。
 
