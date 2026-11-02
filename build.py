@@ -139,21 +139,14 @@ def build():
     print(f"Creating zip...")
     # Ensure the first-level folder in zip is ScreenSaverEnhancements
     archive_path = shutil.make_archive(
-        os.path.join(build_dir, f"{plugin_name}-v{version}"),
+        os.path.join(build_dir, plugin_name),
         'zip',
         root_dir=build_dir,
         base_dir=plugin_name,
     )
     verify_package(archive_path, plugin_name)
-    # Released clients through v2.0.3 locate this exact asset name. Upload both
-    # packages so they can update; copying preserves the same bytes and digest.
-    compatibility_path = os.path.join(build_dir, f"{plugin_name}.zip")
-    shutil.copyfile(archive_path, compatibility_path)
-    verify_package(compatibility_path, plugin_name)
-    
     print(f"Build complete! Output in {out_dir}")
     print(f"Zip created and verified at {archive_path}")
-    print(f"Compatibility zip for older update clients: {compatibility_path}")
 
 if __name__ == "__main__":
     build()

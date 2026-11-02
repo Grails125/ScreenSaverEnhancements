@@ -36,6 +36,14 @@ class UpdateCheckerTests(unittest.TestCase):
         release = update_checker.parse_release_payload({"tag_name": "v2.0.4", "assets": [wrong, self.asset("ScreenSaverEnhancements.zip")]})
         self.assertTrue(release["download_url"].endswith("/ScreenSaverEnhancements.zip"))
 
+    def test_future_single_fixed_name_release_remains_installable(self):
+        name, tag = "ScreenSaverEnhancements.zip", "v2.0.7"
+        release = update_checker.parse_release_payload({"tag_name": tag, "assets": [self.asset(name, tag)]})
+        self.assertEqual(release["version"], "2.0.7")
+        self.assertEqual(release["download_url"], self.asset(name, tag)["browser_download_url"])
+        self.assertEqual(release["sha256"], "b" * 64)
+        self.assertTrue(update_checker.is_newer_version(release["version"], "2.0.6"))
+
     def test_asset_url_must_match_selected_name_and_exact_release_tag(self):
         for name in ("ScreenSaverEnhancements.zip", "ScreenSaverEnhancements-v2.0.4.zip"):
             for url in (

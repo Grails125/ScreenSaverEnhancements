@@ -114,11 +114,11 @@ curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/dow
 
 ### 使用发布包安装
 
-1. 从[最新发布页](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest)下载 `ScreenSaverEnhancements-v<version>.zip`，例如 `ScreenSaverEnhancements-v2.0.6.zip`。
+1. 从[最新发布页](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest)下载 `ScreenSaverEnhancements.zip`。
 2. 打开 **Decky 设置** → **开发者** → **从 ZIP 安装插件**。
 3. 选择下载的 ZIP 包并完成安装。
 
-旧版本发布包可能使用 `ScreenSaverEnhancements.zip` 文件名。
+部分旧版本还提供带版本号的 ZIP；固定文件名用于兼容旧版更新器。
 
 ### 从源码构建
 
@@ -128,13 +128,13 @@ npm.cmd test
 python build.py
 ```
 
-构建产物按项目版本命名，位于 `build/ScreenSaverEnhancements-v<version>.zip`，例如 `build/ScreenSaverEnhancements-v2.0.6.zip`。然后按上述发布包安装步骤安装即可。
+构建产物位于 `build/ScreenSaverEnhancements.zip`，版本记录在包内 `package.json` 中，发行版标签也会标明版本。然后按上述发布包安装步骤安装即可。
 
 ## 更新
 
 插件面板底部提供更新检查功能。发现新版本后，可在更新区域查看版本与发布说明，并直接开始升级。
 
-若旧版内置更新卡住，包括存在安装身份问题的原 v2.0.4 包，请下载 `ScreenSaverEnhancements-v2.0.6.zip`，通过 **Decky 设置** → **开发者** → **从 ZIP 安装插件** 安装。发布新版不会自动修复旧安装中正在运行的更新入口。带版本号与固定名称的兼容 ZIP 内容相同。
+若旧版内置更新卡住，包括存在安装身份问题的原 v2.0.4 包，请下载最新版 `ScreenSaverEnhancements.zip`，通过 **Decky 设置** → **开发者** → **从 ZIP 安装插件** 安装。发布新版不会自动修复旧安装中正在运行的更新入口。
 
 安装完成后由 Decky 自动重新加载此插件，无需重启整个 Decky Loader。
 

@@ -10,7 +10,7 @@ from build import PACKAGE_SOURCE_FILES, REQUIRED_PACKAGE_ENTRIES, build, verify_
 
 
 class BuildPackageTests(unittest.TestCase):
-    def test_build_names_archive_from_package_version_and_preserves_plugin_root(self):
+    def test_build_emits_only_fixed_name_archive_and_preserves_version_and_plugin_root(self):
         for version in ("2.0.4", "3.2.1"):
             with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -32,12 +32,11 @@ class BuildPackageTests(unittest.TestCase):
                         build()
                 finally:
                     os.chdir(previous_directory)
-                archive_path = root / "build" / f"ScreenSaverEnhancements-v{version}.zip"
+                archive_path = root / "build/ScreenSaverEnhancements.zip"
                 self.assertTrue(archive_path.is_file())
-                compatibility_path = root / "build/ScreenSaverEnhancements.zip"
-                self.assertTrue(compatibility_path.is_file())
-                self.assertEqual(compatibility_path.read_bytes(), archive_path.read_bytes())
-                verify_package(compatibility_path, "ScreenSaverEnhancements")
+                self.assertEqual([path.name for path in (root / "build").glob("*.zip")],
+                                 ["ScreenSaverEnhancements.zip"])
+                verify_package(archive_path, "ScreenSaverEnhancements")
                 with zipfile.ZipFile(archive_path) as archive:
                     self.assertTrue(all(name.startswith("ScreenSaverEnhancements/") for name in archive.namelist()))
                     self.assertEqual(json.loads(archive.read("ScreenSaverEnhancements/package.json"))["version"], version)

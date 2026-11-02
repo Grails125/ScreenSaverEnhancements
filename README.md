@@ -128,11 +128,11 @@ curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/dow
 
 ### Release package
 
-1. Download `ScreenSaverEnhancements-v<version>.zip` from the [latest release](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest), for example `ScreenSaverEnhancements-v2.0.6.zip`.
+1. Download `ScreenSaverEnhancements.zip` from the [latest release](https://github.com/Grails125/ScreenSaverEnhancements/releases/latest).
 2. Open **Decky Settings** → **Developer** → **Install Plugin from ZIP**.
 3. Select the downloaded ZIP package and complete the installation.
 
-Earlier releases may use the filename `ScreenSaverEnhancements.zip`.
+Some earlier releases also provide a versioned ZIP; the fixed-name package is retained for compatibility with older updaters.
 
 ### Build from source
 
@@ -142,13 +142,13 @@ npm.cmd test
 python build.py
 ```
 
-The package is created at `build/ScreenSaverEnhancements-v<version>.zip`, using the project version (for example `build/ScreenSaverEnhancements-v2.0.6.zip`). Install it using the release-package steps above.
+The package is created at `build/ScreenSaverEnhancements.zip`. Its version is recorded in `package.json`; the release tag also identifies the version. Install it using the release-package steps above.
 
 ## Upgrade
 
 The plugin can check for updates from the bottom of its panel. When a newer release is available, open the update section, review the version and release notes, then start the upgrade there.
 
-If an older version's built-in update stalls, including the original v2.0.4 package with the installer-identity issue, install `ScreenSaverEnhancements-v2.0.6.zip` through **Decky Settings** → **Developer** → **Install Plugin from ZIP**. Publishing a newer release cannot repair the updater already running in an older installation. Both versioned and fixed-name compatibility ZIPs contain the same plugin.
+If an older version's built-in update stalls, including the original v2.0.4 package with the installer-identity issue, install the latest `ScreenSaverEnhancements.zip` through **Decky Settings** → **Developer** → **Install Plugin from ZIP**. Publishing a newer release cannot repair the updater already running in an older installation.
 
 Decky automatically reloads this plugin after installation; restarting the whole Decky Loader is unnecessary.
 

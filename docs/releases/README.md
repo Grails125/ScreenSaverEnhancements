@@ -4,16 +4,16 @@
 
 GitHub 发行版标题与 Git 标签沿用 `v<version>` 格式，例如 `v2.0.6`。
 
-安装包由 `package.json` 中的版本号命名：`ScreenSaverEnhancements-v<version>.zip`。ZIP 内部根目录保持 `ScreenSaverEnhancements/`，避免改变 Decky 安装目录。
+后续新版本只生成并上传 `ScreenSaverEnhancements.zip`。版本由 Git 标签、发行版标题和包内 `package.json` 确定，ZIP 内部根目录保持 `ScreenSaverEnhancements/`，避免改变 Decky 安装目录。
 
-构建同时生成 `ScreenSaverEnhancements.zip` 兼容包，与版本化安装包字节完全相同。发布时上传两份：用户手动安装优先选择带版本号的文件；旧版插件的自动更新仍通过固定文件名查找安装包。
+旧版内置更新器需要固定文件名，较新内置更新器在没有版本化 ZIP 时也会回退到该文件名。只发布一个匹配的插件 ZIP，避免 Direct Updater 0.2.6 因匹配到两个候选包而报告“版本不明确”。不要删除或更改已发布版本的资产。
 
 发布前完成以下步骤：
 
 1. 核对 `package.json` 版本号、发布标签与本目录中的更新说明一致。
-2. 运行 `npm test` 和 `python build.py`，检查两份安装包的 SHA-256 一致。
-3. 将版本标签指向已验证的提交，使用对应 `v<version>.md` 作为 GitHub Release 说明，并上传两份 ZIP。
-4. 核对发布后的资产名、GitHub 返回的 SHA-256 摘要与更新检查结果。
+2. 运行 `npm test` 和 `python build.py`，确认仅生成固定名称的 ZIP，包内版本、插件名、必需文件及 SHA-256 正确。
+3. 将版本标签指向已验证的提交，使用对应 `v<version>.md` 创建草稿发行版，只上传 `ScreenSaverEnhancements.zip`；下载并核验后再公开。
+4. 核对发布后的资产名、GitHub 返回的 SHA-256 摘要与内置更新器和 Direct Updater 的检查结果，并验证实际升级流程。
 
 ## v2.0.6
 
@@ -21,7 +21,7 @@ GitHub 发行版标题与 Git 标签沿用 `v<version>` 格式，例如 `v2.0.6`
 
 保留原 `staticClasses` 取值，缺失时跳过样式规则；不要将空选择器插入 `.sse-panel-root` 规则，也不要因为字段缺失就优先切换未经对应环境验证的类名集合。已有模拟测试及 Deck 同步验证不代表所有 Steam 测试通道版本均已实测。
 
-按上述草稿上传、下载核验再公开的顺序发布；新标签指向合入 main 的已验证提交，不移动旧版本标签。此次发布不自动更新此前已同步修复、仍标记为 2.0.5 的 Deck 安装。
+当时按草稿上传两份资产、下载核验再公开；新标签指向合入 main 的已验证提交，不移动旧版本标签。此次发布没有自动更新此前已同步修复、仍标记为 2.0.5 的 Deck 安装。
 
 ## v2.0.5
 
